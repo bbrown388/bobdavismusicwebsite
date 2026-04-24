@@ -18,19 +18,723 @@
   <iframe id="music" src="" allow="autoplay" width="0" height="0"></iframe>
   <script>
   'use strict';
+
   // ─── CONSTANTS ─────────────────────────────────────────────────────────────
+  const W = 360, H = 640;           // internal canvas resolution (9:16)
+  const HORIZON_Y  = 390;           // y where road vanishes and mountains meet
+  const HORIZON_X  = 180;           // x of vanishing point (canvas center)
+  const LANE_X     = [90, 180, 270];// lane center x at bottom of canvas
+  const VAN_PROGRESS   = 0.78;      // van sits at this progress (0=horizon,1=bottom)
+  const HIT_WINDOW     = 0.09;      // collision zone: ±this around VAN_PROGRESS
+  const INITIAL_SPEED  = 0.20;      // progress units per second at start
+  const SPEED_STEP     = 0.025;     // added to speed every SPEED_UP_EVERY feet
+  const SPEED_UP_EVERY = 500;       // feet between speed increases
+  const SPAWN_BASE_MS  = 2000;      // starting ms between obstacle spawns
+  const INVINCIBLE_MS  = 2000;      // ms of invincibility after a hit
+  const PICK_PTS       = 50;        // bonus points per guitar pick
+
   // ─── STATE ─────────────────────────────────────────────────────────────────
+  const S = {
+    phase:     'start',    // 'start' | 'playing' | 'gameover'
+    lane:      1,          // current player lane (0=left, 1=center, 2=right)
+    lives:     3,
+    feet:      0,
+    picks:     0,
+    speed:     INITIAL_SPEED,
+    roadOffset:0,          // 0–1 scroll position for lane dash animation
+    invincibleUntil: 0,    // timestamp (ms) when invincibility ends
+    lastSpeedUp: 0,        // how many speed-ups have occurred
+    lastObstacleSpawn: 0,
+    lastPickSpawn:    0,
+    spawnInterval: SPAWN_BASE_MS,
+    musicOn:   false,
+    obstacles: [],         // [{ lane, progress, type }] type: 'weed'|'sign'
+    collectibles:[],       // [{ lane, progress }]
+    best: parseInt(localStorage.getItem('otr_best') || '0'),
+    firstRun: !localStorage.getItem('otr_seen'),
+  };
+
+  // Button hit-boxes updated each render frame
+  const BTNS = { music: null, playAgain: null, share: null };
+
+  // Canvas + context (set in INIT)
+  let canvas, ctx, lastTime = 0;
+
   // ─── GEOMETRY ──────────────────────────────────────────────────────────────
+  function pToY(p)       { return HORIZON_Y + (H - HORIZON_Y) * p; }
+  function pToX(p, lane) { return HORIZON_X + (LANE_X[lane] - HORIZON_X) * p; }
+  function pToScale(p)   { return Math.max(0.05, p); }
+  function calcScore(feet, picks) { return Math.floor(feet) + picks * PICK_PTS; }
+
   // ─── COLLISION ─────────────────────────────────────────────────────────────
+  function hitTest(objProgress, objLane, playerLane) {
+    if (objLane !== playerLane) return false;
+    return Math.abs(objProgress - VAN_PROGRESS) < HIT_WINDOW;
+  }
+
   // ─── DRAW HELPERS ──────────────────────────────────────────────────────────
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function drawCloud(ctx, x, y, rx, ry) {
+    ctx.fillStyle = 'white';
+    ctx.globalAlpha = 0.82;
+    ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x - rx * 0.4, y + ry * 0.3, rx * 0.6, ry * 1.2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMountainRange(ctx, color, alpha, points) {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Draws a translucent pill with text. Returns bounding box { x,y,w,h }.
+   * anchor: 'left'|'center'|'right'
+   */
+  function drawPill(ctx, x, y, text, anchor, highlight) {
+    anchor = anchor || 'left';
+    ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    const tw = ctx.measureText(text).width;
+    const pw = tw + 22, ph = 28;
+    const px = anchor === 'center' ? x - pw/2 : anchor === 'right' ? x - pw : x;
+    const py = y;
+    ctx.fillStyle = 'rgba(20,10,0,0.58)';
+    roundRect(ctx, px, py, pw, ph, 14);
+    ctx.fill();
+    ctx.fillStyle = highlight ? '#FFE066' : 'rgba(255,255,255,0.92)';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText(text, px + 11, py + ph / 2);
+    return { x: px, y: py, w: pw, h: ph };
+  }
+
   // ─── BACKGROUND ────────────────────────────────────────────────────────────
+  function drawLaneDashes(ctx, roadOffset) {
+    const SLOTS = 9;
+    for (let i = 0; i < SLOTS; i++) {
+      const t = ((i / SLOTS) + roadOffset) % 1;
+      if (t < 0.015) continue;
+      const y  = pToY(t);
+      const sc = pToScale(t);
+      const dw = 4 * sc, dh = 14 * sc;
+
+      // Center yellow dash
+      const cx = pToX(t, 1);
+      ctx.fillStyle = '#F4D03F';
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(cx - dw / 2, y - dh / 2, dw, dh);
+
+      // Left lane divider (between lane 0 and 1)
+      const lx = HORIZON_X + (135 - HORIZON_X) * t;
+      ctx.fillStyle = 'white';
+      ctx.globalAlpha = 0.28;
+      ctx.fillRect(lx - dw * 0.35, y - dh * 0.35, dw * 0.7, dh * 0.7);
+
+      // Right lane divider (between lane 1 and 2)
+      const rx = HORIZON_X + (225 - HORIZON_X) * t;
+      ctx.fillRect(rx - dw * 0.35, y - dh * 0.35, dw * 0.7, dh * 0.7);
+
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawBackground(ctx, roadOffset) {
+    // Sky
+    const sky = ctx.createLinearGradient(0, 0, 0, HORIZON_Y);
+    sky.addColorStop(0,   '#2E6A92');
+    sky.addColorStop(0.6, '#78B8D8');
+    sky.addColorStop(1,   '#C8E8F4');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, HORIZON_Y);
+
+    // Sun + glow
+    ctx.fillStyle = 'rgba(255,220,80,0.12)';
+    ctx.beginPath(); ctx.arc(290, 58, 42, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFE066';
+    ctx.beginPath(); ctx.arc(290, 58, 24, 0, Math.PI * 2); ctx.fill();
+
+    // Clouds
+    drawCloud(ctx, 62,  70, 38, 13);
+    drawCloud(ctx, 205, 90, 28, 10);
+    drawCloud(ctx, 138, 108, 22, 9);
+
+    // Mountains — all base at exactly HORIZON_Y so there is no gap with the road
+    drawMountainRange(ctx, '#7090AA', 0.60, [
+      [0,HORIZON_Y],[30,320],[70,350],[110,295],[155,330],
+      [200,290],[245,320],[285,285],[325,315],[360,295],[360,HORIZON_Y]]);
+    drawMountainRange(ctx, '#B07A4A', 0.85, [
+      [0,HORIZON_Y],[25,340],[65,365],[105,325],[148,352],
+      [188,318],[230,345],[268,315],[308,340],[345,320],[360,332],[360,HORIZON_Y]]);
+    drawMountainRange(ctx, '#A06030', 1.0, [
+      [0,HORIZON_Y],[35,358],[72,375],[108,348],[148,368],
+      [185,344],[222,362],[258,342],[295,360],[328,345],[360,355],[360,HORIZON_Y]]);
+
+    // Left dirt shoulder
+    const dirtL = ctx.createLinearGradient(0, 0, 118, 0);
+    dirtL.addColorStop(0, '#4A3010'); dirtL.addColorStop(1, '#7B5B2A');
+    ctx.fillStyle = dirtL;
+    ctx.beginPath();
+    ctx.moveTo(0, H); ctx.lineTo(118, HORIZON_Y); ctx.lineTo(0, HORIZON_Y);
+    ctx.closePath(); ctx.fill();
+
+    // Right dirt shoulder
+    const dirtR = ctx.createLinearGradient(W, 0, 242, 0);
+    dirtR.addColorStop(0, '#4A3010'); dirtR.addColorStop(1, '#7B5B2A');
+    ctx.fillStyle = dirtR;
+    ctx.beginPath();
+    ctx.moveTo(W, H); ctx.lineTo(242, HORIZON_Y); ctx.lineTo(W, HORIZON_Y);
+    ctx.closePath(); ctx.fill();
+
+    // Road surface
+    const roadGrad = ctx.createLinearGradient(0, HORIZON_Y, 0, H);
+    roadGrad.addColorStop(0, '#4A4040'); roadGrad.addColorStop(1, '#252020');
+    ctx.fillStyle = roadGrad;
+    ctx.beginPath();
+    ctx.moveTo(0, H); ctx.lineTo(118, HORIZON_Y);
+    ctx.lineTo(242, HORIZON_Y); ctx.lineTo(W, H);
+    ctx.closePath(); ctx.fill();
+
+    // Road edge whites
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.moveTo(0, H); ctx.lineTo(118, HORIZON_Y); ctx.lineTo(126, HORIZON_Y); ctx.lineTo(12, H);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(W, H); ctx.lineTo(242, HORIZON_Y); ctx.lineTo(234, HORIZON_Y); ctx.lineTo(W - 12, H);
+    ctx.closePath(); ctx.fill();
+
+    // Animated lane dashes
+    drawLaneDashes(ctx, roadOffset);
+
+    // Roadside cacti
+    ctx.textBaseline = 'alphabetic';
+    ctx.globalAlpha = 0.5;  ctx.font = '13px serif'; ctx.fillText('🌵', 26,  pToY(0.08) + 12);
+    ctx.globalAlpha = 0.75; ctx.font = '20px serif'; ctx.fillText('🌵', 323, pToY(0.20) + 18);
+    ctx.globalAlpha = 0.92; ctx.font = '30px serif'; ctx.fillText('🌵', 16,  pToY(0.42) + 28);
+    ctx.globalAlpha = 1;
+  }
+
   // ─── SPRITES ───────────────────────────────────────────────────────────────
+  function drawVan(ctx, lane, progress, invincibleUntil, now) {
+    // Flash every 100ms during invincibility
+    if (invincibleUntil > now && Math.floor((invincibleUntil - now) / 100) % 2 === 0) return;
+
+    const s  = pToScale(progress);
+    const cx = pToX(progress, lane);
+    const cy = pToY(progress);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    const w = 52 * s, h = 90 * s;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(0, h * 0.38, w * 0.42, h * 0.07, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Van body
+    ctx.fillStyle = '#C0392B';
+    roundRect(ctx, -w*0.50, -h*0.40, w, h*0.58, 5*s);
+    ctx.fill();
+
+    // Cabin top
+    ctx.fillStyle = '#A93226';
+    roundRect(ctx, -w*0.38, -h*0.80, w*0.76, h*0.42, 6*s);
+    ctx.fill();
+
+    // Windshield
+    ctx.fillStyle = '#AED6F1';
+    ctx.globalAlpha = 0.85;
+    roundRect(ctx, -w*0.30, -h*0.77, w*0.60, h*0.34, 4*s);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Windshield glare
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    roundRect(ctx, -w*0.26, -h*0.75, w*0.18, h*0.12, 2*s);
+    ctx.fill();
+
+    // Side windows
+    ctx.fillStyle = '#AED6F1';
+    ctx.globalAlpha = 0.65;
+    roundRect(ctx, -w*0.46, -h*0.28, w*0.36, h*0.20, 3*s);
+    ctx.fill();
+    roundRect(ctx,  w*0.10, -h*0.28, w*0.36, h*0.20, 3*s);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Body stripe
+    ctx.fillStyle = '#922B21';
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(-w*0.50, h*0.02, w, 2*s);
+    ctx.globalAlpha = 1;
+
+    // Headlights
+    ctx.fillStyle = '#FFE066';
+    ctx.globalAlpha = 0.88;
+    roundRect(ctx, -w*0.38, -h*0.82, w*0.16, h*0.10, 1.5*s);
+    ctx.fill();
+    roundRect(ctx,  w*0.22, -h*0.82, w*0.16, h*0.10, 1.5*s);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Rear lights
+    ctx.fillStyle = '#E74C3C';
+    roundRect(ctx, -w*0.48, h*0.12, w*0.24, h*0.09, 2*s);
+    ctx.fill();
+    roundRect(ctx,  w*0.24, h*0.12, w*0.24, h*0.09, 2*s);
+    ctx.fill();
+
+    // Wheels
+    for (const [wx, wy] of [[-w*0.32, h*0.28], [w*0.32, h*0.28]]) {
+      ctx.fillStyle = '#1A1A1A';
+      ctx.beginPath(); ctx.ellipse(wx, wy, w*0.16, h*0.10, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#444';
+      ctx.beginPath(); ctx.ellipse(wx, wy, w*0.09, h*0.06, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#888';
+      ctx.beginPath(); ctx.arc(wx, wy, w*0.04, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Dust puffs
+    ctx.fillStyle = '#C4873A';
+    ctx.globalAlpha = 0.2;
+    for (const [dx, dy] of [[-w*0.52, h*0.25],[-w*0.58, h*0.18],[w*0.52, h*0.25],[w*0.58, h*0.18]]) {
+      ctx.beginPath(); ctx.arc(dx, dy, w*0.10, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+  }
+
+  function drawObstacle(ctx, type, progress, lane) {
+    const s  = pToScale(progress);
+    const cx = pToX(progress, lane);
+    const cy = pToY(progress);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    if (type === 'weed') {
+      const r = 18 * s;
+      ctx.fillStyle = '#C8A96E';
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#8B6534';
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#6B4E2A';
+      ctx.lineWidth = 1.5 * s;
+      ctx.globalAlpha = 0.5;
+      for (const angle of [30, 80, 140, 200, 270, 330]) {
+        const rad = angle * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(-Math.cos(rad) * r * 0.3, -Math.sin(rad) * r * 0.3);
+        ctx.lineTo( Math.cos(rad) * r * 0.9,  Math.sin(rad) * r * 0.9);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.beginPath(); ctx.ellipse(r * 0.3, r * 0.5, r * 0.6, r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+    } else {
+      const sw = 40 * s, sh = 30 * s, poleH = 28 * s;
+      ctx.fillStyle = '#888';
+      ctx.fillRect(-2*s, 0, 4*s, poleH);
+      ctx.fillStyle = '#F4D03F';
+      roundRect(ctx, -sw/2, -sh - poleH*0.6, sw, sh, 4*s);
+      ctx.fill();
+      ctx.strokeStyle = '#E67E22';
+      ctx.lineWidth = 2.5 * s;
+      roundRect(ctx, -sw/2, -sh - poleH*0.6, sw, sh, 4*s);
+      ctx.stroke();
+      ctx.fillStyle = '#333';
+      ctx.font = `bold ${9*s}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('ROAD', 0, -sh*0.78 - poleH*0.6 + sh*0.3);
+      ctx.fillText('WORK', 0, -sh*0.28 - poleH*0.6 + sh*0.3);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.beginPath(); ctx.ellipse(0, poleH + 3*s, sw*0.4, 5*s, 0, 0, Math.PI*2); ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function drawCollectible(ctx, progress, lane) {
+    const s  = pToScale(progress);
+    const cx = pToX(progress, lane);
+    const cy = pToY(progress);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // Glow ring
+    ctx.fillStyle = 'rgba(255,180,30,0.25)';
+    ctx.beginPath(); ctx.arc(0, 0, 22*s, 0, Math.PI*2); ctx.fill();
+
+    // Guitar pick shape
+    const r = 14*s;
+    ctx.fillStyle = '#FFD700';
+    ctx.strokeStyle = '#E6AC00';
+    ctx.lineWidth = 2*s;
+    ctx.beginPath();
+    ctx.arc(0, -r*0.3, r, Math.PI*0.1, Math.PI*0.9);
+    ctx.quadraticCurveTo(r*0.95, r*0.5, 0, r*1.1);
+    ctx.quadraticCurveTo(-r*0.95, r*0.5, -r*Math.cos(Math.PI*0.9), -r*0.3 + r*Math.sin(Math.PI*0.9));
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#B8860B';
+    ctx.font = `bold ${10*s}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♪', 0, r*0.1);
+
+    ctx.restore();
+  }
+
+  function spawnObstacle(now) {
+    const lane = Math.floor(Math.random() * 3);
+    const type = Math.random() < 0.6 ? 'weed' : 'sign';
+    S.obstacles.push({ lane, type, progress: 0 });
+    S.lastObstacleSpawn = now;
+  }
+
+  function spawnCollectible(now) {
+    const lane = Math.floor(Math.random() * 3);
+    S.collectibles.push({ lane, progress: 0.02 });
+    S.lastPickSpawn = now;
+  }
+
   // ─── HUD ───────────────────────────────────────────────────────────────────
+  function drawHUD(ctx, now) {
+    const TOP = 14;
+
+    // Lives (top-left)
+    const hearts = '❤️'.repeat(S.lives) + '🖤'.repeat(3 - S.lives);
+    drawPill(ctx, 12, TOP, hearts, 'left', false);
+
+    // Distance (top-center, golden)
+    const dist = '⬆ ' + Math.floor(S.feet).toLocaleString() + ' ft';
+    drawPill(ctx, W / 2, TOP, dist, 'center', true);
+
+    // Music toggle (top-right)
+    const musicLabel = S.musicOn ? '🎵 ON' : '🎵';
+    BTNS.music = drawPill(ctx, W - 12, TOP, musicLabel, 'right', false);
+  }
+
   // ─── SCREENS ───────────────────────────────────────────────────────────────
+  function drawStartScreen(ctx) {
+    ctx.fillStyle = 'rgba(10,6,0,0.62)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 42px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ON THE ROAD', W/2, H*0.34);
+
+    ctx.fillStyle = 'rgba(255,220,150,0.8)';
+    ctx.font = 'italic 16px Georgia, serif';
+    ctx.fillText('a Bob Davis game', W/2, H*0.34 + 52);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = '15px -apple-system, sans-serif';
+    ctx.fillText('Tap or press Space to drive', W/2, H*0.62);
+
+    drawVan(ctx, 1, 0.68, 0, 0);
+  }
+
+  function drawGameOver(ctx, now) {
+    ctx.fillStyle = 'rgba(10,6,0,0.75)';
+    ctx.fillRect(0, 0, W, H);
+
+    const score = calcScore(S.feet, S.picks);
+    const isRecord = score >= S.best && score > 0;
+
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 36px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('BROKE DOWN', W/2, H*0.22);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = '15px -apple-system, sans-serif';
+    ctx.fillText(Math.floor(S.feet).toLocaleString() + ' ft traveled', W/2, H*0.34);
+    ctx.fillText(S.picks + ' guitar pick' + (S.picks !== 1 ? 's' : '') + ' collected', W/2, H*0.34 + 26);
+
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 28px Georgia, serif';
+    ctx.fillText(score.toLocaleString() + ' pts', W/2, H*0.46);
+
+    if (isRecord) {
+      if (Math.floor(now / 500) % 2 === 0) {
+        ctx.fillStyle = '#FF6B35';
+        ctx.font = 'bold 16px -apple-system, sans-serif';
+        ctx.fillText('★ NEW RECORD ★', W/2, H*0.53);
+      }
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillText('Best: ' + S.best.toLocaleString() + ' pts', W/2, H*0.53);
+    }
+
+    // Play Again button
+    const paW = 160, paH = 46, paX = W/2 - paW/2, paY = H*0.62;
+    ctx.fillStyle = '#C0392B';
+    roundRect(ctx, paX, paY, paW, paH, 23);
+    ctx.fill();
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 16px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Play Again', W/2, paY + paH/2);
+    BTNS.playAgain = { x: paX, y: paY, w: paW, h: paH };
+
+    // Share button
+    const shW = 160, shH = 46, shX = W/2 - shW/2, shY = H*0.62 + 58;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    roundRect(ctx, shX, shY, shW, shH, 23);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, shX, shY, shW, shH, 23);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText('Share Score', W/2, shY + shH/2);
+    BTNS.share = { x: shX, y: shY, w: shW, h: shH };
+  }
+
   // ─── INPUT ─────────────────────────────────────────────────────────────────
+  function inRect(x, y, r) {
+    return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+
+  function shareScore() {
+    const score = calcScore(S.feet, S.picks);
+    const feet  = Math.floor(S.feet).toLocaleString();
+    const url   = location.href.split('?')[0];
+    const text  = `I just drove ${feet} ft in Bob Davis' road trip game! Can you beat my ${score.toLocaleString()} pts? ${url}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => alert('Score copied to clipboard!'));
+    } else {
+      prompt('Copy this:', text);
+    }
+  }
+
+  function handleClick(canvasX, canvasY, now) {
+    if (inRect(canvasX, canvasY, BTNS.music)) { toggleMusic(); return; }
+    if (S.phase === 'gameover') {
+      if (inRect(canvasX, canvasY, BTNS.playAgain)) { resetState(now); return; }
+      if (inRect(canvasX, canvasY, BTNS.share))     { shareScore();   return; }
+    }
+    if (S.phase === 'start') resetState(now);
+  }
+
+  function setupInput() {
+    let swipeStartX = null;
+
+    canvas.addEventListener('touchstart', function(e) {
+      swipeStartX = e.touches[0].clientX;
+    }, { passive: true });
+
+    canvas.addEventListener('touchend', function(e) {
+      if (swipeStartX === null) return;
+      const dx = e.changedTouches[0].clientX - swipeStartX;
+      const clientX = e.changedTouches[0].clientX;
+      const clientY = e.changedTouches[0].clientY;
+      swipeStartX = null;
+
+      if (Math.abs(dx) < 20) {
+        const rect = canvas.getBoundingClientRect();
+        const cx = (clientX - rect.left) * (W / rect.width);
+        const cy = (clientY - rect.top)  * (H / rect.height);
+        handleClick(cx, cy, performance.now());
+        return;
+      }
+
+      if (S.phase !== 'playing') return;
+      if (dx < 0 && S.lane > 0) S.lane--;
+      if (dx > 0 && S.lane < 2) S.lane++;
+
+      if (S.firstRun) { S.firstRun = false; localStorage.setItem('otr_seen', '1'); }
+    }, { passive: true });
+
+    canvas.addEventListener('click', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const cx = (e.clientX - rect.left) * (W / rect.width);
+      const cy = (e.clientY - rect.top)  * (H / rect.height);
+      handleClick(cx, cy, performance.now());
+    });
+
+    window.addEventListener('keydown', function(e) {
+      if (S.phase === 'start' || S.phase === 'gameover') {
+        if (e.key === ' ' || e.key === 'Enter') resetState(performance.now());
+        return;
+      }
+      if (S.phase !== 'playing') return;
+      if ((e.key === 'ArrowLeft'  || e.key === 'a') && S.lane > 0) S.lane--;
+      if ((e.key === 'ArrowRight' || e.key === 'd') && S.lane < 2) S.lane++;
+    });
+  }
+
   // ─── GAME LOOP ─────────────────────────────────────────────────────────────
+  function resetState(now) {
+    S.phase           = 'playing';
+    S.lane            = 1;
+    S.lives           = 3;
+    S.feet            = 0;
+    S.picks           = 0;
+    S.speed           = INITIAL_SPEED;
+    S.roadOffset      = 0;
+    S.invincibleUntil = 0;
+    S.lastSpeedUp     = 0;
+    S.lastObstacleSpawn = now;
+    S.lastPickSpawn     = now;
+    S.spawnInterval   = SPAWN_BASE_MS;
+    S.obstacles       = [];
+    S.collectibles    = [];
+  }
+
+  function update(dt, now) {
+    S.roadOffset = (S.roadOffset + S.speed * dt) % 1;
+    S.feet += S.speed * dt * 100;
+
+    const speedUps = Math.floor(S.feet / SPEED_UP_EVERY);
+    if (speedUps > S.lastSpeedUp) {
+      S.speed = INITIAL_SPEED + speedUps * SPEED_STEP;
+      S.spawnInterval = Math.max(600, SPAWN_BASE_MS - speedUps * 100);
+      S.lastSpeedUp = speedUps;
+    }
+
+    if (now - S.lastObstacleSpawn > S.spawnInterval) spawnObstacle(now);
+    if (now - S.lastPickSpawn > S.spawnInterval * 1.8) spawnCollectible(now);
+
+    for (const o of S.obstacles)    o.progress += S.speed * dt;
+    for (const o of S.collectibles) o.progress += S.speed * dt;
+
+    S.obstacles    = S.obstacles.filter(function(o) { return o.progress < 1.05; });
+    S.collectibles = S.collectibles.filter(function(o) { return o.progress < 1.05; });
+
+    // Obstacle collision
+    if (now >= S.invincibleUntil) {
+      for (let i = 0; i < S.obstacles.length; i++) {
+        const o = S.obstacles[i];
+        if (hitTest(o.progress, o.lane, S.lane)) {
+          S.lives--;
+          S.invincibleUntil = now + INVINCIBLE_MS;
+          S.obstacles.splice(i, 1);
+          if (S.lives <= 0) {
+            S.phase = 'gameover';
+            const score = calcScore(S.feet, S.picks);
+            if (score > S.best) {
+              S.best = score;
+              localStorage.setItem('otr_best', String(S.best));
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    // Collectible collision
+    S.collectibles = S.collectibles.filter(function(o) {
+      if (hitTest(o.progress, o.lane, S.lane)) { S.picks++; return false; }
+      return true;
+    });
+  }
+
+  function render(now) {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground(ctx, S.roadOffset);
+
+    for (const o of S.collectibles) drawCollectible(ctx, o.progress, o.lane);
+    for (const o of S.obstacles)    drawObstacle(ctx, o.type, o.progress, o.lane);
+    drawVan(ctx, S.lane, VAN_PROGRESS, S.invincibleUntil, now);
+
+    // Swipe hint (first run only)
+    if (S.phase === 'playing' && S.firstRun) {
+      ctx.fillStyle = 'rgba(0,0,0,0.38)';
+      roundRect(ctx, W/2 - 110, H - 44, 220, 28, 14);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.font = '12px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('← swipe to switch lanes →', W/2, H - 30);
+    }
+
+    if (S.phase === 'playing' || S.phase === 'gameover') drawHUD(ctx, now);
+    if (S.phase === 'start')    drawStartScreen(ctx);
+    if (S.phase === 'gameover') drawGameOver(ctx, now);
+  }
+
+  function frame(now) {
+    if (!lastTime) lastTime = now;
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    if (S.phase === 'playing') update(dt, now);
+    render(now);
+    requestAnimationFrame(frame);
+  }
+
   // ─── MUSIC ─────────────────────────────────────────────────────────────────
+  // Swap MUSIC_SRC for the real SoundCloud/Spotify/YouTube embed src when music releases.
+  const MUSIC_SRC = '';
+
+  function toggleMusic() {
+    const iframe = document.getElementById('music');
+    S.musicOn = !S.musicOn;
+    if (!MUSIC_SRC) return; // no source yet — toggle is visual only
+    if (S.musicOn) {
+      iframe.src = MUSIC_SRC;
+      iframe.style.display = 'block';
+    } else {
+      iframe.src = '';
+      iframe.style.display = 'none';
+    }
+  }
+
   // ─── INIT ──────────────────────────────────────────────────────────────────
+  (function init() {
+    canvas = document.getElementById('c');
+    ctx    = canvas.getContext('2d');
+    canvas.width  = W;
+    canvas.height = H;
+
+    function resize() {
+      const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+      canvas.style.width  = (W * scale) + 'px';
+      canvas.style.height = (H * scale) + 'px';
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    setupInput();
+    requestAnimationFrame(frame);
+  })();
+
   </script>
 </body>
 </html>
