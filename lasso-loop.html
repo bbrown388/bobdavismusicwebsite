@@ -175,7 +175,7 @@ function handleThrow(now) {
     items.splice(items.indexOf(hit), 1);
     if (hit.danger) {
       streak = 0;
-      loseLife(lc.x, lc.y);
+      loseLife(lc.x, lc.y, '⚠ DANGER!');
     } else {
       const perfect = hitDist < PERFECT_RADIUS;
       const pts     = hit.points * (perfect ? 2 : 1) * streakMult();
@@ -187,13 +187,13 @@ function handleThrow(now) {
     }
   } else {
     streak = 0;
-    loseLife(lc.x, lc.y);
+    loseLife(lc.x, lc.y, 'MISS');
   }
 }
 
-function loseLife(x, y) {
+function loseLife(x, y, label = 'MISS') {
   lives--;
-  addFeedback('MISS', x, y - 20, '#E74C3C');
+  addFeedback(label, x, y - 20, '#E74C3C');
   if (lives <= 0) { saveBest(); state = 'gameover'; }
 }
 
