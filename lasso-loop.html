@@ -383,12 +383,62 @@ function drawLasso() {
 
   ctx.restore();
 }
-function drawItems()  {
-  // Placeholder: colored circles until Task 4
-  for (const item of items) {
-    ctx.fillStyle = item.danger ? '#E74C3C' : '#FFD700';
-    ctx.beginPath(); ctx.arc(item.x, item.y, 18, 0, Math.PI * 2); ctx.fill();
+function drawItem(item) {
+  ctx.save();
+  ctx.translate(item.x, item.y);
+
+  if (item.type === 'pick') {
+    // Halo
+    ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2);
+    ctx.fillStyle = item.haloColor; ctx.fill();
+
+    // Guitar pick (teardrop shape)
+    ctx.fillStyle   = '#FFD700';
+    ctx.strokeStyle = '#D4A000';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -16);
+    ctx.quadraticCurveTo(17, -8,  13,  10);
+    ctx.quadraticCurveTo( 0, 18, -13,  10);
+    ctx.quadraticCurveTo(-17, -8,  0, -16);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Music note
+    ctx.fillStyle    = '#8B6400';
+    ctx.font         = 'bold 12px serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♪', 0, 1);
+
+  } else {
+    // Halo (safe items only)
+    if (item.haloColor) {
+      ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2);
+      ctx.fillStyle = item.haloColor; ctx.fill();
+    }
+
+    // Red dashed warning ring (danger items)
+    if (item.danger) {
+      ctx.strokeStyle = 'rgba(231,76,60,0.65)';
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Emoji
+    ctx.font         = '28px serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(item.emoji, 0, 0);
   }
+
+  ctx.restore();
+}
+
+function drawItems() {
+  for (const item of items) drawItem(item);
 }
 
 // ── FEEDBACK DRAW ─────────────────────────────────────────────
