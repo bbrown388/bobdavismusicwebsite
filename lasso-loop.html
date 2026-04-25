@@ -302,8 +302,87 @@ function drawBackground() {
   ctx.fillRect(317, 393, 5, 13);
   ctx.fillRect(333, 394, 5, 11);
 }
-function drawCowboy() { /* Task 3 */ }
-function drawLasso()  { /* Task 3 */ }
+function drawCowboy() {
+  // Translate so (0,0) = cowboy's feet at ground line (y=420)
+  ctx.save();
+  ctx.translate(RCX, 420);
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(0, 6, 28, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Legs
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.roundRect(-10, -32, 8, 34, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(2,   -32, 8, 34, 3); ctx.fill();
+
+  // Body
+  ctx.fillStyle = '#2a0f30';
+  ctx.beginPath(); ctx.roundRect(-13, -70, 26, 42, 4); ctx.fill();
+
+  // Left arm (relaxed, angled down)
+  ctx.save(); ctx.translate(-14, -62); ctx.rotate(-0.25);
+  ctx.fillStyle = '#2a0f30';
+  ctx.beginPath(); ctx.roundRect(0, 0, 12, 7, 3); ctx.fill();
+  ctx.restore();
+
+  // Right arm (raised — holding the lasso rope)
+  ctx.save(); ctx.translate(14, -64); ctx.rotate(0.45);
+  ctx.fillStyle = '#2a0f30';
+  ctx.beginPath(); ctx.roundRect(0, 0, 16, 7, 3); ctx.fill();
+  ctx.restore();
+
+  // Head
+  ctx.fillStyle = '#2a0f30';
+  ctx.beginPath(); ctx.ellipse(0, -78, 11, 10, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Hat brim
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.roundRect(-15, -90, 30, 6, 2); ctx.fill();
+  // Hat crown
+  ctx.beginPath(); ctx.roundRect(-9, -112, 18, 24, 3); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawLasso() {
+  const lx = RCX + Math.cos(lassoAngle) * ROPE_LEN;
+  const ly = RCY + Math.sin(lassoAngle) * ROPE_LEN;
+
+  // Hand position — right hand of cowboy (offset from rotation center)
+  const hx = RCX + 18, hy = RCY - 8;
+
+  // Rope: quadratic bezier with natural outward curve
+  const cpx = (hx + lx) / 2 + Math.cos(lassoAngle + Math.PI / 2) * 28;
+  const cpy = (hy + ly) / 2 + Math.sin(lassoAngle + Math.PI / 2) * 28;
+
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth   = 2.5;
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(hx, hy);
+  ctx.quadraticCurveTo(cpx, cpy, lx, ly);
+  ctx.stroke();
+
+  // Lasso loop at tip
+  ctx.save();
+  ctx.translate(lx, ly);
+  ctx.rotate(lassoAngle);
+
+  // Glow halo
+  ctx.strokeStyle = 'rgba(255,228,90,0.35)';
+  ctx.lineWidth   = 6;
+  ctx.beginPath(); ctx.ellipse(0, 0, LOOP_RX + 3, LOOP_RY + 3, 0, 0, Math.PI * 2); ctx.stroke();
+
+  // Main loop
+  ctx.strokeStyle = '#D4A84B';
+  ctx.fillStyle   = 'rgba(212,168,75,0.06)';
+  ctx.lineWidth   = 2.5;
+  ctx.beginPath(); ctx.ellipse(0, 0, LOOP_RX, LOOP_RY, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  ctx.restore();
+}
 function drawItems()  {
   // Placeholder: colored circles until Task 4
   for (const item of items) {
