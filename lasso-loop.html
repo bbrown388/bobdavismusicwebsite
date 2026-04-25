@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Lasso Loop — Bob Davis</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center;
+           min-height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: manipulation; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// ── CONSTANTS ────────────────────────────────────────────────
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+
+// Lasso geometry
+const LASSO_SPEED_START = 1.5;    // rad/s clockwise
+const ROPE_LEN          = 180;    // px: rotation center → loop center
+const RCX = W / 2;                // 180 — rotation center x
+const RCY = 356;                  // rotation center y (cowboy raised hand level; ground is y=420)
+const LOOP_RX = 22, LOOP_RY = 15; // lasso loop ellipse radii (px)
+
+// Hit detection
+const CATCH_RADIUS   = 36; // px — GOOD
+const PERFECT_RADIUS = 20; // px — PERFECT (2× pts)
+
+// Timing
+const THROW_FREEZE_MS = 120; // ms lasso freezes on throw
+const COOLDOWN_MS     = 600; // ms before next throw
+const FEEDBACK_MS     = 800; // ms feedback text lives
+
+// Items
+const ITEM_SPEED_START = 60; // px/s horizontal drift at start
+const MAX_ITEMS        = 4;
+const MIN_ITEMS        = 2;
+
+// Progression
+const SPEED_UP_EVERY = 500;  // pts per speed step
+const SPEED_FACTOR   = 1.08; // multiply speed per step
+
+// ── CANVAS ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+canvas.width  = W;
+canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── MUSIC ────────────────────────────────────────────────────
+const audio = document.createElement('audio');
+if (MUSIC_SRC) { audio.src = MUSIC_SRC; audio.loop = true; }
+let musicOn = false;
+function toggleMusic() {
+  if (!MUSIC_SRC) return;
+  musicOn = !musicOn;
+  musicOn ? audio.play() : audio.pause();
+}
+
+// ── LOCALSTORAGE ─────────────────────────────────────────────
+let bestScore = 0;
+function loadBest() { bestScore = parseInt(localStorage.getItem('lasso_loop_best') || '0', 10); }
+function saveBest() {
+  if (score > bestScore) { bestScore = score; localStorage.setItem('lasso_loop_best', bestScore); }
+}
+
+// ── GAME STATE ───────────────────────────────────────────────
+let state = 'title'; // 'title' | 'playing' | 'gameover'
+let score, lives, streak;
+let lassoAngle, lassoSpeed, itemSpeed, nextSpeedAt;
+let throwFreezeUntil, cooldownUntil;
+let items, feedbacks;
+
+// ── ITEM DEFINITIONS ─────────────────────────────────────────
+const ITEM_DEFS = {
+  pick:   { points: 50,  danger: false, emoji: null,  haloColor: 'rgba(255,180,30,0.15)' },
+  shoe:   { points: 75,  danger: false, emoji: '🧲',  haloColor: 'rgba(150,100,255,0.12)' },
+  cash:   { points: 100, danger: false, emoji: '💰',  haloColor: 'rgba(100,255,100,0.08)' },
+  snake:  { points: 0,   danger: true,  emoji: '🐍',  haloColor: null },
+  cactus: { points: 0,   danger: true,  emoji: '🌵',  haloColor: null },
+};
+
+// Weighted pool: ~36% pick, 21% shoe, 21% cash, 14% snake, 7% cactus
+const SPAWN_POOL = [
+  'pick','pick','pick','pick','pick',
+  'shoe','shoe','shoe',
+  'cash','cash','cash',
+  'snake','snake',
+  'cactus',
+];
+
+function streakMult() {
+  if (streak >= 10) return 4;
+  if (streak >= 6)  return 3;
+  if (streak >= 3)  return 2;
+  return 1;
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+function startGame() {
+  score            = 0;
+  lives            = 3;
+  streak           = 0;
+  lassoAngle       = -Math.PI / 2; // 12 o'clock
+  lassoSpeed       = LASSO_SPEED_START;
+  itemSpeed        = ITEM_SPEED_START;
+  nextSpeedAt      = SPEED_UP_EVERY;
+  throwFreezeUntil = 0;
+  cooldownUntil    = 0;
+  items            = [];
+  feedbacks        = [];
+  state            = 'playing';
+}
+
+// ── ITEM SPAWNING ─────────────────────────────────────────────
+function spawnItem() {
+  const type     = SPAWN_POOL[Math.floor(Math.random() * SPAWN_POOL.length)];
+  const def      = ITEM_DEFS[type];
+  const fromLeft = Math.random() < 0.5;
+  const baseY    = 150 + Math.random() * 200; // items drift between y 150–350
+  const speed    = itemSpeed + Math.random() * 20;
+  items.push({
+    type, ...def,
+    x:            fromLeft ? -32 : W + 32,
+    baseY, y:     baseY,
+    vx:           fromLeft ? speed : -speed,
+    wobbleOffset: Math.random() * Math.PI * 2,
+    wobbleAmp:    12 + Math.random() * 18,
+    wobbleFreq:   1.5 + Math.random() * 1.0, // rad/s → gentle sine bob
+    age:          0,
+  });
+}
+
+// ── LASSO POSITION ────────────────────────────────────────────
+function loopCenter() {
+  return {
+    x: RCX + Math.cos(lassoAngle) * ROPE_LEN,
+    y: RCY + Math.sin(lassoAngle) * ROPE_LEN,
+  };
+}
+
+// ── FEEDBACK ─────────────────────────────────────────────────
+function addFeedback(text, x, y, color) {
+  feedbacks.push({ text, x, y, color, born: performance.now() });
+}
+
+// ── THROW + HIT DETECTION ─────────────────────────────────────
+function handleThrow(now) {
+  if (state !== 'playing') return;
+  if (now < cooldownUntil) return;
+
+  throwFreezeUntil = now + THROW_FREEZE_MS;
+  cooldownUntil    = now + COOLDOWN_MS;
+
+  const lc = loopCenter();
+
+  let hit = null, hitDist = Infinity;
+  for (const item of items) {
+    const dx = item.x - lc.x, dy = item.y - lc.y;
+    const d  = Math.sqrt(dx * dx + dy * dy);
+    if (d < CATCH_RADIUS && d < hitDist) { hit = item; hitDist = d; }
+  }
+
+  if (hit) {
+    items.splice(items.indexOf(hit), 1);
+    if (hit.danger) {
+      streak = 0;
+      loseLife(lc.x, lc.y);
+    } else {
+      const perfect = hitDist < PERFECT_RADIUS;
+      const pts     = hit.points * (perfect ? 2 : 1) * streakMult();
+      score += pts;
+      streak++;
+      checkSpeedUp();
+      addFeedback(perfect ? '★ PERFECT! ★' : 'GOOD', lc.x, lc.y - 20,
+                  perfect ? '#FFD700' : '#4CAF50');
+    }
+  } else {
+    streak = 0;
+    loseLife(lc.x, lc.y);
+  }
+}
+
+function loseLife(x, y) {
+  lives--;
+  addFeedback('MISS', x, y - 20, '#E74C3C');
+  if (lives <= 0) { saveBest(); state = 'gameover'; }
+}
+
+function checkSpeedUp() {
+  if (score >= nextSpeedAt) {
+    lassoSpeed  *= SPEED_FACTOR;
+    itemSpeed   *= SPEED_FACTOR;
+    nextSpeedAt += SPEED_UP_EVERY;
+  }
+}
+
+// ── UPDATE ────────────────────────────────────────────────────
+function update(dt, now) {
+  if (now >= throwFreezeUntil) {
+    lassoAngle += lassoSpeed * dt;
+    if (lassoAngle > Math.PI * 2) lassoAngle -= Math.PI * 2;
+  }
+  for (const item of items) {
+    item.age += dt;
+    item.x   += item.vx * dt;
+    item.y    = item.baseY + Math.sin(item.wobbleOffset + item.age * item.wobbleFreq) * item.wobbleAmp;
+  }
+  items = items.filter(i => i.x > -64 && i.x < W + 64);
+  while (items.length < MIN_ITEMS) spawnItem();
+  if (items.length < MAX_ITEMS && Math.random() < dt * 0.5) spawnItem();
+}
+
+// ── DRAW STUBS (replaced in Tasks 2–4) ───────────────────────
+function drawBackground() {
+  ctx.fillStyle = '#050208';
+  ctx.fillRect(0, 0, W, H);
+}
+function drawCowboy() { /* Task 3 */ }
+function drawLasso()  { /* Task 3 */ }
+function drawItems()  {
+  // Placeholder: colored circles until Task 4
+  for (const item of items) {
+    ctx.fillStyle = item.danger ? '#E74C3C' : '#FFD700';
+    ctx.beginPath(); ctx.arc(item.x, item.y, 18, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// ── FEEDBACK DRAW ─────────────────────────────────────────────
+function drawFeedbacks(now) {
+  feedbacks = feedbacks.filter(f => now - f.born < FEEDBACK_MS);
+  for (const f of feedbacks) {
+    const age = now - f.born;
+    ctx.save();
+    ctx.globalAlpha      = 1 - age / FEEDBACK_MS;
+    ctx.fillStyle        = f.color;
+    ctx.font             = 'bold 16px sans-serif';
+    ctx.textAlign        = 'center';
+    ctx.textBaseline     = 'middle';
+    ctx.fillText(f.text, f.x, f.y - age * 0.025);
+    ctx.restore();
+  }
+}
+
+// ── HUD ───────────────────────────────────────────────────────
+function hpill(cx, cy, text, color, w, alpha = 0.65) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle   = 'rgba(10,5,0,0.75)';
+  ctx.beginPath(); ctx.roundRect(cx - w / 2, cy - 14, w, 28, 14); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle   = color;
+  ctx.font        = 'bold 13px sans-serif';
+  ctx.textAlign   = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, cy);
+  ctx.restore();
+}
+
+function drawHUD() {
+  hpill(W / 2, 28, `⭐ ${score} pts`, '#FFE066', 132);
+  hpill(48,    28, '❤️'.repeat(lives) || '💀', '#fff', 84);
+  const m = streakMult();
+  if (m > 1) hpill(W - 44, 28, `🔥 ×${m}`, '#FF9F43', 72);
+  hpill(W - 32, H - 20, MUSIC_SRC ? (musicOn ? '🎵' : '🔇') : '🎵', '#ccc', 52, 0.45);
+}
+
+// ── TITLE SCREEN ──────────────────────────────────────────────
+function drawTitle() {
+  drawBackground();
+  ctx.fillStyle    = '#FFE066';
+  ctx.font         = 'bold 52px serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🤠', W / 2, H / 2 - 90);
+  ctx.fillText('Lasso Loop', W / 2, H / 2 - 28);
+  ctx.fillStyle = '#A09070';
+  ctx.font      = '17px Georgia, serif';
+  ctx.fillText('Tap anywhere to start', W / 2, H / 2 + 32);
+  if (bestScore > 0) {
+    ctx.fillStyle = '#B8860B';
+    ctx.font      = '14px sans-serif';
+    ctx.fillText(`Best: ${bestScore} pts`, W / 2, H / 2 + 70);
+  }
+  hpill(W - 32, H - 20, MUSIC_SRC ? (musicOn ? '🎵' : '🔇') : '🎵', '#ccc', 52, 0.45);
+}
+
+// ── GAME OVER SCREEN ──────────────────────────────────────────
+function drawGameOver() {
+  drawBackground();
+
+  // Dark overlay
+  ctx.fillStyle = 'rgba(5,2,8,0.78)';
+  ctx.fillRect(0, 0, W, H);
+
+  const isRecord = score > 0 && score >= bestScore;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  if (isRecord) {
+    const pulse = 0.75 + 0.25 * Math.sin(performance.now() / 180);
+    ctx.fillStyle = `rgba(255,215,0,${pulse})`;
+    ctx.font      = 'bold 20px sans-serif';
+    ctx.fillText('★  NEW RECORD!  ★', W / 2, H / 2 - 118);
+  }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font      = 'bold 42px serif';
+  ctx.fillText('Game Over', W / 2, H / 2 - 65);
+
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font      = '30px sans-serif';
+  ctx.fillText(`${score} pts`, W / 2, H / 2 - 12);
+
+  ctx.fillStyle = '#907860';
+  ctx.font      = '15px sans-serif';
+  ctx.fillText(`Best: ${bestScore} pts`, W / 2, H / 2 + 26);
+
+  // Play Again button — hit zone: cx=W/2, cy=H/2+84, w=160, h=44
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 80, H / 2 + 62, 160, 44, 22); ctx.fill();
+  ctx.fillStyle = '#1a0a00';
+  ctx.font      = 'bold 17px sans-serif';
+  ctx.fillText('Play Again', W / 2, H / 2 + 84);
+
+  // Share button — hit zone: cy=H/2+140, w=130, h=36
+  if (navigator.share) {
+    ctx.fillStyle   = 'rgba(255,255,255,0.1)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath(); ctx.roundRect(W / 2 - 65, H / 2 + 122, 130, 36, 18); ctx.fill(); ctx.stroke();
+    ctx.fillStyle  = '#E8DCC8';
+    ctx.font       = '14px sans-serif';
+    ctx.fillText('📤 Share Score', W / 2, H / 2 + 140);
+  }
+}
+
+// ── INPUT ─────────────────────────────────────────────────────
+function getXY(e) {
+  const r = canvas.getBoundingClientRect();
+  const s = e.touches ? e.touches[0] : e;
+  return {
+    x: (s.clientX - r.left) * (W / r.width),
+    y: (s.clientY - r.top)  * (H / r.height),
+  };
+}
+
+function onTap(e) {
+  e.preventDefault();
+  const now      = performance.now();
+  const { x, y } = getXY(e);
+
+  if (state === 'title') { startGame(); return; }
+
+  if (state === 'gameover') {
+    if (x > W / 2 - 80 && x < W / 2 + 80 && y > H / 2 + 62 && y < H / 2 + 106) {
+      startGame(); return;
+    }
+    if (navigator.share && y > H / 2 + 122 && y < H / 2 + 158) {
+      navigator.share({ title: 'Lasso Loop', text: `I scored ${score} pts on Lasso Loop! bobdavismusic.com` });
+      return;
+    }
+    return;
+  }
+
+  // Music pill (bottom-right, playing state)
+  if (x > W - 60 && x < W - 4 && y > H - 36 && y < H - 4) { toggleMusic(); return; }
+
+  handleThrow(now);
+}
+
+canvas.addEventListener('touchstart', onTap, { passive: false });
+canvas.addEventListener('click', onTap);
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space') return;
+  e.preventDefault();
+  const now = performance.now();
+  if (state === 'title')    { startGame();    return; }
+  if (state === 'gameover') { startGame();    return; }
+  handleThrow(now);
+});
+
+// ── GAME LOOP ─────────────────────────────────────────────────
+let lastTime = 0;
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  ctx.clearRect(0, 0, W, H);
+
+  if (state === 'title') {
+    drawTitle();
+  } else if (state === 'playing') {
+    update(dt, now);
+    drawBackground();
+    drawItems();
+    drawCowboy();
+    drawLasso();
+    drawFeedbacks(now);
+    drawHUD();
+  } else {
+    drawGameOver();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ── BOOT ──────────────────────────────────────────────────────
+loadBest();
+requestAnimationFrame(t => { lastTime = t; loop(t); });
+</script>
+</body>
+</html>
