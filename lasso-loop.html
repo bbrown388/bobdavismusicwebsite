@@ -221,10 +221,86 @@ function update(dt, now) {
   if (items.length < MAX_ITEMS && Math.random() < dt * 0.5) spawnItem();
 }
 
-// ── DRAW STUBS (replaced in Tasks 2–4) ───────────────────────
+// ── BACKGROUND ───────────────────────────────────────────────
 function drawBackground() {
-  ctx.fillStyle = '#050208';
+  // Sky
+  const sky = ctx.createRadialGradient(W / 2, H * 0.38, 0, W / 2, H * 0.38, H * 0.72);
+  sky.addColorStop(0, '#1a0d35');
+  sky.addColorStop(1, '#050208');
+  ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
+
+  // Stars [x, y, radius, opacity]
+  const STARS = [
+    [40,45,1.5,.9],[95,22,1,.7],[145,60,2,.8],[200,30,1.5,.6],[255,18,1,.9],
+    [300,55,1.5,.7],[330,35,1,.8],[70,90,1,.5],[320,100,1.5,.6],[165,15,1,.8],
+    [58,130,2.5,.6],[290,80,2,.7],[180,110,1.5,.5],[220,72,1,.6],[130,42,1,.7],
+    [348,118,1.5,.8],[18,68,1,.5],[238,48,2,.7],[312,140,1,.6],[78,158,1.5,.5],
+    [15,140,1,.7],[345,50,1.5,.6],[108,148,1,.8],[260,130,2,.5],[190,155,1,.6],
+  ];
+  for (const [x, y, r, a] of STARS) {
+    ctx.globalAlpha = a;
+    ctx.fillStyle   = '#fff';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Moon outer glow
+  const glow = ctx.createRadialGradient(280, 65, 28, 280, 65, 82);
+  glow.addColorStop(0, 'rgba(255,224,102,0.09)');
+  glow.addColorStop(1, 'rgba(255,224,102,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+
+  // Moon disk
+  const moonG = ctx.createRadialGradient(277, 62, 0, 280, 65, 38);
+  moonG.addColorStop(0,   '#FFF9E0');
+  moonG.addColorStop(0.6, '#FFE066');
+  moonG.addColorStop(1,   '#F4C842');
+  ctx.beginPath(); ctx.arc(280, 65, 38, 0, Math.PI * 2);
+  ctx.fillStyle = moonG; ctx.fill();
+
+  // Crater shadows
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle   = '#E8B020';
+  for (const [cx, cy, cr] of [[268,55,8],[290,78,5],[275,72,3]]) {
+    ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Mesa silhouettes
+  ctx.fillStyle = '#0d0520';
+  for (const pts of [
+    [[0,480],[0,420],[80,420]],
+    [[60,420],[180,340],[300,420]],
+    [[240,420],[310,365],[360,402],[360,420]],
+  ]) {
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Ground
+  ctx.fillStyle = '#0a0318';
+  ctx.fillRect(0, 420, W, H - 420);
+
+  // Ground edge fade
+  const gf = ctx.createLinearGradient(0, 414, 0, 426);
+  gf.addColorStop(0, 'rgba(26,8,53,0)');
+  gf.addColorStop(1, 'rgba(26,8,53,0.85)');
+  ctx.fillStyle = gf; ctx.fillRect(0, 414, W, 14);
+
+  // Cactus silhouettes
+  ctx.fillStyle = '#050210';
+  // Left cactus
+  ctx.fillRect(25, 383, 7, 42);
+  ctx.fillRect(14, 397, 22, 5);
+  ctx.fillRect(12, 388, 5, 13);
+  ctx.fillRect(30, 388, 5, 13);
+  // Right cactus
+  ctx.fillRect(328, 389, 6, 36);
+  ctx.fillRect(319, 402, 20, 4);
+  ctx.fillRect(317, 393, 5, 13);
+  ctx.fillRect(333, 394, 5, 11);
 }
 function drawCowboy() { /* Task 3 */ }
 function drawLasso()  { /* Task 3 */ }
