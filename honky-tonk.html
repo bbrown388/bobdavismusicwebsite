@@ -14,6 +14,16 @@ canvas { display: block; }
 <body>
 <div id="wrap">
   <canvas id="c"></canvas>
+  <div id="feedback-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:rgba(10,4,8,0.97); border:2px solid #FFD700; box-sizing:border-box; padding:28px; z-index:10;">
+    <h2 style="color:#FFD700; font-family:serif; font-size:22px; margin:0; text-align:center;">Tell Us What You Think 🤠</h2>
+    <div id="stars" style="display:flex; gap:10px; font-size:34px; cursor:pointer; user-select:none;">
+      <span data-v="1">☆</span><span data-v="2">☆</span><span data-v="3">☆</span><span data-v="4">☆</span><span data-v="5">☆</span>
+    </div>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?" style="width:100%; max-width:300px; background:#1a0a06; color:#E8DCC8; border:1px solid #555; border-radius:6px; padding:10px; font-size:14px; resize:none; font-family:sans-serif;"></textarea>
+    <button id="fb-submit" style="background:#FFD700; color:#0d0608; font-weight:bold; font-size:16px; padding:10px 36px; border:none; border-radius:8px; cursor:pointer;">Submit</button>
+    <button id="fb-cancel" style="background:none; border:none; color:#A09070; font-size:14px; cursor:pointer; text-decoration:underline;">Cancel</button>
+    <p id="fb-status" style="color:#A09070; font-size:13px; min-height:18px; margin:0; text-align:center;"></p>
+  </div>
 </div>
 <script>
 const W = 360, H = 640;
@@ -718,8 +728,6 @@ function drawGameOver(now) {
 
   ctx.restore();
 }
-function showFeedbackForm() {}
-
 function startGame() {
   state         = 'playing';
   score         = 0;
@@ -739,6 +747,72 @@ function startGame() {
   milestoneFlash = { until: 0, color: '#FFD700' };
   ensureAudio();
   startBeat();
+}
+
+// ── Feedback form ─────────────────────────────────────────
+const feedbackOverlay = document.getElementById('feedback-overlay');
+const starSpans       = document.querySelectorAll('#stars span');
+const fbText          = document.getElementById('fb-text');
+const fbStatus        = document.getElementById('fb-status');
+const fbSubmitBtn     = document.getElementById('fb-submit');
+let fbRating = 0;
+
+starSpans.forEach(span => {
+  span.addEventListener('click', () => {
+    fbRating = parseInt(span.dataset.v, 10);
+    starSpans.forEach(s => {
+      s.textContent = parseInt(s.dataset.v, 10) <= fbRating ? '★' : '☆';
+    });
+  });
+});
+
+document.getElementById('fb-cancel').addEventListener('click', hideFeedbackForm);
+fbSubmitBtn.addEventListener('click', submitFeedback);
+
+function showFeedbackForm() {
+  fbRating = 0;
+  fbText.value = '';
+  fbStatus.textContent = '';
+  fbSubmitBtn.textContent = 'Submit';
+  fbSubmitBtn.disabled = false;
+  starSpans.forEach(s => s.textContent = '☆');
+  feedbackOverlay.style.display = 'flex';
+}
+
+function hideFeedbackForm() {
+  feedbackOverlay.style.display = 'none';
+}
+
+async function submitFeedback() {
+  if (fbRating === 0) {
+    fbStatus.textContent = 'Please pick a star rating.';
+    return;
+  }
+  fbStatus.textContent = 'Sending…';
+  fbSubmitBtn.disabled = true;
+  try {
+    const res = await fetch(FEEDBACK_ENDPOINT, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        game:            'Honky Tonk',
+        rating:          fbRating,
+        feedback:        fbText.value,
+        score:           score,
+        lives_remaining: Math.max(0, lives),
+      }),
+    });
+    if (res.ok) {
+      fbStatus.textContent = 'Thanks! 🤠';
+      setTimeout(hideFeedbackForm, 1500);
+    } else {
+      throw new Error('server error');
+    }
+  } catch {
+    fbStatus.textContent = "Couldn't send — try again.";
+    fbSubmitBtn.textContent = 'Retry';
+    fbSubmitBtn.disabled = false;
+  }
 }
 
 let lastTime = 0;
