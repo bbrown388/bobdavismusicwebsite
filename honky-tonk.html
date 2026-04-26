@@ -157,9 +157,8 @@ function drawSpotlights(now, notes, laneFlash) {
     ctx.closePath();
     ctx.fill();
   }
-  ctx.filter      = 'none';  // CRITICAL: reset before any other draw calls
-  ctx.globalAlpha = 1;
   ctx.restore();
+  ctx.filter = 'none';  // CORRECT: set after restore, at live context level
 }
 
 // ── Bootstrap render loop (replaced in Task 4) ───────────
