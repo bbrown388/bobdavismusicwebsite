@@ -256,7 +256,7 @@ function drawMusicToggle() {
 function handleMusicToggleTap(x, y) {
   if (x > W - 54 && x < W - 4 && y > H - 40 && y < H - 8) {
     musicOn = !musicOn;
-    if (musicOn) { ensureAudio(); if (typeof state !== 'undefined' && state === 'playing') startBeat(); }
+    if (musicOn) { ensureAudio(); if (state === 'playing') startBeat(); }
     else         { stopBeat(); }
     return true;
   }
@@ -314,21 +314,188 @@ function drawSpotlights(now, notes, laneFlash) {
   ctx.filter = 'none';  // CORRECT: set after restore, at live context level
 }
 
-// ── Bootstrap render loop (replaced in Task 4) ───────────
+// ── Game state ────────────────────────────────────────────
+let state    = 'title';
+let score    = 0;
+let lives    = 3;
+let streak   = 0;
+let bestScore = parseInt(localStorage.getItem('honkytonk_best') || '0', 10);
+
 let notes        = [];
+let particles    = [];
+let feedbacks    = [];
 let laneFlash    = [0, 0, 0];
 let laneRedFlash = [0, 0, 0];
-let streak       = 0;
+
+let densityLevel   = 1;
+let noteSpeed      = 200;
+let lastEighthTick = 0;
+let lastNoteTime   = [0, 0, 0];
+
+let shakeUntil     = 0;
+let shakeIntensity = 0;
+
+let milestoneFlash = { until: 0, color: '#FFD700' };
+
+const DENSITY = [
+  null,
+  { prob: 0.25, maxSimul: 1, minGapMs: EIGHTH_MS * 2 },
+  { prob: 0.40, maxSimul: 2, minGapMs: EIGHTH_MS * 2 },
+  { prob: 0.55, maxSimul: 2, minGapMs: EIGHTH_MS     },
+  { prob: 0.70, maxSimul: 3, minGapMs: EIGHTH_MS     },
+  { prob: 0.80, maxSimul: 3, minGapMs: EIGHTH_MS     },
+];
+const SPEED_BY_DENSITY   = [0, 200, 240, 290, 350, 420];
+const DENSITY_THRESHOLDS = [0, 0, 300, 700, 1200, 2000];
+
+function trySpawnNotes(now) {
+  if (now - lastEighthTick < EIGHTH_MS * 0.9) return;
+  lastEighthTick = now;
+
+  const d = DENSITY[densityLevel];
+  let spawned = 0;
+  const order = [0, 1, 2].sort(() => Math.random() - 0.5);
+  for (const i of order) {
+    if (spawned >= d.maxSimul) break;
+    if (now - lastNoteTime[i] < d.minGapMs) continue;
+    if (Math.random() > d.prob) continue;
+    notes.push({ lane: i, y: 110, hit: false });
+    lastNoteTime[i] = now;
+    spawned++;
+  }
+}
+
+function updateNotes(dt, now) {
+  for (const n of notes) {
+    if (!n.hit) n.y += noteSpeed * dt;
+  }
+  const live = [];
+  for (const n of notes) {
+    if (n.hit) continue;
+    if (n.y > HIT_Y + MISS_DIST) {
+      onMiss(n.lane, now);
+      continue;
+    }
+    live.push(n);
+  }
+  notes = live;
+}
+
+function checkDensity() {
+  for (let d = 5; d >= 2; d--) {
+    if (score >= DENSITY_THRESHOLDS[d] && densityLevel < d) {
+      densityLevel = d;
+      noteSpeed    = SPEED_BY_DENSITY[d];
+      break;
+    }
+  }
+}
+
+function drawNotes(now) {
+  for (const n of notes) {
+    if (n.hit) continue;
+    const lane = LANES[n.lane];
+    const near = n.y > HIT_Y - 50;
+    ctx.save();
+    ctx.shadowColor = lane.color;
+    ctx.shadowBlur  = near ? 20 : 8;
+    ctx.fillStyle   = lane.color;
+    roundRect(ctx, lane.x - NOTE_W / 2, n.y - NOTE_H / 2, NOTE_W, NOTE_H, 6);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function onHit(laneIdx, quality, now) {}
+function onMiss(laneIdx, now) {}
+
+function drawTitle(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.72)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle    = '#FFD700';
+  ctx.font         = 'bold 52px serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor  = '#FFD700'; ctx.shadowBlur = 24;
+  ctx.fillText('Honky Tonk', W / 2, H / 2 - 60);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle  = '#A09070';
+  ctx.font       = '18px Georgia, serif';
+  ctx.fillText('Tap to start', W / 2, H / 2 + 10);
+  ctx.restore();
+}
+function drawHUD(now)      {}
+function drawGameOver(now) {}
+function showFeedbackForm() {}
+
+function startGame() {
+  state         = 'playing';
+  score         = 0;
+  lives         = 3;
+  streak        = 0;
+  notes         = [];
+  particles     = [];
+  feedbacks     = [];
+  laneFlash     = [0, 0, 0];
+  laneRedFlash  = [0, 0, 0];
+  densityLevel  = 1;
+  noteSpeed     = SPEED_BY_DENSITY[1];
+  lastEighthTick = performance.now();
+  lastNoteTime  = [0, 0, 0];
+  shakeUntil    = 0;
+  milestoneFlash = { until: 0, color: '#FFD700' };
+  ensureAudio();
+  startBeat();
+}
+
+let lastTime = 0;
 
 function loop(now) {
-  ctx.clearRect(0, 0, W, H);
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  if (state === 'playing') {
+    trySpawnNotes(now);
+    updateNotes(dt, now);
+    checkDensity();
+  }
+
+  ctx.save();
+  if (now < shakeUntil) {
+    ctx.translate(
+      (Math.random() - 0.5) * shakeIntensity * 2,
+      (Math.random() - 0.5) * shakeIntensity * 2
+    );
+  }
+  ctx.clearRect(-10, -10, W + 20, H + 20);
+
   drawSpotlights(now, notes, laneFlash);
   drawCrowd(now, streak);
   drawStage(now, laneRedFlash, laneFlash);
+  drawNotes(now);
+
+  if (milestoneFlash.until > now) {
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle   = milestoneFlash.color;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    ctx.restore();
+  }
+
+  if (state === 'title')    drawTitle(now);
+  if (state === 'playing')  drawHUD(now);
+  if (state === 'gameover') drawGameOver(now);
+
   drawMusicToggle();
+  ctx.restore();
+
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+requestAnimationFrame(t => { lastTime = t; loop(t); });
 </script>
 </body>
 </html>
