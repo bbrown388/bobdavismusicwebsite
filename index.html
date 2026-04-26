@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bob Davis — Games</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0d0608;
+  color: #E8DCC8;
+  font-family: Georgia, serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 20px 64px;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 56px;
+}
+
+h1 {
+  font-size: clamp(36px, 8vw, 58px);
+  color: #FFD700;
+  text-shadow: 0 0 40px rgba(255,215,0,0.45);
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+}
+
+.tagline {
+  color: #907860;
+  font-size: 15px;
+  letter-spacing: 1px;
+  font-style: italic;
+}
+
+.games {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,215,0,0.18);
+  border-radius: 14px;
+  padding: 24px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-decoration: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.card:hover {
+  background: rgba(255,215,0,0.07);
+  border-color: rgba(255,215,0,0.5);
+}
+
+.card-info { flex: 1; }
+
+.card-number {
+  font-size: 11px;
+  color: #555;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.card-title {
+  font-size: 22px;
+  color: #FFD700;
+  margin-bottom: 4px;
+}
+
+.card-desc {
+  font-size: 13px;
+  color: #907860;
+}
+
+.play-btn {
+  background: #FFD700;
+  color: #0d0608;
+  font-weight: bold;
+  font-size: 14px;
+  padding: 10px 22px;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+footer {
+  margin-top: 64px;
+  text-align: center;
+  color: #333;
+  font-size: 13px;
+}
+
+footer a { color: #555; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Bob Davis</h1>
+  <p class="tagline">Country · Outlaw · Hip-Hop</p>
+</header>
+
+<div class="games">
+
+  <a class="card" href="honky-tonk-v2.html">
+    <div class="card-info">
+      <div class="card-number">Game 03</div>
+      <div class="card-title">Honky Tonk</div>
+      <div class="card-desc">Rhythm game — tap the beat, play the melody</div>
+    </div>
+    <div class="play-btn">Play</div>
+  </a>
+
+  <a class="card" href="lasso-loop.html">
+    <div class="card-info">
+      <div class="card-number">Game 02</div>
+      <div class="card-title">Lasso Loop</div>
+      <div class="card-desc">Rope the notes before they escape</div>
+    </div>
+    <div class="play-btn">Play</div>
+  </a>
+
+  <a class="card" href="on-the-road.html">
+    <div class="card-info">
+      <div class="card-number">Game 01</div>
+      <div class="card-title">On the Road</div>
+      <div class="card-desc">Dodge the hazards, hit the highway</div>
+    </div>
+    <div class="play-btn">Play</div>
+  </a>
+
+</div>
+
+<footer>
+  <p>bobdavismusic.com — coming soon</p>
+</footer>
+
+</body>
+</html>
