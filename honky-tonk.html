@@ -65,6 +65,7 @@ function roundRect(ctx, x, y, w, h, r) {
 
 // ── Stage drawing ─────────────────────────────────────────
 function drawStage(now, laneRedFlash, laneFlash) {
+  ctx.save();
   // Background
   ctx.fillStyle = '#0d0608';
   ctx.fillRect(0, 0, W, H);
@@ -106,6 +107,7 @@ function drawStage(now, laneRedFlash, laneFlash) {
     ctx.fill();
     ctx.restore();
   }
+  ctx.restore();
 }
 
 // ── Bootstrap render loop (replaced in Task 4) ───────────
