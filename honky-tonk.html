@@ -392,7 +392,64 @@ function resolveHit(laneIdx, now) {
   }
 }
 
-function burst(x, y, count, color, now) {} // implemented in Task 6
+function burst(x, y, count, color, now) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd   = count >= 12
+      ? 80  + Math.random() * 100
+      : 40  + Math.random() * 40;
+    const r = count >= 12 ? 3 + Math.random() * 2 : 2 + Math.random() * 1;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      r, color, born: now, lifeSec: 0.6,
+    });
+  }
+}
+
+function updateParticles(dt, now) {
+  particles = particles.filter(p => now - p.born < p.lifeSec * 1000);
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+}
+
+function drawParticles(now) {
+  for (const p of particles) {
+    const age   = (now - p.born) / (p.lifeSec * 1000);
+    const alpha = 1 - age;
+    const r     = p.r * (1 - age * 0.5);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(r, 0.5), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+const FEEDBACK_DURATION_MS = 800;
+
+function drawFeedbacks(now) {
+  feedbacks = feedbacks.filter(f => now - f.born < FEEDBACK_DURATION_MS);
+  for (const f of feedbacks) {
+    const age   = now - f.born;
+    const alpha = 1 - age / FEEDBACK_DURATION_MS;
+    ctx.save();
+    ctx.globalAlpha  = alpha;
+    ctx.fillStyle    = f.color;
+    ctx.shadowColor  = f.color;
+    ctx.shadowBlur   = 8;
+    ctx.font         = 'bold 16px sans-serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(f.text, f.x, f.y - age * 0.032);
+    ctx.restore();
+  }
+}
 
 function onTap(e) {
   e.preventDefault();
@@ -555,7 +612,32 @@ function drawTitle(now) {
   ctx.fillText('Tap to start', W / 2, H / 2 + 10);
   ctx.restore();
 }
-function drawHUD(now)      {}
+function drawHUD(now) {
+  ctx.save();
+  // Score pill — top center
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(ctx, W / 2 - 62, 8, 124, 28, 8);
+  ctx.fill();
+  ctx.fillStyle    = '#FFD700';
+  ctx.font         = 'bold 14px sans-serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('⭐ ' + score.toLocaleString() + ' pts', W / 2, 22);
+
+  // Lives — top left
+  ctx.font         = '18px sans-serif';
+  ctx.textAlign    = 'left';
+  ctx.fillText('🎸'.repeat(Math.max(0, lives)), 8, 22);
+
+  // Streak — top right (hidden at ×1)
+  if (streak >= 8) {
+    ctx.fillStyle    = '#FFD700';
+    ctx.font         = 'bold 14px sans-serif';
+    ctx.textAlign    = 'right';
+    ctx.fillText('🔥 ×' + streakMultiplier(), W - 8, 22);
+  }
+  ctx.restore();
+}
 function drawGameOver(now) {}
 function showFeedbackForm() {}
 
@@ -590,6 +672,7 @@ function loop(now) {
     trySpawnNotes(now);
     updateNotes(dt, now);
     checkDensity();
+    updateParticles(dt, now);
   }
 
   ctx.save();
@@ -605,6 +688,8 @@ function loop(now) {
   drawCrowd(now, streak);
   drawStage(now, laneRedFlash, laneFlash);
   drawNotes(now);
+  drawParticles(now);
+  drawFeedbacks(now);
 
   if (milestoneFlash.until > now) {
     ctx.save();
