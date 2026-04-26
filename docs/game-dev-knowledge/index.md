@@ -10,6 +10,7 @@ Single source of truth for every game built, every technique proven, and every l
 |---|-------|------|----------|-------|
 | 1 | On the Road | `on-the-road.html` | 3-lane endless runner | 2026-04-24 |
 | 2 | Lasso Loop | `lasso-loop.html` | Precision timing / lasso throw | 2026-04-24 |
+| 3 | Honky Tonk | `honky-tonk.html` | Rhythm / Web Audio / Particles | 2026-04-26 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -19,6 +20,7 @@ Single source of truth for every game built, every technique proven, and every l
 
 - [Game 1: On the Road](games/01-on-the-road.md) — runner, perspective, van, road
 - [Game 2: Lasso Loop](games/02-lasso-loop.md) — timing, lasso, night sky, items
+- [Game 3: Honky Tonk](games/03-honky-tonk.md) — rhythm, Web Audio, crowd, spotlights, particles
 - [Canvas techniques](techniques/canvas.md) — setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) — state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) — color palette, art style, HUD conventions
