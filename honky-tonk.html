@@ -603,16 +603,37 @@ function drawTitle(now) {
   ctx.save();
   ctx.fillStyle = 'rgba(5,2,8,0.72)';
   ctx.fillRect(0, 0, W, H);
+
+  // Title
   ctx.fillStyle    = '#FFD700';
   ctx.font         = 'bold 52px serif';
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
-  ctx.shadowColor  = '#FFD700'; ctx.shadowBlur = 24;
-  ctx.fillText('Honky Tonk', W / 2, H / 2 - 60);
-  ctx.shadowBlur = 0;
-  ctx.fillStyle  = '#A09070';
-  ctx.font       = '18px Georgia, serif';
-  ctx.fillText('Tap to start', W / 2, H / 2 + 10);
+  ctx.shadowColor  = '#FFD700';
+  ctx.shadowBlur   = 28;
+  ctx.fillText('Honky Tonk', W / 2, H / 2 - 90);
+
+  // Pulsing tap prompt
+  const pulse = 0.55 + 0.45 * Math.sin(now / 580);
+  ctx.globalAlpha  = pulse;
+  ctx.shadowBlur   = 0;
+  ctx.fillStyle    = '#A09070';
+  ctx.font         = '18px Georgia, serif';
+  ctx.fillText('Tap to start', W / 2, H / 2 - 20);
+  ctx.globalAlpha  = 1;
+
+  // Personal best
+  if (bestScore > 0) {
+    ctx.fillStyle    = '#907860';
+    ctx.font         = '14px sans-serif';
+    ctx.fillText('Best: ' + bestScore.toLocaleString() + ' pts', W / 2, H / 2 + 22);
+  }
+
+  // Controls hint
+  ctx.fillStyle    = '#444';
+  ctx.font         = '13px sans-serif';
+  ctx.fillText('A · S · D  or  tap lanes', W / 2, H / 2 + 55);
+
   ctx.restore();
 }
 function drawHUD(now) {
@@ -641,7 +662,62 @@ function drawHUD(now) {
   }
   ctx.restore();
 }
-function drawGameOver(now) {}
+function drawGameOver(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.84)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  // "GAME OVER"
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font      = 'bold 38px serif';
+  ctx.fillText('GAME OVER', W / 2, H / 2 - 125);
+
+  // Score
+  ctx.fillStyle = '#FFD700';
+  ctx.font      = 'bold 28px sans-serif';
+  ctx.fillText(score.toLocaleString() + ' pts', W / 2, H / 2 - 75);
+
+  // NEW RECORD pulse
+  if (score > 0 && score >= bestScore) {
+    const pulse = 0.75 + 0.25 * Math.sin(now / 180);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle   = '#FFD700';
+    ctx.font        = 'bold 18px sans-serif';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+    ctx.fillText('NEW RECORD!', W / 2, H / 2 - 38);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+  }
+
+  // Best score
+  ctx.fillStyle = '#907860';
+  ctx.font      = '14px sans-serif';
+  ctx.fillText('Best: ' + bestScore.toLocaleString() + ' pts', W / 2, H / 2 + 2);
+
+  // Play Again button
+  ctx.fillStyle = '#FFD700';
+  roundRect(ctx, W / 2 - 80, H / 2 + 30, 160, 44, 10);
+  ctx.fill();
+  ctx.fillStyle = '#0d0608';
+  ctx.font      = 'bold 18px sans-serif';
+  ctx.fillText('Play Again', W / 2, H / 2 + 52);
+
+  // Feedback button
+  ctx.fillStyle = 'rgba(255,215,0,0.12)';
+  roundRect(ctx, W / 2 - 105, H / 2 + 88, 210, 38, 8);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,215,0,0.35)';
+  ctx.lineWidth   = 1;
+  ctx.stroke();
+  ctx.fillStyle   = '#A09070';
+  ctx.font        = '14px sans-serif';
+  ctx.fillText('Tell Us What You Think 🤠', W / 2, H / 2 + 107);
+
+  ctx.restore();
+}
 function showFeedbackForm() {}
 
 function startGame() {
