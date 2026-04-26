@@ -421,7 +421,7 @@ function drawLine(now) {
     return;
   }
 
-  const droop = state === 'reeling' ? lerp(60, 5, tension / 100) : 50;
+  const droop = state === 'reeling' ? lerp(5, 60, reelProgress / 100) : 50;
   const midX  = (ROD_TIP.x + lure.x) / 2;
   const midY  = (ROD_TIP.y + lure.y) / 2 + droop;
 
@@ -490,10 +490,11 @@ function onPointerUp(e) {
   }
 }
 
-canvas.addEventListener('touchstart', e => { e.preventDefault(); onPointerDown(e); }, { passive: false });
-canvas.addEventListener('mousedown',  onPointerDown);
-canvas.addEventListener('touchend',   e => { e.preventDefault(); onPointerUp(e); },   { passive: false });
-canvas.addEventListener('mouseup',    onPointerUp);
+canvas.addEventListener('touchstart',  e => { e.preventDefault(); onPointerDown(e); }, { passive: false });
+canvas.addEventListener('mousedown',   onPointerDown);
+canvas.addEventListener('touchend',    e => { e.preventDefault(); onPointerUp(e); },   { passive: false });
+canvas.addEventListener('mouseup',     onPointerUp);
+canvas.addEventListener('touchcancel', () => { castHeld = false; },                    { passive: false });
 
 function launchCast() {
   const power = castPower;
@@ -620,7 +621,7 @@ function updateFish(dt, now) {
         if (f.biteCharge >= 1.0 && state === 'waiting') {
           f.state   = 'biting';
           state     = 'biting';
-          biteTimer = now + 600;
+          biteTimer = now + 2500;
           playNibble();
         }
       }
