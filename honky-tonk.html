@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Honky Tonk</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+</div>
+<script>
+const W = 360, H = 640;
+const HIT_Y        = 510;
+const PERFECT_DIST = 20;
+const GOOD_DIST    = 45;
+const MISS_DIST    = 60;
+const NOTE_W = 64, NOTE_H = 24;
+const BPM        = 90;
+const BEAT_MS    = 60000 / BPM;      // 666.7ms
+const EIGHTH_MS  = BEAT_MS / 2;      // 333.3ms
+const LANES = [
+  { x:  72, color: '#FF6B35' },  // orange
+  { x: 180, color: '#FFD700' },  // gold
+  { x: 288, color: '#C878F0' },  // purple
+];
+const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+const MUSIC_SRC = '';
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Utility ──────────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ── Stage drawing ─────────────────────────────────────────
+function drawStage(now, laneRedFlash, laneFlash) {
+  // Background
+  ctx.fillStyle = '#0d0608';
+  ctx.fillRect(0, 0, W, H);
+
+  // Lane guides — subtle vertical stripes
+  for (const lane of LANES) {
+    ctx.fillStyle = 'rgba(255,255,255,0.025)';
+    ctx.fillRect(lane.x - 40, 110, 80, 380);
+  }
+
+  // Stage floor planks (y=545–640)
+  for (let row = 0; row * 14 + 545 < H; row++) {
+    ctx.fillStyle = row % 2 === 0 ? '#1a0a06' : '#120804';
+    ctx.fillRect(0, 545 + row * 14, W, 14);
+  }
+
+  // Hit zone glowing bar
+  ctx.save();
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur  = 14;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth   = 2;
+  ctx.beginPath(); ctx.moveTo(0, HIT_Y); ctx.lineTo(W, HIT_Y);
+  ctx.stroke();
+  ctx.restore();
+
+  // Lane buttons (y=520–542) — color reacts to miss/hit flash
+  for (let i = 0; i < 3; i++) {
+    const lane     = LANES[i];
+    const isRed    = laneRedFlash[i] > now;
+    const isHit    = !isRed && laneFlash[i] > now;
+    const alpha    = isRed ? 0.9 : isHit ? 1.0 : 0.3;
+    const fillColor = isRed ? '#E74C3C' : lane.color;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = fillColor;
+    if (isHit || isRed) { ctx.shadowColor = fillColor; ctx.shadowBlur = 14; }
+    roundRect(ctx, lane.x - 35, 520, 70, 22, 6);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── Bootstrap render loop (replaced in Task 4) ───────────
+function loop(now) {
+  ctx.clearRect(0, 0, W, H);
+  drawStage(now, [0, 0, 0], [0, 0, 0]);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
