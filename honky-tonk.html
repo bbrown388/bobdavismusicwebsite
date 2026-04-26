@@ -110,10 +110,69 @@ function drawStage(now, laneRedFlash, laneFlash) {
   ctx.restore();
 }
 
+// ── Crowd ─────────────────────────────────────────────────
+const CROWD = Array.from({ length: 18 }, (_, i) => ({
+  x:       10 + i * 19 + (Math.random() * 5 - 2.5),
+  baseY:   70 + Math.random() * 22,
+  r:       7  + Math.random() * 5,
+  bobFreq: 1.0 + Math.random() * 0.4,
+  phase:   Math.random() * Math.PI * 2,
+}));
+
+function crowdParams(streak) {
+  if (streak >= 24) return { amp: 18, freqScale: 2.0, sway: true,  bright: true  };
+  if (streak >= 16) return { amp: 12, freqScale: 1.67, sway: true,  bright: false };
+  if (streak >= 8 ) return { amp:  7, freqScale: 1.5,  sway: false, bright: false };
+                    return { amp:  3, freqScale: 1.0,  sway: false, bright: false };
+}
+
+function drawCrowd(now, streak) {
+  const { amp, freqScale, sway, bright } = crowdParams(streak);
+  const t = now / 1000;
+  ctx.fillStyle = bright ? '#2a0a22' : '#1a0514';
+  for (const h of CROWD) {
+    const dy = Math.sin(t * h.bobFreq * freqScale + h.phase) * amp;
+    const dx = sway ? Math.sin(t * h.bobFreq * 0.7 + h.phase + 1) * 6 : 0;
+    ctx.beginPath();
+    ctx.arc(h.x + dx, h.baseY + dy, h.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ── Spotlights ────────────────────────────────────────────
+// notes: array of note objects; laneFlash: timestamp array
+function drawSpotlights(now, notes, laneFlash) {
+  ctx.save();
+  ctx.filter = 'blur(3px)';
+  for (let i = 0; i < 3; i++) {
+    const lane    = LANES[i];
+    const hasNote = notes.some(n => n.lane === i && !n.hit);
+    const alpha   = laneFlash[i] > now ? 0.18 : hasNote ? 0.10 : 0.04;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = lane.color;
+    ctx.beginPath();
+    ctx.moveTo(lane.x, 0);
+    ctx.lineTo(lane.x - 44, HIT_Y);
+    ctx.lineTo(lane.x + 44, HIT_Y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.filter      = 'none';  // CRITICAL: reset before any other draw calls
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 // ── Bootstrap render loop (replaced in Task 4) ───────────
+let notes        = [];
+let laneFlash    = [0, 0, 0];
+let laneRedFlash = [0, 0, 0];
+let streak       = 0;
+
 function loop(now) {
   ctx.clearRect(0, 0, W, H);
-  drawStage(now, [0, 0, 0], [0, 0, 0]);
+  drawSpotlights(now, notes, laneFlash);
+  drawCrowd(now, streak);
+  drawStage(now, laneRedFlash, laneFlash);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
