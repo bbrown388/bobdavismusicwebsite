@@ -195,6 +195,8 @@ let nextBarTime = 0;
 
 function startBeat() {
   if (!musicOn) return;
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.setValueAtTime(1.0, AC.currentTime);
   nextBarTime = AC.currentTime + 0.05;
   function tick() {
     while (nextBarTime < AC.currentTime + 1.0) {
