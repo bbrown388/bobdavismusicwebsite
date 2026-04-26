@@ -21,6 +21,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Game 1: On the Road](games/01-on-the-road.md) — runner, perspective, van, road
 - [Game 2: Lasso Loop](games/02-lasso-loop.md) — timing, lasso, night sky, items
 - [Game 3: Honky Tonk](games/03-honky-tonk.md) — rhythm, Web Audio, crowd, spotlights, particles
+- [Retrospective: Honky Tonk](retrospectives/01-honky-tonk.md) — session lessons, action items for Game 04
 - [Canvas techniques](techniques/canvas.md) — setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) — state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) — color palette, art style, HUD conventions
