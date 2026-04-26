@@ -703,7 +703,7 @@ function updateRipples(now) {
 function drawRipples(now) {
   ctx.save();
   for (const r of ripples) {
-    const age    = (now - r.born) / 800;
+    const age    = Math.max(0, (now - r.born) / 800);
     const radius = r.maxR * age;
     ctx.globalAlpha = (1 - age) * 0.5;
     ctx.strokeStyle = 'rgba(255,220,120,0.8)';
@@ -736,7 +736,7 @@ function updateParticles(dt, now) {
 function drawParticles(now) {
   ctx.save();
   for (const p of particles) {
-    const age = (now - p.born) / (p.life * 1000);
+    const age = Math.max(0, (now - p.born) / (p.life * 1000));
     ctx.globalAlpha = 1 - age;
     ctx.fillStyle   = p.color;
     ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - age * 0.4), 0, Math.PI * 2); ctx.fill();
@@ -755,7 +755,7 @@ function updatePopups(now) {
 function drawPopups(now) {
   ctx.save();
   for (const p of popups) {
-    const age   = (now - p.born) / p.life;
+    const age   = Math.max(0, (now - p.born) / p.life);
     const alpha = age < 0.6 ? 1 : 1 - (age - 0.6) / 0.4;
     ctx.globalAlpha  = alpha;
     ctx.fillStyle    = p.color;
@@ -1030,32 +1030,35 @@ function checkBiteExpiry(now) {
 // ── Main loop ─────────────────────────────────────────────
 let lastTime = 0;
 function loop(now) {
-  const dt = Math.min((now - lastTime) / 1000, 0.05);
-  lastTime = now;
+  try {
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
 
-  // Update
-  if (state !== 'title' && state !== 'gameover') {
-    updateCast(dt, now);
-    updateFish(dt, now);
-    updateReel(dt, now);
-    updateRipples(now);
-    updateParticles(dt, now);
-    updatePopups(now);
-    checkBiteExpiry(now);
+    // Update
+    if (state !== 'title' && state !== 'gameover') {
+      updateCast(dt, now);
+      updateFish(dt, now);
+      updateReel(dt, now);
+      updateRipples(now);
+      updateParticles(dt, now);
+      updatePopups(now);
+      checkBiteExpiry(now);
+    }
+
+    // Draw — order: scene → ripples → fish → line → particles → popups → HUD → overlays
+    ctx.clearRect(0, 0, W, H);
+    drawScene(now);
+    drawRipples(now);
+    drawFish(now);
+    drawLine(now);
+    drawParticles(now);
+    drawPopups(now);
+    drawHUD(now);
+    if (state === 'title')    drawTitle(now);
+    if (state === 'gameover') drawGameOver(now);
+  } catch(e) {
+    console.error('loop error:', e);
   }
-
-  // Draw — order: scene → ripples → fish → line → particles → popups → HUD → overlays
-  ctx.clearRect(0, 0, W, H);
-  drawScene(now);
-  drawRipples(now);
-  drawFish(now);
-  drawLine(now);
-  drawParticles(now);
-  drawPopups(now);
-  drawHUD(now);
-  if (state === 'title')    drawTitle(now);
-  if (state === 'gameover') drawGameOver(now);
-
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(t => { lastTime = t; loop(t); });
