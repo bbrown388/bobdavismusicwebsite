@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Gone Fishin'</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <!-- feedback overlay — added in Task 9 -->
+</div>
+<script>
+const W = 360, H = 640;
+const WATER_Y = 220;
+const ROD_BASE = { x: 0, y: 200 };
+const ROD_TIP  = { x: 110, y: 140 };
+const BPM = 90;
+const BEAT_MS   = 60000 / BPM;
+const EIGHTH_MS = BEAT_MS / 2;
+const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+
+const FISH_TYPES = [
+  { name: 'Sunfish',     pts: 50,  w: 16, depthMin: WATER_Y+10,  depthMax: WATER_Y+120, speed: 55, rarity: 0.40, bold: 0.7  },
+  { name: 'Bass',        pts: 150, w: 24, depthMin: WATER_Y+40,  depthMax: WATER_Y+220, speed: 38, rarity: 0.35, bold: 0.5  },
+  { name: 'Catfish',     pts: 300, w: 34, depthMin: WATER_Y+150, depthMax: WATER_Y+320, speed: 22, rarity: 0.20, bold: 0.4  },
+  { name: 'Trophy Bass', pts: 750, w: 48, depthMin: WATER_Y+260, depthMax: WATER_Y+380, speed: 14, rarity: 0.05, bold: 0.25 },
+];
+
+const CHORD_BARS = [
+  [196, 247, 294, 247, 196, 247, 294, 247],
+  [262, 330, 392, 330, 262, 330, 392, 330],
+  [294, 370, 440, 370, 294, 370, 440, 370],
+  [196, 247, 294, 247, 196, 247, 294, 247],
+];
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Utility ──────────────────────────────────────────────
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+// ── Game state ────────────────────────────────────────────
+let state      = 'title';
+let score      = 0;
+let fishCount  = 0;
+let timeLeft   = 90;
+let bestScore  = parseInt(localStorage.getItem('gonefishin_best') || '0', 10);
+
+let fish       = [];
+let particles  = [];
+let ripples    = [];
+let popups     = [];
+
+let lure = { x: ROD_TIP.x, y: ROD_TIP.y, targetX: ROD_TIP.x, targetY: ROD_TIP.y, inWater: false };
+let tension    = 0;
+let hookedFish = null;
+let castPower  = 0;
+let castHeld   = false;
+let biteTimer  = 0;
+let gameTimer  = null;
+let castAnim   = null;
+let reelHeld   = false;
+let fightTimer = 0;
+let nextSpawnTime = 0;
+
+function startGame() {
+  state         = 'casting';
+  score         = 0;
+  fishCount     = 0;
+  timeLeft      = 90;
+  fish          = [];
+  particles     = [];
+  ripples       = [];
+  popups        = [];
+  lure          = { x: ROD_TIP.x, y: ROD_TIP.y, targetX: ROD_TIP.x, targetY: ROD_TIP.y, inWater: false };
+  tension       = 0;
+  hookedFish    = null;
+  castPower     = 0;
+  castHeld      = false;
+  reelHeld      = false;
+  biteTimer     = 0;
+  castAnim      = null;
+  fightTimer    = 0;
+  nextSpawnTime = 0;
+  clearInterval(gameTimer);
+  gameTimer = setInterval(() => {
+    timeLeft = Math.max(0, timeLeft - 1);
+    if (timeLeft === 0) endGame();
+  }, 1000);
+  ensureAudio().then(() => startBeat());
+}
+
+function endGame() {
+  clearInterval(gameTimer);
+  state = 'gameover';
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('gonefishin_best', bestScore);
+  }
+  stopBeat();
+}
+
+// ── Audio ─────────────────────────────────────────────────
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = AC.createGain();
+masterGain.connect(AC.destination);
+masterGain.gain.setValueAtTime(1.0, AC.currentTime);
+
+async function ensureAudio() {
+  if (AC.state === 'suspended') await AC.resume();
+}
+canvas.addEventListener('touchstart', () => ensureAudio(), { once: true });
+canvas.addEventListener('click',      () => ensureAudio(), { once: true });
+
+function scheduleGuitarNote(freq, t, gain) {
+  const osc    = AC.createOscillator();
+  const filter = AC.createBiquadFilter();
+  const g      = AC.createGain();
+  osc.connect(filter); filter.connect(g); g.connect(masterGain);
+  osc.type = 'triangle';
+  filter.type = 'lowpass'; filter.frequency.value = 900; filter.Q.value = 0.8;
+  osc.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+  osc.start(t); osc.stop(t + 0.32);
+}
+
+function scheduleChordBar(barNotes, barStartSec) {
+  const e = (BEAT_MS / 1000) / 2;
+  barNotes.forEach((freq, i) => {
+    const gain = i % 2 === 0 ? 0.28 : 0.14;
+    scheduleGuitarNote(freq, barStartSec + i * e, gain);
+  });
+}
+
+let nextBarTime = 0;
+let beatTimer   = null;
+let barIndex    = 0;
+
+function startBeat() {
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.setValueAtTime(1.0, AC.currentTime);
+  nextBarTime = AC.currentTime + 0.05;
+  barIndex    = 0;
+  function tick() {
+    const barDuration = (BEAT_MS / 1000) * 4;
+    while (nextBarTime < AC.currentTime + 2.0) {
+      scheduleChordBar(CHORD_BARS[barIndex % CHORD_BARS.length], nextBarTime);
+      nextBarTime += barDuration;
+      barIndex++;
+    }
+    beatTimer = setTimeout(tick, 500);
+  }
+  tick();
+  startWaterAmbience();
+}
+
+function stopBeat() {
+  clearTimeout(beatTimer);
+  beatTimer = null;
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0, AC.currentTime + 0.15);
+  setTimeout(() => masterGain.gain.setValueAtTime(1.0, AC.currentTime), 300);
+  stopWaterAmbience();
+}
+
+let waterNodes = null;
+
+function startWaterAmbience() {
+  if (waterNodes) return;
+  const len  = AC.sampleRate * 2;
+  const buf  = AC.createBuffer(1, len, AC.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+
+  const rumble  = AC.createBufferSource();
+  const lpf     = AC.createBiquadFilter();
+  const gRumble = AC.createGain();
+  rumble.buffer = buf; rumble.loop = true;
+  lpf.type = 'lowpass'; lpf.frequency.value = 80;
+  gRumble.gain.value = 0.06;
+  rumble.connect(lpf); lpf.connect(gRumble); gRumble.connect(masterGain);
+  rumble.start();
+
+  const wash  = AC.createBufferSource();
+  const bpf   = AC.createBiquadFilter();
+  const gWash = AC.createGain();
+  wash.buffer = buf; wash.loop = true;
+  bpf.type = 'bandpass'; bpf.frequency.value = 400; bpf.Q.value = 0.3;
+  gWash.gain.value = 0.04;
+  wash.connect(bpf); bpf.connect(gWash); gWash.connect(masterGain);
+  wash.start();
+
+  waterNodes = [rumble, wash];
+}
+
+function stopWaterAmbience() {
+  if (!waterNodes) return;
+  waterNodes.forEach(n => { try { n.stop(); } catch(e){} });
+  waterNodes = null;
+}
+
+function playCast() {
+  const len  = Math.floor(AC.sampleRate * 0.25);
+  const buf  = AC.createBuffer(1, len, AC.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const noise = AC.createBufferSource();
+  const bpf   = AC.createBiquadFilter();
+  const g     = AC.createGain();
+  noise.buffer = buf;
+  bpf.type = 'bandpass'; bpf.frequency.setValueAtTime(800, AC.currentTime);
+  bpf.frequency.exponentialRampToValueAtTime(200, AC.currentTime + 0.25);
+  g.gain.setValueAtTime(0.12, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.25);
+  noise.connect(bpf); bpf.connect(g); g.connect(masterGain);
+  noise.start(); noise.stop(AC.currentTime + 0.25);
+}
+
+function playSplash() {
+  const len  = Math.floor(AC.sampleRate * 0.15);
+  const buf  = AC.createBuffer(1, len, AC.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const noise = AC.createBufferSource();
+  const lpf   = AC.createBiquadFilter();
+  const g     = AC.createGain();
+  noise.buffer = buf;
+  lpf.type = 'lowpass'; lpf.frequency.value = 400;
+  g.gain.setValueAtTime(0.18, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.15);
+  noise.connect(lpf); lpf.connect(g); g.connect(masterGain);
+  noise.start(); noise.stop(AC.currentTime + 0.15);
+}
+
+function playNibble() {
+  const osc = AC.createOscillator(); const g = AC.createGain();
+  osc.connect(g); g.connect(masterGain);
+  osc.frequency.value = 520; osc.type = 'sine';
+  g.gain.setValueAtTime(0.08, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.08);
+  osc.start(); osc.stop(AC.currentTime + 0.08);
+}
+
+function playHook() {
+  const osc = AC.createOscillator(); const g = AC.createGain();
+  osc.connect(g); g.connect(masterGain);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(380, AC.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(280, AC.currentTime + 0.12);
+  g.gain.setValueAtTime(0.2, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.12);
+  osc.start(); osc.stop(AC.currentTime + 0.12);
+}
+
+function playCatch() {
+  [392, 494, 587, 784].forEach((freq, i) => {
+    const t = AC.currentTime + i * 0.09;
+    const osc = AC.createOscillator(); const g = AC.createGain();
+    osc.connect(g); g.connect(masterGain);
+    osc.type = 'triangle'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.start(t); osc.stop(t + 0.28);
+  });
+}
+
+function playLineBreak() {
+  const osc = AC.createOscillator(); const g = AC.createGain();
+  osc.connect(g); g.connect(masterGain);
+  osc.type = 'square'; osc.frequency.value = 120;
+  g.gain.setValueAtTime(0.15, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.2);
+  osc.start(); osc.stop(AC.currentTime + 0.2);
+}
+
+// ── Scene ─────────────────────────────────────────────────
+const TREES = [
+  { x: -10, h: 90, type: 'pine' }, { x: 15, h: 110, type: 'pine' },
+  { x: 35,  h: 80, type: 'oak'  }, { x: 55, h: 95,  type: 'pine' },
+  { x: 70,  h: 70, type: 'oak'  },
+  { x: 290, h: 85, type: 'oak'  }, { x: 310, h: 105, type: 'pine' },
+  { x: 330, h: 75, type: 'pine' }, { x: 348, h: 90,  type: 'oak'  },
+  { x: 362, h: 100,type: 'pine' },
+];
+
+function drawTree(x, h, type) {
+  ctx.fillStyle = '#0d1a0f';
+  if (type === 'pine') {
+    for (let i = 0; i < 3; i++) {
+      const ty = WATER_Y - h + i * (h * 0.28);
+      const tw = (h * 0.55) * (1 - i * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(x, ty);
+      ctx.lineTo(x - tw/2, ty + h * 0.38);
+      ctx.lineTo(x + tw/2, ty + h * 0.38);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillRect(x - 4, WATER_Y - h * 0.15, 8, h * 0.15);
+  } else {
+    ctx.fillRect(x - 5, WATER_Y - h * 0.4, 10, h * 0.4);
+    ctx.beginPath();
+    ctx.arc(x, WATER_Y - h * 0.55, h * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawScene(now) {
+  ctx.save();
+
+  const sky = ctx.createLinearGradient(0, 0, 0, WATER_Y);
+  sky.addColorStop(0,   '#1a0a2e');
+  sky.addColorStop(0.5, '#8B3A1A');
+  sky.addColorStop(1,   '#FF8C42');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, WATER_Y);
+
+  ctx.fillStyle = '#0a1208';
+  ctx.beginPath();
+  ctx.moveTo(0, WATER_Y);
+  [0,40,70,110,150,190,230,270,310,360].forEach((x, i) => {
+    const hh = [20,35,28,42,25,38,30,45,22,15][i];
+    ctx.lineTo(x, WATER_Y - hh);
+  });
+  ctx.lineTo(W, WATER_Y);
+  ctx.closePath();
+  ctx.fill();
+
+  for (const t of TREES) drawTree(t.x, t.h, t.type);
+
+  const waterLayers = [
+    { y: WATER_Y,       h: 120, color: '#1a3a4a' },
+    { y: WATER_Y + 120, h: 120, color: '#0f2030' },
+    { y: WATER_Y + 240, h: 120, color: '#080f18' },
+    { y: WATER_Y + 360, h: H - (WATER_Y + 360), color: '#050a10' },
+  ];
+  for (const l of waterLayers) {
+    ctx.fillStyle = l.color;
+    ctx.fillRect(0, l.y, W, l.h);
+  }
+
+  ctx.strokeStyle = 'rgba(255,200,100,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, WATER_Y); ctx.lineTo(W, WATER_Y); ctx.stroke();
+
+  const shimX = ((now / 2000) % 1) * (W + 60) - 30;
+  const shimGrad = ctx.createLinearGradient(shimX - 30, 0, shimX + 30, 0);
+  shimGrad.addColorStop(0,   'rgba(255,220,120,0)');
+  shimGrad.addColorStop(0.5, 'rgba(255,220,120,0.18)');
+  shimGrad.addColorStop(1,   'rgba(255,220,120,0)');
+  ctx.fillStyle = shimGrad;
+  ctx.fillRect(0, WATER_Y - 2, W, 6);
+
+  ctx.restore();
+}
+
+// ── Rod & Line ────────────────────────────────────────────
+function drawRod() {
+  ctx.save();
+  ctx.strokeStyle = '#3d1f00';
+  ctx.lineWidth   = 4;
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(ROD_BASE.x, ROD_BASE.y);
+  ctx.lineTo(ROD_TIP.x,  ROD_TIP.y);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,180,80,0.2)';
+  ctx.lineWidth   = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLine(now) {
+  ctx.save();
+  drawRod();
+
+  if (state === 'casting' && !lure.inWater && !castAnim) {
+    ctx.restore();
+    return;
+  }
+
+  if (castAnim) {
+    ctx.strokeStyle = 'rgba(220,200,160,0.6)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(ROD_TIP.x, ROD_TIP.y);
+    ctx.lineTo(lure.x, lure.y);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  const droop = state === 'reeling' ? lerp(60, 5, tension / 100) : 50;
+  const midX  = (ROD_TIP.x + lure.x) / 2;
+  const midY  = (ROD_TIP.y + lure.y) / 2 + droop;
+
+  ctx.strokeStyle = 'rgba(220,200,160,0.8)';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(ROD_TIP.x, ROD_TIP.y);
+  ctx.quadraticCurveTo(midX, midY, lure.x, lure.y);
+  ctx.stroke();
+
+  if (lure.inWater && state !== 'reeling') {
+    const bob = state === 'biting'
+      ? Math.sin(now / 60) * 8
+      : Math.sin(now / 800) * 2;
+    const ly = WATER_Y + bob;
+    ctx.fillStyle = '#f0f0f0';
+    ctx.beginPath(); ctx.arc(lure.x, ly, 6, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = '#e03020';
+    ctx.beginPath(); ctx.arc(lure.x, ly, 6, Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.arc(lure.x, ly, 6, 0, Math.PI * 2); ctx.stroke();
+  } else if (state === 'reeling' && hookedFish) {
+    ctx.fillStyle = 'rgba(200,180,80,0.7)';
+    ctx.beginPath(); ctx.arc(lure.x, lure.y, 4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ── Cast mechanic ─────────────────────────────────────────
+canvas.addEventListener('touchstart', onHoldStart, { passive: false });
+canvas.addEventListener('mousedown',  onHoldStart);
+canvas.addEventListener('touchend',   onHoldEnd,   { passive: false });
+canvas.addEventListener('mouseup',    onHoldEnd);
+
+function onHoldStart(e) {
+  if (state === 'reeling') { reelHeld = true; return; }
+  if (state !== 'casting') return;
+  castHeld  = true;
+  castPower = 0;
+}
+
+function onHoldEnd(e) {
+  reelHeld = false;
+  if (state !== 'casting' || !castHeld) return;
+  castHeld = false;
+  launchCast();
+}
+
+function launchCast() {
+  const power = castPower;
+  const endX  = lerp(80, 310, power);
+  const peakY = lerp(WATER_Y - 60, WATER_Y - 180, power);
+  castAnim = { t: 0, startX: ROD_TIP.x, startY: ROD_TIP.y, endX, endY: WATER_Y,
+               peakX: lerp(ROD_TIP.x, endX, 0.6), peakY };
+  lure.inWater = false;
+  lure.targetY = WATER_Y + lerp(20, 370, power);
+  lure.targetX = endX;
+  state = 'waiting';
+  playCast();
+  setTimeout(playSplash, 400);
+
+  for (const f of fish) {
+    if (dist({ x: lure.targetX, y: WATER_Y }, { x: f.x, y: f.y }) < 80) {
+      f.state = 'spooked';
+      setTimeout(() => { if (f.state === 'spooked') f.state = 'idle'; }, 2000);
+    }
+  }
+}
+
+function updateCast(dt, now) {
+  if (castHeld && state === 'casting') {
+    castPower = Math.min(1, castPower + dt / 1.5);
+  }
+  if (castAnim) {
+    castAnim.t = Math.min(1, castAnim.t + dt / 0.55);
+    const t = castAnim.t;
+    lure.x = lerp(lerp(castAnim.startX, castAnim.peakX, t), lerp(castAnim.peakX, castAnim.endX, t), t);
+    lure.y = lerp(lerp(castAnim.startY, castAnim.peakY, t), lerp(castAnim.peakY, castAnim.endY, t), t);
+    if (castAnim.t >= 1) {
+      castAnim     = null;
+      lure.inWater = true;
+      lure.x       = lure.targetX;
+      lure.y       = WATER_Y;
+      addRipple(lure.x, WATER_Y);
+    }
+  } else if (lure.inWater && lure.y < lure.targetY && state !== 'reeling') {
+    lure.y = Math.min(lure.targetY, lure.y + 120 * dt);
+  }
+}
+
+function drawPowerBar(now) {
+  if (!castHeld || state !== 'casting') return;
+  ctx.save();
+  const bx = W/2 - 70, by = H - 60, bw = 140, bh = 14;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.fill();
+  const barColor = castPower > 0.8 ? '#e05030' : castPower > 0.5 ? '#e0a030' : '#50c050';
+  ctx.fillStyle = barColor;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw * castPower, bh, 4); ctx.fill();
+  ctx.fillStyle = '#E8DCC8'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('HOLD TO CAST', W/2, by - 6);
+  ctx.restore();
+}
+
+// ── Fish ──────────────────────────────────────────────────
+function spawnFish(now) {
+  if (fish.length >= 6 || now < nextSpawnTime) return;
+  nextSpawnTime = now + 4000 + Math.random() * 4000;
+
+  const roll = Math.random();
+  let cumulative = 0;
+  let type = FISH_TYPES[0];
+  for (const ft of FISH_TYPES) {
+    cumulative += ft.rarity;
+    if (roll < cumulative) { type = ft; break; }
+  }
+
+  const dir    = Math.random() < 0.5 ? 1 : -1;
+  const startX = dir === 1 ? -type.w : W + type.w;
+  const y      = type.depthMin + Math.random() * (type.depthMax - type.depthMin);
+
+  fish.push({
+    type, x: startX, y, baseY: y, dir,
+    speed: type.speed * (0.8 + Math.random() * 0.4),
+    phase: Math.random() * Math.PI * 2,
+    state: 'idle',
+    biteCharge: 0,
+  });
+}
+
+function updateFish(dt, now) {
+  spawnFish(now);
+
+  for (const f of fish) {
+    if (f.state === 'spooked') {
+      f.x += f.dir * f.speed * 3.5 * dt;
+      continue;
+    }
+
+    if (lure.inWater && state === 'waiting') {
+      const d = dist({ x: f.x, y: f.y }, { x: lure.x, y: lure.y });
+      if (d < 80 && f.state === 'idle') f.state = 'attracted';
+      if (d > 120 && f.state === 'attracted') f.state = 'idle';
+    } else if (state !== 'biting' && state !== 'reeling') {
+      if (f.state === 'attracted' || f.state === 'biting') {
+        f.state = 'idle'; f.biteCharge = 0;
+      }
+    }
+
+    if (f.state === 'attracted' || f.state === 'biting') {
+      const dx = lure.x - f.x, dy = lure.y - f.y;
+      const d  = Math.hypot(dx, dy) || 1;
+      const steerSpeed = f.type.bold * f.speed * 1.4;
+      f.x += (dx / d) * steerSpeed * dt;
+      f.y += (dy / d) * steerSpeed * dt;
+      f.dir = dx > 0 ? 1 : -1;
+
+      if (d < 30) {
+        f.biteCharge += dt * f.type.bold;
+        if (f.biteCharge >= 1.0 && state === 'waiting') {
+          f.state   = 'biting';
+          state     = 'biting';
+          biteTimer = now + 600;
+          playNibble();
+        }
+      }
+    } else {
+      f.x += f.dir * f.speed * dt;
+      f.y  = f.baseY + Math.sin(now / 700 + f.phase) * 12;
+    }
+  }
+
+  fish = fish.filter(f => f.x > -100 && f.x < W + 100);
+}
+
+function drawFish(now) {
+  ctx.save();
+  for (const f of fish) {
+    if (f === hookedFish) continue;
+    const alpha = f.state === 'spooked' ? 0.4 : 0.75;
+    ctx.globalAlpha = alpha;
+    const col = f.y < WATER_Y + 120 ? '#2a5a6a' : f.y < WATER_Y + 240 ? '#1a3a50' : '#0f2030';
+    ctx.fillStyle = col;
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    ctx.scale(f.dir, 1);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, f.type.w / 2, f.type.w * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-f.type.w * 0.42, 0);
+    ctx.lineTo(-f.type.w * 0.72, -f.type.w * 0.22);
+    ctx.lineTo(-f.type.w * 0.72,  f.type.w * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ── Reel ──────────────────────────────────────────────────
+function updateReel(dt, now) {
+  if (state !== 'reeling' || !hookedFish) return;
+
+  if (reelHeld) {
+    tension += 15 * dt;
+    lure.y   = Math.max(WATER_Y + 10, lure.y - 60 * dt);
+    lure.x   = lerp(lure.x, W / 2, dt * 0.5);
+  } else {
+    tension -= 20 * dt;
+  }
+
+  if (now > fightTimer) {
+    fightTimer = now + 1200 + Math.random() * 1200;
+    tension += 25;
+  }
+
+  tension = clamp(tension, 0, 100);
+
+  if (tension >= 100) {
+    hookedFish.state      = 'idle';
+    hookedFish.biteCharge = 0;
+    hookedFish = null;
+    state = 'casting';
+    lure.inWater = false;
+    lure.x = ROD_TIP.x; lure.y = ROD_TIP.y;
+    playLineBreak();
+    return;
+  }
+
+  if (lure.y <= WATER_Y + 15) catchFish(now);
+}
+
+function catchFish(now) {
+  const caught = hookedFish;
+  score     += caught.type.pts;
+  fishCount++;
+  playCatch();
+  addBurst(lure.x, WATER_Y, 14, '#5af');
+  addRipple(lure.x, WATER_Y, 60);
+  addPopup(`${caught.type.name}  +${caught.type.pts}`, lure.x, WATER_Y - 20, '#FFD700');
+  fish       = fish.filter(f => f !== caught);
+  hookedFish = null;
+  state      = 'casting';
+  lure.inWater = false;
+  lure.x = ROD_TIP.x; lure.y = ROD_TIP.y;
+}
+
+// ── Particles & Ripples ───────────────────────────────────
+function addRipple(x, y, maxR = 40) {
+  ripples.push({ x, y, born: performance.now(), maxR });
+}
+
+function updateRipples(now) {
+  ripples = ripples.filter(r => now - r.born < 800);
+}
+
+function drawRipples(now) {
+  ctx.save();
+  for (const r of ripples) {
+    const age    = (now - r.born) / 800;
+    const radius = r.maxR * age;
+    ctx.globalAlpha = (1 - age) * 0.5;
+    ctx.strokeStyle = 'rgba(255,220,120,0.8)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath(); ctx.arc(r.x, WATER_Y, radius, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function addBurst(x, y, count, color) {
+  const now = performance.now();
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd   = 60 + Math.random() * 100;
+    particles.push({
+      x, y, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd - 40,
+      r: 2 + Math.random() * 3, color, born: now, life: 0.7,
+    });
+  }
+}
+
+function updateParticles(dt, now) {
+  particles = particles.filter(p => now - p.born < p.life * 1000);
+  for (const p of particles) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 120 * dt;
+  }
+}
+
+function drawParticles(now) {
+  ctx.save();
+  for (const p of particles) {
+    const age = (now - p.born) / (p.life * 1000);
+    ctx.globalAlpha = 1 - age;
+    ctx.fillStyle   = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - age * 0.4), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, color, born: performance.now(), life: 1200 });
+}
+
+function updatePopups(now) {
+  popups = popups.filter(p => now - p.born < p.life);
+}
+
+function drawPopups(now) {
+  ctx.save();
+  for (const p of popups) {
+    const age   = (now - p.born) / p.life;
+    const alpha = age < 0.6 ? 1 : 1 - (age - 0.6) / 0.4;
+    ctx.globalAlpha  = alpha;
+    ctx.fillStyle    = p.color;
+    ctx.shadowColor  = p.color; ctx.shadowBlur = 8;
+    ctx.font         = 'bold 15px sans-serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y - age * 40);
+  }
+  ctx.restore();
+}
+
+// ── HUD ───────────────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+
+function drawHUD(now) {
+  if (state === 'title' || state === 'gameover') return;
+  ctx.save();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, 8, 8, 130, 28, 8); ctx.fill();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(`🐟 ${score.toLocaleString()} pts`, 16, 22);
+
+  const mins  = Math.floor(timeLeft / 60);
+  const secs  = String(timeLeft % 60).padStart(2, '0');
+  const timerColor = timeLeft <= 10 ? '#e05030' : '#E8DCC8';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, W - 80, 8, 72, 28, 8); ctx.fill();
+  ctx.fillStyle = timerColor; ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText(`${mins}:${secs}`, W - 12, 22);
+
+  if (state === 'reeling') {
+    const bx = 20, by = H - 44, bw = W - 40, bh = 16;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    roundRect(ctx, bx, by, bw, bh, 6); ctx.fill();
+    const t = tension / 100;
+    const barColor = t > 0.8 ? '#e04020' : t > 0.5 ? '#e0a020' : '#40c060';
+    ctx.fillStyle = barColor;
+    roundRect(ctx, bx, by, bw * t, bh, 6); ctx.fill();
+    ctx.fillStyle = '#E8DCC8'; ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('TENSION — hold to reel', W / 2, by + bh / 2);
+
+    if (t > 0.85) {
+      ctx.fillStyle = `rgba(200,40,20,${0.12 * Math.abs(Math.sin(now / 80))})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  if (state === 'casting' && !castHeld) {
+    ctx.fillStyle = 'rgba(255,220,150,0.55)'; ctx.font = '13px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('Hold to cast', W / 2, H - 20);
+  }
+
+  if (state === 'biting') {
+    const pulse = 0.7 + 0.3 * Math.sin(now / 80);
+    ctx.globalAlpha  = pulse;
+    ctx.fillStyle    = '#FFD700'; ctx.font = 'bold 28px Georgia,serif';
+    ctx.shadowColor  = '#FFD700'; ctx.shadowBlur = 20;
+    ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('TAP!', W / 2, H / 2);
+  }
+
+  ctx.restore();
+  drawPowerBar(now);
+}
+
+// ── Title & Game Over ─────────────────────────────────────
+function drawTitle(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,10,15,0.75)';
+  ctx.fillRect(0, 0, W, H);
+
+  const bob = Math.sin(now / 900) * 3;
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath(); ctx.arc(W/2, WATER_Y + bob, 7, 0, Math.PI); ctx.fill();
+  ctx.fillStyle = '#e03020';
+  ctx.beginPath(); ctx.arc(W/2, WATER_Y + bob, 7, Math.PI, 0); ctx.fill();
+
+  ctx.fillStyle   = '#FFD700'; ctx.font = 'bold 48px Georgia,serif';
+  ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 30;
+  ctx.fillText("Gone Fishin'", W/2, H/2 - 80);
+
+  ctx.shadowBlur  = 0;
+  ctx.globalAlpha = 0.55 + 0.45 * Math.sin(now / 580);
+  ctx.fillStyle   = '#A09070'; ctx.font = '18px Georgia,serif';
+  ctx.fillText('Tap to start', W/2, H/2 - 14);
+  ctx.globalAlpha = 1;
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#70584a'; ctx.font = '13px sans-serif';
+    ctx.fillText('Best: ' + bestScore.toLocaleString() + ' pts', W/2, H/2 + 22);
+  }
+
+  ctx.fillStyle = '#444'; ctx.font = '12px sans-serif';
+  ctx.fillText('Hold to cast · Tap to hook · Hold to reel', W/2, H/2 + 52);
+
+  ctx.restore();
+}
+
+function drawGameOver(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,10,15,0.88)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = '#E8DCC8'; ctx.font = 'bold 36px Georgia,serif';
+  ctx.fillText('GAME OVER', W/2, H/2 - 120);
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 26px sans-serif';
+  ctx.fillText(score.toLocaleString() + ' pts', W/2, H/2 - 74);
+
+  ctx.fillStyle = '#70584a'; ctx.font = '14px sans-serif';
+  ctx.fillText(`Fish caught: ${fishCount}`, W/2, H/2 - 42);
+
+  if (score > 0 && score >= bestScore) {
+    const pulse = 0.75 + 0.25 * Math.sin(now / 180);
+    ctx.globalAlpha = pulse; ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 16px sans-serif'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+    ctx.fillText('NEW RECORD!', W/2, H/2 - 14);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  ctx.fillStyle = '#907860'; ctx.font = '13px sans-serif';
+  ctx.fillText('Best: ' + bestScore.toLocaleString() + ' pts', W/2, H/2 + 8);
+
+  ctx.fillStyle = '#FFD700';
+  roundRect(ctx, W/2-80, H/2+28, 160, 44, 10); ctx.fill();
+  ctx.fillStyle = '#0d0608'; ctx.font = 'bold 18px sans-serif';
+  ctx.fillText('Play Again', W/2, H/2 + 50);
+
+  ctx.fillStyle = 'rgba(255,215,0,0.1)';
+  roundRect(ctx, W/2-105, H/2+86, 210, 36, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 1;
+  roundRect(ctx, W/2-105, H/2+86, 210, 36, 8); ctx.stroke();
+  ctx.fillStyle = '#907860'; ctx.font = '13px sans-serif';
+  ctx.fillText('Tell Us What You Think 🤠', W/2, H/2 + 104);
+
+  ctx.restore();
+}
+
+// ── Feedback overlay ──────────────────────────────────────
+// (injected after body builds — appended to #wrap in init)
+const feedbackOverlay = document.createElement('div');
+feedbackOverlay.id = 'feedback-overlay';
+feedbackOverlay.style.cssText = 'display:none;position:absolute;top:0;left:0;width:100%;height:100%;' +
+  'flex-direction:column;align-items:center;justify-content:center;gap:14px;' +
+  'background:rgba(10,4,8,0.97);border:2px solid #FFD700;box-sizing:border-box;padding:28px;z-index:10;';
+feedbackOverlay.innerHTML = `
+  <h2 style="color:#FFD700;font-family:serif;font-size:22px;margin:0;text-align:center;">Tell Us What You Think &#x1F920;</h2>
+  <div id="stars" style="display:flex;gap:10px;font-size:34px;cursor:pointer;user-select:none;">
+    <span data-v="1" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="2" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="3" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="4" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="5" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+  </div>
+  <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+    style="width:100%;max-width:300px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;
+    border-radius:6px;padding:10px;font-size:14px;resize:none;font-family:sans-serif;"></textarea>
+  <button id="fb-submit" style="background:#FFD700;color:#0d0608;font-weight:bold;font-size:16px;
+    padding:10px 36px;border:none;border-radius:8px;cursor:pointer;">Submit</button>
+  <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:14px;
+    cursor:pointer;text-decoration:underline;">Cancel</button>
+  <p id="fb-status" style="color:#A09070;font-size:13px;min-height:18px;margin:0;text-align:center;"></p>
+`;
+wrap.appendChild(feedbackOverlay);
+
+const starSpans   = feedbackOverlay.querySelectorAll('#stars span');
+const fbText      = feedbackOverlay.querySelector('#fb-text');
+const fbStatus    = feedbackOverlay.querySelector('#fb-status');
+const fbSubmitBtn = feedbackOverlay.querySelector('#fb-submit');
+let fbRating = 0;
+
+starSpans.forEach(span => {
+  span.addEventListener('click', () => {
+    fbRating = parseInt(span.dataset.v, 10);
+    starSpans.forEach(s => {
+      const v = parseInt(s.dataset.v, 10);
+      s.textContent = v <= fbRating ? '★' : '☆';
+      s.style.color = v <= fbRating ? '#FFD700' : 'rgba(255,215,0,0.4)';
+    });
+  });
+});
+
+feedbackOverlay.querySelector('#fb-cancel').addEventListener('click', () => {
+  feedbackOverlay.style.display = 'none';
+});
+
+fbSubmitBtn.addEventListener('click', async () => {
+  if (fbRating === 0) { fbStatus.textContent = 'Please pick a star rating.'; return; }
+  fbStatus.textContent = 'Sending…'; fbSubmitBtn.disabled = true;
+  try {
+    const res = await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ game: "Gone Fishin'", rating: fbRating,
+        feedback: fbText.value, score, fish_count: fishCount }),
+    });
+    if (res.ok) {
+      fbStatus.textContent = 'Thanks! 🤠';
+      setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500);
+    } else throw new Error();
+  } catch {
+    fbStatus.textContent = "Couldn’t send — try again.";
+    fbSubmitBtn.textContent = 'Retry'; fbSubmitBtn.disabled = false;
+  }
+});
+
+// ── Input (tap) ───────────────────────────────────────────
+function onTap(e) {
+  e.preventDefault();
+  if (feedbackOverlay.style.display === 'flex') return;
+  const r  = canvas.getBoundingClientRect();
+  const t0 = e.changedTouches ? e.changedTouches[0] : e;
+  const x  = (t0.clientX - r.left) * (W / r.width);
+  const y  = (t0.clientY - r.top)  * (H / r.height);
+
+  if (state === 'title')    { startGame(); return; }
+
+  if (state === 'gameover') {
+    if (x > W/2-80 && x < W/2+80 && y > H/2+28 && y < H/2+72) { startGame(); return; }
+    if (x > W/2-105 && x < W/2+105 && y > H/2+86 && y < H/2+122) {
+      fbRating = 0; fbText.value = ''; fbStatus.textContent = '';
+      fbSubmitBtn.textContent = 'Submit'; fbSubmitBtn.disabled = false;
+      starSpans.forEach(s => { s.textContent = '☆'; s.style.color = 'rgba(255,215,0,0.4)'; });
+      feedbackOverlay.style.display = 'flex';
+    }
+    return;
+  }
+
+  if (state === 'biting') {
+    const biting = fish.find(f => f.state === 'biting');
+    if (biting) {
+      hookedFish        = biting;
+      biting.state      = 'hooked';
+      state             = 'reeling';
+      tension           = 20;
+      fightTimer        = performance.now() + 1200 + Math.random() * 1200;
+      playHook();
+    }
+    return;
+  }
+}
+canvas.addEventListener('touchstart', onTap, { passive: false });
+canvas.addEventListener('click',      onTap);
+
+// Missed bite check in main loop
+function checkBiteExpiry(now) {
+  if (state === 'biting' && now > biteTimer) {
+    const biting = fish.find(f => f.state === 'biting');
+    if (biting) { biting.state = 'idle'; biting.biteCharge = 0; }
+    state        = 'casting';
+    lure.inWater = false;
+    lure.x       = ROD_TIP.x; lure.y = ROD_TIP.y;
+  }
+}
+
+// ── Main loop ─────────────────────────────────────────────
+let lastTime = 0;
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // Update
+  if (state !== 'title' && state !== 'gameover') {
+    updateCast(dt, now);
+    updateFish(dt, now);
+    updateReel(dt, now);
+    updateRipples(now);
+    updateParticles(dt, now);
+    updatePopups(now);
+    checkBiteExpiry(now);
+  }
+
+  // Draw — order: scene → ripples → fish → line → particles → popups → HUD → overlays
+  ctx.clearRect(0, 0, W, H);
+  drawScene(now);
+  drawRipples(now);
+  drawFish(now);
+  drawLine(now);
+  drawParticles(now);
+  drawPopups(now);
+  drawHUD(now);
+  if (state === 'title')    drawTitle(now);
+  if (state === 'gameover') drawGameOver(now);
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(t => { lastTime = t; loop(t); });
+</script>
+</body>
+</html>
