@@ -209,6 +209,10 @@ function startBeat() {
 function stopBeat() {
   clearTimeout(beatTimer);
   beatTimer = null;
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0, AC.currentTime + 0.08);
+  // Restore for next startBeat
+  setTimeout(() => masterGain.gain.setValueAtTime(1.0, AC.currentTime), 200);
 }
 
 function duckBeat(durationSec) {
