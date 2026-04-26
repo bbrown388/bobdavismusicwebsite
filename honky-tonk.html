@@ -348,6 +348,90 @@ const DENSITY = [
 const SPEED_BY_DENSITY   = [0, 200, 240, 290, 350, 420];
 const DENSITY_THRESHOLDS = [0, 0, 300, 700, 1200, 2000];
 
+// ── Input ─────────────────────────────────────────────────
+function getXY(e) {
+  const r = canvas.getBoundingClientRect();
+  const s = e.touches ? e.touches[0] : e;
+  return {
+    x: (s.clientX - r.left) * (W / r.width),
+    y: (s.clientY - r.top)  * (H / r.height),
+  };
+}
+
+function tapToLane(x) {
+  if (x < W / 3)        return 0;
+  if (x < (2 * W) / 3)  return 1;
+  return 2;
+}
+
+function streakMultiplier() {
+  if (streak >= 24) return 4;
+  if (streak >= 16) return 3;
+  if (streak >= 8)  return 2;
+  return 1;
+}
+
+function resolveHit(laneIdx, now) {
+  laneFlash[laneIdx] = now + 80;
+
+  let closest = null, dist = Infinity;
+  for (const n of notes) {
+    if (n.hit || n.lane !== laneIdx) continue;
+    const d = Math.abs(n.y - HIT_Y);
+    if (d < dist) { dist = d; closest = n; }
+  }
+
+  if (!closest) return;
+
+  if (dist <= PERFECT_DIST) {
+    closest.hit = true;
+    onHit(laneIdx, 'PERFECT', now);
+  } else if (dist <= GOOD_DIST) {
+    closest.hit = true;
+    onHit(laneIdx, 'GOOD', now);
+  }
+}
+
+function burst(x, y, count, color, now) {} // implemented in Task 6
+
+function onTap(e) {
+  e.preventDefault();
+  ensureAudio();
+  const { x, y } = getXY(e);
+
+  if (handleMusicToggleTap(x, y)) return;
+
+  if (state === 'title') {
+    startGame();
+    return;
+  }
+
+  if (state === 'gameover') {
+    if (x > W/2 - 80 && x < W/2 + 80 && y > H/2 + 30 && y < H/2 + 74) {
+      startGame();
+    }
+    if (x > W/2 - 105 && x < W/2 + 105 && y > H/2 + 88 && y < H/2 + 126) {
+      showFeedbackForm();
+    }
+    return;
+  }
+
+  if (state === 'playing') {
+    resolveHit(tapToLane(x), performance.now());
+  }
+}
+
+canvas.addEventListener('touchstart', onTap, { passive: false });
+canvas.addEventListener('click',      onTap);
+
+document.addEventListener('keydown', e => {
+  if (state !== 'playing') return;
+  const now = performance.now();
+  if (e.key === 'a' || e.key === 'A') resolveHit(0, now);
+  if (e.key === 's' || e.key === 'S') resolveHit(1, now);
+  if (e.key === 'd' || e.key === 'D') resolveHit(2, now);
+});
+
 function trySpawnNotes(now) {
   if (now - lastEighthTick < EIGHTH_MS * 0.9) return;
   lastEighthTick = now;
@@ -409,8 +493,51 @@ function drawNotes(now) {
   }
 }
 
-function onHit(laneIdx, quality, now) {}
-function onMiss(laneIdx, now) {}
+function onHit(laneIdx, quality, now) {
+  const prevStreak = streak;
+  streak++;
+
+  const pts = 100 * (quality === 'PERFECT' ? 2 : 1) * streakMultiplier();
+  score += pts;
+
+  playGuitar(laneIdx);
+  laneFlash[laneIdx] = now + (quality === 'PERFECT' ? 200 : 120);
+
+  const prevMult = prevStreak >= 24 ? 4 : prevStreak >= 16 ? 3 : prevStreak >= 8 ? 2 : 1;
+  const newMult  = streakMultiplier();
+  if (newMult > prevMult) {
+    milestoneFlash = { until: now + 150, color: LANES[laneIdx].color };
+    shakeUntil     = now + 300;
+    shakeIntensity = 6;
+  }
+
+  const label = quality === 'PERFECT' ? 'PERFECT!' : 'GOOD';
+  const color = quality === 'PERFECT' ? '#FFD700'  : '#4CAF50';
+  feedbacks.push({ text: label, x: LANES[laneIdx].x, y: HIT_Y - 30, color, born: now });
+  burst(LANES[laneIdx].x, HIT_Y, quality === 'PERFECT' ? 12 : 6, LANES[laneIdx].color, now);
+}
+
+function onMiss(laneIdx, now) {
+  lives--;
+  streak = 0;
+  shakeUntil      = now + 200;
+  shakeIntensity  = 4;
+  laneRedFlash[laneIdx] = now + 220;
+
+  playMiss();
+  duckBeat(0.5);
+
+  feedbacks.push({ text: 'MISS', x: LANES[laneIdx].x, y: HIT_Y - 30, color: '#E74C3C', born: now });
+
+  if (lives <= 0) {
+    state = 'gameover';
+    stopBeat();
+    if (score > bestScore) {
+      bestScore = score;
+      localStorage.setItem('honkytonk_best', bestScore);
+    }
+  }
+}
 
 function drawTitle(now) {
   ctx.save();
