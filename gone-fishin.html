@@ -74,16 +74,18 @@ let ripples    = [];
 let popups     = [];
 
 let lure = { x: ROD_TIP.x, y: ROD_TIP.y, targetX: ROD_TIP.x, targetY: ROD_TIP.y, inWater: false };
-let tension    = 0;
-let hookedFish = null;
-let castPower  = 0;
-let castHeld   = false;
-let biteTimer  = 0;
-let gameTimer  = null;
-let castAnim   = null;
-let reelHeld   = false;
-let fightTimer = 0;
+let hookedFish    = null;
+let castPower     = 0;
+let castHeld      = false;
+let castTargetDepth = WATER_Y + 200; // set from pointer Y on press
+let biteTimer     = 0;
+let gameTimer     = null;
+let castAnim      = null;
 let nextSpawnTime = 0;
+// Reel state (tap-based)
+let reelProgress  = 100; // 100=fish at depth, 0=fish at surface (caught)
+let fishFighting  = false;
+let fightEndTime  = 0;
 
 function startGame() {
   state         = 'casting';
@@ -94,16 +96,17 @@ function startGame() {
   particles     = [];
   ripples       = [];
   popups        = [];
-  lure          = { x: ROD_TIP.x, y: ROD_TIP.y, targetX: ROD_TIP.x, targetY: ROD_TIP.y, inWater: false };
-  tension       = 0;
-  hookedFish    = null;
-  castPower     = 0;
-  castHeld      = false;
-  reelHeld      = false;
-  biteTimer     = 0;
-  castAnim      = null;
-  fightTimer    = 0;
-  nextSpawnTime = 0;
+  lure             = { x: ROD_TIP.x, y: ROD_TIP.y, targetX: ROD_TIP.x, targetY: ROD_TIP.y, inWater: false };
+  hookedFish       = null;
+  castPower        = 0;
+  castHeld         = false;
+  castTargetDepth  = WATER_Y + 200;
+  biteTimer        = 0;
+  castAnim         = null;
+  nextSpawnTime    = 0;
+  reelProgress     = 100;
+  fishFighting     = false;
+  fightEndTime     = 0;
   clearInterval(gameTimer);
   gameTimer = setInterval(() => {
     timeLeft = Math.max(0, timeLeft - 1);
@@ -461,12 +464,15 @@ let pointerStartTime = 0;
 function onPointerDown(e) {
   if (e.type === 'mousedown' && e.button !== 0) return;
   pointerStartTime = performance.now();
-  if (state === 'reeling') { reelHeld = true; return; }
+  // Record Y position for depth targeting (used when cast launches)
+  const r  = canvas.getBoundingClientRect();
+  const pt = e.touches ? e.touches[0] : e;
+  const tapY = (pt.clientY - r.top) * (H / r.height);
+  castTargetDepth = tapY;
   if (state === 'casting') { castHeld = true; castPower = 0; }
 }
 
 function onPointerUp(e) {
-  reelHeld = false;
   const held = performance.now() - pointerStartTime;
   const r  = canvas.getBoundingClientRect();
   const pt = e.changedTouches ? e.changedTouches[0] : e;
@@ -474,11 +480,9 @@ function onPointerUp(e) {
   const y  = (pt.clientY - r.top)  * (H / r.height);
 
   if (held < 220) {
-    // Short press — treat as tap
     castHeld = false;
     handleTap(x, y);
   } else if (state === 'casting' && castHeld) {
-    // Hold release — launch cast
     castHeld = false;
     launchCast();
   } else {
@@ -498,7 +502,9 @@ function launchCast() {
   castAnim = { t: 0, startX: ROD_TIP.x, startY: ROD_TIP.y, endX, endY: WATER_Y,
                peakX: lerp(ROD_TIP.x, endX, 0.6), peakY };
   lure.inWater = false;
-  lure.targetY = WATER_Y + lerp(20, 370, power);
+  // Depth comes from where the player pressed (Y position on canvas)
+  const depthFrac = clamp((castTargetDepth - WATER_Y) / (H - WATER_Y), 0.03, 0.95);
+  lure.targetY = WATER_Y + depthFrac * 380;
   lure.targetX = endX;
   state = 'waiting';
   playCast();
@@ -536,6 +542,8 @@ function updateCast(dt, now) {
 function drawPowerBar(now) {
   if (!castHeld || state !== 'casting') return;
   ctx.save();
+
+  // Power bar (distance left/right)
   const bx = W/2 - 70, by = H - 60, bw = 140, bh = 14;
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.fill();
@@ -543,7 +551,14 @@ function drawPowerBar(now) {
   ctx.fillStyle = barColor;
   ctx.beginPath(); ctx.roundRect(bx, by, bw * castPower, bh, 4); ctx.fill();
   ctx.fillStyle = '#E8DCC8'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('HOLD TO CAST', W/2, by - 6);
+  ctx.fillText('CAST DISTANCE', W/2, by - 6);
+
+  // Depth indicator (from where player is pressing)
+  const depthFrac = clamp((castTargetDepth - WATER_Y) / (H - WATER_Y), 0.03, 0.95);
+  const depthLabel = depthFrac < 0.25 ? 'Shallow' : depthFrac < 0.6 ? 'Mid' : 'Deep';
+  ctx.fillStyle = 'rgba(80,160,200,0.7)'; ctx.font = '11px sans-serif';
+  ctx.fillText(`Depth: ${depthLabel}`, W/2, by + bh + 14);
+
   ctx.restore();
 }
 
@@ -643,37 +658,44 @@ function drawFish(now) {
   ctx.restore();
 }
 
-// ── Reel ──────────────────────────────────────────────────
+// ── Reel (tap-based) ──────────────────────────────────────
+// Each tap cranks the fish upward. Fish periodically fights: reelProgress
+// moves back down and tapping is locked until the fight ends.
 function updateReel(dt, now) {
   if (state !== 'reeling' || !hookedFish) return;
 
-  if (reelHeld) {
-    tension += 15 * dt;
-    lure.y   = Math.max(WATER_Y + 10, lure.y - 60 * dt);
-    lure.x   = lerp(lure.x, W / 2, dt * 0.5);
-  } else {
-    tension -= 20 * dt;
+  // Advance or end a fight
+  if (fishFighting && now >= fightEndTime) {
+    fishFighting = false;
   }
 
-  if (now > fightTimer) {
-    fightTimer = now + 1200 + Math.random() * 1200;
-    tension += 25;
+  // During fight: fish slowly drifts back down
+  if (fishFighting) {
+    reelProgress = Math.min(100, reelProgress + 18 * dt);
   }
 
-  tension = clamp(tension, 0, 100);
+  // Sync lure Y to reelProgress
+  lure.y = lerp(WATER_Y + 15, lure.targetY, reelProgress / 100);
+  lure.x = lerp(lure.x, W / 2, dt * 0.4);
 
-  if (tension >= 100) {
-    hookedFish.state      = 'idle';
-    hookedFish.biteCharge = 0;
-    hookedFish = null;
-    state = 'casting';
-    lure.inWater = false;
-    lure.x = ROD_TIP.x; lure.y = ROD_TIP.y;
-    playLineBreak();
+  if (reelProgress <= 0) catchFish(now);
+}
+
+function reelTap(now) {
+  if (state !== 'reeling' || !hookedFish) return;
+  if (fishFighting) {
+    // Show "let it run" — trigger fight warning popup near lure
+    addPopup('Let it run!', W / 2, H / 2 - 30, '#e08030');
     return;
   }
-
-  if (lure.y <= WATER_Y + 15) catchFish(now);
+  // Reel in a chunk
+  reelProgress = Math.max(0, reelProgress - 8);
+  // Occasionally trigger a fight after a reel tap
+  if (!fishFighting && Math.random() < 0.18) {
+    fishFighting = true;
+    fightEndTime = now + 1200 + Math.random() * 800;
+    addPopup('Fish is running!', W / 2, H / 2 - 30, '#e04030');
+  }
 }
 
 function catchFish(now) {
@@ -799,33 +821,50 @@ function drawHUD(now) {
   ctx.fillText(`${mins}:${secs}`, W - 12, 22);
 
   if (state === 'reeling') {
+    // Progress bar: fish distance from surface (full=deep, empty=caught)
     const bx = 20, by = H - 44, bw = W - 40, bh = 16;
+    const prog = reelProgress / 100;
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     roundRect(ctx, bx, by, bw, bh, 6); ctx.fill();
-    const t = tension / 100;
-    const barColor = t > 0.8 ? '#e04020' : t > 0.5 ? '#e0a020' : '#40c060';
+    // Fill from right (progress empties left as fish rises)
+    const barColor = prog < 0.25 ? '#FFD700' : prog < 0.6 ? '#40c060' : '#4090c0';
     ctx.fillStyle = barColor;
-    roundRect(ctx, bx, by, bw * t, bh, 6); ctx.fill();
+    roundRect(ctx, bx, by, bw * prog, bh, 6); ctx.fill();
     ctx.fillStyle = '#E8DCC8'; ctx.font = '10px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('TENSION — hold to reel', W / 2, by + bh / 2);
+    ctx.fillText('REEL IN', W / 2, by + bh / 2);
 
-    if (t > 0.85) {
-      ctx.fillStyle = `rgba(200,40,20,${0.12 * Math.abs(Math.sin(now / 80))})`;
+    if (fishFighting) {
+      // Fight overlay flash
+      ctx.fillStyle = `rgba(200,80,20,${0.15 * Math.abs(Math.sin(now / 70))})`;
       ctx.fillRect(0, 0, W, H);
+      const pulse = 0.65 + 0.35 * Math.sin(now / 90);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle   = '#e08030'; ctx.font = 'bold 22px Georgia,serif';
+      ctx.shadowColor = '#e05010'; ctx.shadowBlur = 16;
+      ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('LET IT RUN!', W / 2, H / 2);
+      ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    } else {
+      const pulse = 0.7 + 0.3 * Math.sin(now / 200);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle   = '#E8DCC8'; ctx.font = '14px Georgia,serif';
+      ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('TAP to reel', W / 2, H / 2 + 80);
+      ctx.globalAlpha = 1;
     }
   }
 
   if (state === 'casting' && !castHeld) {
     ctx.fillStyle = 'rgba(255,220,150,0.55)'; ctx.font = '13px Georgia,serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillText('Hold to cast', W / 2, H - 20);
+    ctx.fillText('Hold to cast  ·  press low = deep  ·  press high = shallow', W / 2, H - 20);
   }
 
   if (state === 'waiting' && lure.inWater) {
-    ctx.fillStyle = 'rgba(160,200,220,0.5)'; ctx.font = '12px Georgia,serif';
+    ctx.fillStyle = 'rgba(160,200,220,0.45)'; ctx.font = '12px Georgia,serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillText('Watching…', W / 2, H - 20);
+    ctx.fillText('Watching…  tap to retrieve', W / 2, H - 20);
   }
 
   if (state === 'biting') {
@@ -869,8 +908,8 @@ function drawTitle(now) {
     ctx.fillText('Best: ' + bestScore.toLocaleString() + ' pts', W/2, H/2 + 22);
   }
 
-  ctx.fillStyle = '#444'; ctx.font = '12px sans-serif';
-  ctx.fillText('Hold to cast · Tap to hook · Hold to reel', W/2, H/2 + 52);
+  ctx.fillStyle = '#555'; ctx.font = '12px sans-serif';
+  ctx.fillText('Hold to cast  ·  Tap to hook  ·  Tap to reel', W/2, H/2 + 52);
 
   ctx.restore();
 }
@@ -1005,13 +1044,33 @@ function handleTap(x, y) {
   if (state === 'biting') {
     const biting = fish.find(f => f.state === 'biting');
     if (biting) {
-      hookedFish   = biting;
-      biting.state = 'hooked';
-      state        = 'reeling';
-      tension      = 20;
-      fightTimer   = performance.now() + 1200 + Math.random() * 1200;
+      hookedFish    = biting;
+      biting.state  = 'hooked';
+      state         = 'reeling';
+      reelProgress  = 100;
+      fishFighting  = false;
+      fightEndTime  = 0;
       playHook();
     }
+    return;
+  }
+
+  if (state === 'reeling') {
+    reelTap(performance.now());
+    return;
+  }
+
+  // Tap while waiting with lure in water → retrieve and recast
+  if (state === 'waiting' && lure.inWater) {
+    // Reset fish that were attracted
+    for (const f of fish) {
+      if (f.state === 'attracted' || f.state === 'biting') {
+        f.state = 'idle'; f.biteCharge = 0;
+      }
+    }
+    lure.inWater = false;
+    lure.x = ROD_TIP.x; lure.y = ROD_TIP.y;
+    state = 'casting';
     return;
   }
 }
