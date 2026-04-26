@@ -433,8 +433,11 @@ function drawParticles(now) {
 
 const FEEDBACK_DURATION_MS = 800;
 
-function drawFeedbacks(now) {
+function updateFeedbacks(now) {
   feedbacks = feedbacks.filter(f => now - f.born < FEEDBACK_DURATION_MS);
+}
+
+function drawFeedbacks(now) {
   for (const f of feedbacks) {
     const age   = now - f.born;
     const alpha = 1 - age / FEEDBACK_DURATION_MS;
@@ -673,6 +676,7 @@ function loop(now) {
     updateNotes(dt, now);
     checkDensity();
     updateParticles(dt, now);
+    updateFeedbacks(now);
   }
 
   ctx.save();
