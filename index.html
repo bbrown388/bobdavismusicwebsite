@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bob Davis — Games</title>
+<title>Bob Davis Music</title>
+<meta name="description" content="Bob Davis — Country, Outlaw, Hip-Hop. Singer-songwriter.">
+<meta property="og:title" content="Bob Davis Music">
+<meta property="og:description" content="Country · Outlaw · Hip-Hop">
+<meta property="og:image" content="https://ugc.production.linktr.ee/2862db21-8549-41b3-b556-e3715ac02740_PXL-20250830-230927306.RAW-01.MP.jpeg">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -15,138 +19,304 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 20px 64px;
+  padding: 52px 20px 72px;
 }
 
-header {
+/* ── Hero ── */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  margin-bottom: 56px;
+  margin-bottom: 36px;
+}
+
+.photo-ring {
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  padding: 3px;
+  background: linear-gradient(135deg, #FFD700, #b8860b, #FFD700);
+  margin-bottom: 24px;
+  box-shadow: 0 0 40px rgba(255,215,0,0.25);
+}
+
+.photo-ring img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+  background: #1a0a06;
 }
 
 h1 {
-  font-size: clamp(36px, 8vw, 58px);
+  font-size: clamp(38px, 10vw, 56px);
   color: #FFD700;
-  text-shadow: 0 0 40px rgba(255,215,0,0.45);
-  letter-spacing: 2px;
+  text-shadow: 0 0 40px rgba(255,215,0,0.4);
+  letter-spacing: 3px;
+  line-height: 1;
   margin-bottom: 10px;
 }
 
-.tagline {
+.genre {
+  font-size: 13px;
   color: #907860;
-  font-size: 15px;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
   font-style: italic;
 }
 
-.games {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  width: 100%;
-  max-width: 480px;
+/* ── Bio ── */
+.bio {
+  max-width: 420px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #C8B89A;
+  margin-bottom: 48px;
+  padding: 0 4px;
 }
 
-.card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,215,0,0.18);
-  border-radius: 14px;
-  padding: 24px 28px;
+/* ── Sections ── */
+section {
+  width: 100%;
+  max-width: 420px;
+  margin-bottom: 44px;
+}
+
+.section-label {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #555;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+/* ── Link buttons ── */
+.links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 15px 20px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: Georgia, serif;
+  font-weight: bold;
+  text-decoration: none;
+  letter-spacing: 0.5px;
+  border: 1px solid transparent;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.link-btn:hover  { filter: brightness(1.12); }
+.link-btn:active { transform: scale(0.97); }
+
+.link-btn.tiktok {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+  color: #E8DCC8;
+}
+
+.link-btn.instagram {
+  background: rgba(193,96,180,0.12);
+  border-color: rgba(193,96,180,0.3);
+  color: #e0a8d8;
+}
+
+.link-btn.facebook {
+  background: rgba(66,103,178,0.12);
+  border-color: rgba(66,103,178,0.3);
+  color: #a0b8f0;
+}
+
+.link-btn.venmo {
+  background: rgba(0,130,200,0.10);
+  border-color: rgba(0,130,200,0.25);
+  color: #90cce8;
+}
+
+.link-btn.paypal {
+  background: rgba(0,48,135,0.15);
+  border-color: rgba(0,48,135,0.3);
+  color: #a0b0e0;
+}
+
+/* ── Divider ── */
+.divider {
+  width: 40px;
+  height: 1px;
+  background: rgba(255,215,0,0.2);
+  margin: 0 auto 44px;
+}
+
+/* ── Games ── */
+.game-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.game-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,215,0,0.15);
+  border-radius: 12px;
+  padding: 18px 22px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
   text-decoration: none;
   transition: border-color 0.2s, background 0.2s;
 }
 
-.card:hover {
-  background: rgba(255,215,0,0.07);
-  border-color: rgba(255,215,0,0.5);
+.game-card:hover {
+  background: rgba(255,215,0,0.06);
+  border-color: rgba(255,215,0,0.4);
 }
 
-.card-info { flex: 1; }
+.game-card-info {}
 
-.card-number {
-  font-size: 11px;
-  color: #555;
+.game-num {
+  font-size: 10px;
+  color: #444;
   letter-spacing: 2px;
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
-.card-title {
-  font-size: 22px;
+.game-title {
+  font-size: 18px;
   color: #FFD700;
-  margin-bottom: 4px;
 }
 
-.card-desc {
-  font-size: 13px;
-  color: #907860;
+.game-desc {
+  font-size: 12px;
+  color: #705848;
+  margin-top: 2px;
 }
 
 .play-btn {
-  background: #FFD700;
-  color: #0d0608;
+  background: rgba(255,215,0,0.15);
+  border: 1px solid rgba(255,215,0,0.35);
+  color: #FFD700;
+  font-size: 12px;
+  font-family: sans-serif;
   font-weight: bold;
-  font-size: 14px;
-  padding: 10px 22px;
-  border-radius: 8px;
-  white-space: nowrap;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-radius: 7px;
   flex-shrink: 0;
 }
 
+/* ── Footer ── */
 footer {
-  margin-top: 64px;
+  margin-top: 16px;
   text-align: center;
-  color: #333;
-  font-size: 13px;
+  color: #2a1a14;
+  font-size: 12px;
+  letter-spacing: 1px;
 }
-
-footer a { color: #555; }
 </style>
 </head>
 <body>
 
-<header>
+<!-- Hero -->
+<div class="hero">
+  <div class="photo-ring">
+    <img
+      src="https://ugc.production.linktr.ee/2862db21-8549-41b3-b556-e3715ac02740_PXL-20250830-230927306.RAW-01.MP.jpeg?io=true&size=avatar-v3_0"
+      alt="Bob Davis"
+    >
+  </div>
   <h1>Bob Davis</h1>
-  <p class="tagline">Country · Outlaw · Hip-Hop</p>
-</header>
-
-<div class="games">
-
-  <a class="card" href="honky-tonk-v2.html">
-    <div class="card-info">
-      <div class="card-number">Game 03</div>
-      <div class="card-title">Honky Tonk</div>
-      <div class="card-desc">Rhythm game — tap the beat, play the melody</div>
-    </div>
-    <div class="play-btn">Play</div>
-  </a>
-
-  <a class="card" href="lasso-loop.html">
-    <div class="card-info">
-      <div class="card-number">Game 02</div>
-      <div class="card-title">Lasso Loop</div>
-      <div class="card-desc">Rope the notes before they escape</div>
-    </div>
-    <div class="play-btn">Play</div>
-  </a>
-
-  <a class="card" href="on-the-road.html">
-    <div class="card-info">
-      <div class="card-number">Game 01</div>
-      <div class="card-title">On the Road</div>
-      <div class="card-desc">Dodge the hazards, hit the highway</div>
-    </div>
-    <div class="play-btn">Play</div>
-  </a>
-
+  <p class="genre">Country &middot; Outlaw &middot; Hip-Hop</p>
 </div>
 
-<footer>
-  <p>bobdavismusic.com — coming soon</p>
-</footer>
+<!-- Bio -->
+<p class="bio">
+  Singer-songwriter walking the line between country soul, outlaw grit,
+  and hip-hop swagger. Writing honest songs from the open road — raw,
+  unfiltered, and real. Music coming soon.
+</p>
+
+<!-- Connect -->
+<section>
+  <p class="section-label">Connect</p>
+  <div class="links">
+    <a class="link-btn tiktok" href="https://www.tiktok.com/@bobdavismusic" target="_blank" rel="noopener">
+      TikTok &nbsp;@bobdavismusic
+    </a>
+    <a class="link-btn instagram" href="https://www.instagram.com/bobdavismusic" target="_blank" rel="noopener">
+      Instagram &nbsp;@bobdavismusic
+    </a>
+    <a class="link-btn facebook" href="https://www.facebook.com/share/1BQNcv6Zzt/" target="_blank" rel="noopener">
+      Facebook
+    </a>
+  </div>
+</section>
+
+<!-- Support -->
+<section>
+  <p class="section-label">Support the Music</p>
+  <div class="links">
+    <a class="link-btn venmo" href="https://venmo.com/bobdavismusic" target="_blank" rel="noopener">
+      Venmo &nbsp;@bobdavismusic
+    </a>
+    <a class="link-btn paypal" href="https://paypal.me/bobdavisbrown" target="_blank" rel="noopener">
+      PayPal &nbsp;@bobdavisbrown
+    </a>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- Games -->
+<section>
+  <p class="section-label">Games</p>
+  <div class="game-cards">
+
+    <a class="game-card" href="honky-tonk-v2.html">
+      <div class="game-card-info">
+        <div class="game-num">Game 03</div>
+        <div class="game-title">Honky Tonk</div>
+        <div class="game-desc">Rhythm game — tap the beat, play the melody</div>
+      </div>
+      <div class="play-btn">Play</div>
+    </a>
+
+    <a class="game-card" href="lasso-loop.html">
+      <div class="game-card-info">
+        <div class="game-num">Game 02</div>
+        <div class="game-title">Lasso Loop</div>
+        <div class="game-desc">Rope the notes before they escape</div>
+      </div>
+      <div class="play-btn">Play</div>
+    </a>
+
+    <a class="game-card" href="on-the-road.html">
+      <div class="game-card-info">
+        <div class="game-num">Game 01</div>
+        <div class="game-title">On the Road</div>
+        <div class="game-desc">Dodge the hazards, hit the highway</div>
+      </div>
+      <div class="play-btn">Play</div>
+    </a>
+
+  </div>
+</section>
+
+<footer>bobdavismusic.com</footer>
 
 </body>
 </html>
