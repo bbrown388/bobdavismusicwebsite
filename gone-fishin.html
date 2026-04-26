@@ -381,15 +381,19 @@ function drawScene(now) {
 // ── Rod & Line ────────────────────────────────────────────
 function drawRod() {
   ctx.save();
-  ctx.strokeStyle = '#3d1f00';
-  ctx.lineWidth   = 4;
+  // Shadow for visibility against dark background
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur  = 4;
+  ctx.strokeStyle = '#7a4010';
+  ctx.lineWidth   = 5;
   ctx.lineCap     = 'round';
   ctx.beginPath();
   ctx.moveTo(ROD_BASE.x, ROD_BASE.y);
   ctx.lineTo(ROD_TIP.x,  ROD_TIP.y);
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,180,80,0.2)';
-  ctx.lineWidth   = 1.5;
+  ctx.shadowBlur  = 0;
+  ctx.strokeStyle = 'rgba(255,180,80,0.35)';
+  ctx.lineWidth   = 2;
   ctx.stroke();
   ctx.restore();
 }
@@ -430,13 +434,16 @@ function drawLine(now) {
       ? Math.sin(now / 60) * 8
       : Math.sin(now / 800) * 2;
     const ly = WATER_Y + bob;
+    ctx.shadowColor = 'rgba(255,60,20,0.6)';
+    ctx.shadowBlur  = 6;
     ctx.fillStyle = '#f0f0f0';
-    ctx.beginPath(); ctx.arc(lure.x, ly, 6, 0, Math.PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(lure.x, ly, 8, 0, Math.PI); ctx.fill();
     ctx.fillStyle = '#e03020';
-    ctx.beginPath(); ctx.arc(lure.x, ly, 6, Math.PI, 0); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath(); ctx.arc(lure.x, ly, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(lure.x, ly, 8, Math.PI, 0); ctx.fill();
+    ctx.shadowBlur  = 0;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(lure.x, ly, 8, 0, Math.PI * 2); ctx.stroke();
   } else if (state === 'reeling' && hookedFish) {
     ctx.fillStyle = 'rgba(200,180,80,0.7)';
     ctx.beginPath(); ctx.arc(lure.x, lure.y, 4, 0, Math.PI * 2); ctx.fill();
@@ -446,24 +453,43 @@ function drawLine(now) {
 }
 
 // ── Cast mechanic ─────────────────────────────────────────
-canvas.addEventListener('touchstart', onHoldStart, { passive: false });
-canvas.addEventListener('mousedown',  onHoldStart);
-canvas.addEventListener('touchend',   onHoldEnd,   { passive: false });
-canvas.addEventListener('mouseup',    onHoldEnd);
+// Unified input: tap (<200ms) vs hold (≥200ms) detected on release.
+// This prevents the double-fire bug where touchstart sets castHeld AND
+// onTap fires simultaneously, causing an immediate zero-power cast.
+let pointerStartTime = 0;
 
-function onHoldStart(e) {
+function onPointerDown(e) {
+  if (e.type === 'mousedown' && e.button !== 0) return;
+  pointerStartTime = performance.now();
   if (state === 'reeling') { reelHeld = true; return; }
-  if (state !== 'casting') return;
-  castHeld  = true;
-  castPower = 0;
+  if (state === 'casting') { castHeld = true; castPower = 0; }
 }
 
-function onHoldEnd(e) {
+function onPointerUp(e) {
   reelHeld = false;
-  if (state !== 'casting' || !castHeld) return;
-  castHeld = false;
-  launchCast();
+  const held = performance.now() - pointerStartTime;
+  const r  = canvas.getBoundingClientRect();
+  const pt = e.changedTouches ? e.changedTouches[0] : e;
+  const x  = (pt.clientX - r.left) * (W / r.width);
+  const y  = (pt.clientY - r.top)  * (H / r.height);
+
+  if (held < 220) {
+    // Short press — treat as tap
+    castHeld = false;
+    handleTap(x, y);
+  } else if (state === 'casting' && castHeld) {
+    // Hold release — launch cast
+    castHeld = false;
+    launchCast();
+  } else {
+    castHeld = false;
+  }
 }
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); onPointerDown(e); }, { passive: false });
+canvas.addEventListener('mousedown',  onPointerDown);
+canvas.addEventListener('touchend',   e => { e.preventDefault(); onPointerUp(e); },   { passive: false });
+canvas.addEventListener('mouseup',    onPointerUp);
 
 function launchCast() {
   const power = castPower;
@@ -796,6 +822,12 @@ function drawHUD(now) {
     ctx.fillText('Hold to cast', W / 2, H - 20);
   }
 
+  if (state === 'waiting' && lure.inWater) {
+    ctx.fillStyle = 'rgba(160,200,220,0.5)'; ctx.font = '12px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('Watching…', W / 2, H - 20);
+  }
+
   if (state === 'biting') {
     const pulse = 0.7 + 0.3 * Math.sin(now / 80);
     ctx.globalAlpha  = pulse;
@@ -953,16 +985,11 @@ fbSubmitBtn.addEventListener('click', async () => {
   }
 });
 
-// ── Input (tap) ───────────────────────────────────────────
-function onTap(e) {
-  e.preventDefault();
+// ── Tap handler (called from onPointerUp for short presses) ──
+function handleTap(x, y) {
   if (feedbackOverlay.style.display === 'flex') return;
-  const r  = canvas.getBoundingClientRect();
-  const t0 = e.changedTouches ? e.changedTouches[0] : e;
-  const x  = (t0.clientX - r.left) * (W / r.width);
-  const y  = (t0.clientY - r.top)  * (H / r.height);
 
-  if (state === 'title')    { startGame(); return; }
+  if (state === 'title') { startGame(); return; }
 
   if (state === 'gameover') {
     if (x > W/2-80 && x < W/2+80 && y > H/2+28 && y < H/2+72) { startGame(); return; }
@@ -978,18 +1005,16 @@ function onTap(e) {
   if (state === 'biting') {
     const biting = fish.find(f => f.state === 'biting');
     if (biting) {
-      hookedFish        = biting;
-      biting.state      = 'hooked';
-      state             = 'reeling';
-      tension           = 20;
-      fightTimer        = performance.now() + 1200 + Math.random() * 1200;
+      hookedFish   = biting;
+      biting.state = 'hooked';
+      state        = 'reeling';
+      tension      = 20;
+      fightTimer   = performance.now() + 1200 + Math.random() * 1200;
       playHook();
     }
     return;
   }
 }
-canvas.addEventListener('touchstart', onTap, { passive: false });
-canvas.addEventListener('click',      onTap);
 
 // Missed bite check in main loop
 function checkBiteExpiry(now) {
