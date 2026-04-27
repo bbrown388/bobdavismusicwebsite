@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -44,7 +44,7 @@ const LANES = [
   { x: 180, color: '#FFD700' },  // gold   — C4
   { x: 288, color: '#C878F0' },  // purple — E4
 ];
-const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
 const MUSIC_SRC = '';
 
 const canvas = document.getElementById('c');
@@ -849,36 +849,27 @@ function hideFeedbackForm() {
   feedbackOverlay.style.display = 'none';
 }
 
-async function submitFeedback() {
+function submitFeedback() {
   if (fbRating === 0) {
     fbStatus.textContent = 'Please pick a star rating.';
     return;
   }
   fbStatus.textContent = 'Sending…';
   fbSubmitBtn.disabled = true;
-  try {
-    const res = await fetch(FEEDBACK_ENDPOINT, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({
-        game:            'Honky Tonk v2',
-        rating:          fbRating,
-        feedback:        fbText.value,
-        score:           score,
-        lives_remaining: Math.max(0, lives),
-      }),
-    });
-    if (res.ok) {
-      fbStatus.textContent = 'Thanks! 🤠';
-      setTimeout(hideFeedbackForm, 1500);
-    } else {
-      throw new Error('server error');
-    }
-  } catch {
-    fbStatus.textContent = "Couldn't send — try again.";
-    fbSubmitBtn.textContent = 'Retry';
-    fbSubmitBtn.disabled = false;
-  }
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({
+      game:            'Honky Tonk v2',
+      rating:          fbRating,
+      message:         fbText.value,
+      score:           score,
+      lives_remaining: Math.max(0, lives),
+    }),
+  }).finally(() => {
+    fbStatus.textContent = 'Thanks! 🤠';
+    setTimeout(hideFeedbackForm, 1500);
+  });
 }
 
 let lastTime = 0;

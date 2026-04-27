@@ -8,35 +8,32 @@ function classifyAndDecide(feedbackItems, state) {
     };
   }
 
-  const byGame = {};
-  for (const item of feedbackItems) {
-    if (!byGame[item.game]) byGame[item.game] = [];
-    byGame[item.game].push(item);
-  }
+  // Only fix an existing game if feedback explicitly requests it.
+  // App-specific feedback that doesn't request a fix is treated as general context.
+  const fixRequests = feedbackItems.filter(i => i.fixRequested && i.game && i.game !== 'general');
 
-  // Fix priority: game with lowest avg rating that has at least one low-rating complaint
-  let fixTarget = null, lowestAvg = Infinity;
-  for (const [game, items] of Object.entries(byGame)) {
-    const complaints = items.filter(i => i.rating <= 2);
-    if (!complaints.length) continue;
-    const avg = items.reduce((s, i) => s + i.rating, 0) / items.length;
-    if (avg < lowestAvg) { lowestAvg = avg; fixTarget = game; }
-  }
-
-  if (fixTarget) {
-    const complaints = byGame[fixTarget].filter(i => i.rating <= 2);
+  if (fixRequests.length) {
+    // Pick the game with the most fix requests
+    const byGame = {};
+    for (const item of fixRequests) {
+      byGame[item.game] = byGame[item.game] || [];
+      byGame[item.game].push(item);
+    }
+    const fixTarget = Object.entries(byGame)
+      .sort((a, b) => b[1].length - a[1].length)[0][0];
+    const context = byGame[fixTarget].map(c => c.message).filter(Boolean).join(' | ');
     return {
       action: 'fix',
       target: fixTarget,
-      context: complaints.map(c => c.feedback).filter(Boolean).join(' | '),
+      context,
       feedbackSummary: byGame[fixTarget],
     };
   }
 
-  // Recurring themes (2+ mentions of same word) across all feedback → inform next game
+  // All feedback (game-specific or general) informs the next game design.
   const themes = {};
   for (const item of feedbackItems) {
-    const words = (item.feedback || '').toLowerCase().split(/\W+/).filter(w => w.length > 4);
+    const words = (item.message || '').toLowerCase().split(/\W+/).filter(w => w.length > 4);
     for (const w of words) { themes[w] = (themes[w] || 0) + 1; }
   }
   const recurring = Object.entries(themes)
@@ -44,11 +41,15 @@ function classifyAndDecide(feedbackItems, state) {
     .sort((a, b) => b[1] - a[1])
     .map(([w]) => w);
 
+  // Collect all messages as context
+  const allMessages = feedbackItems.map(i => i.message).filter(Boolean);
+
   return {
     action: 'new_game',
-    context: recurring.length
-      ? `Player themes from feedback: ${recurring.join(', ')}`
-      : 'Positive feedback — raise the bar on next game',
+    context: [
+      recurring.length ? `Recurring themes: ${recurring.join(', ')}` : null,
+      allMessages.length ? `Player feedback: ${allMessages.join(' | ')}` : null,
+    ].filter(Boolean).join('. ') || 'Positive feedback — raise the bar on next game',
     target: null,
     recurringThemes: recurring,
   };

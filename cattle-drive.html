@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -39,7 +39,7 @@ const COW_SPEED_MAX  = 140;
 const WOLF_SPEED     = 78;
 const WOLF_STARTLE_SPEED = 190;
 
-const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
 const MUSIC_SRC = '';
 
 const BOULDERS = [
@@ -997,23 +997,17 @@ feedbackOverlay.querySelector('#fb-cancel').addEventListener('click', () => {
   feedbackOverlay.style.display = 'none';
 });
 
-fbSubmitBtn.addEventListener('click', async () => {
-  if (fbRating === 0) { fbStatus.textContent = 'Please pick a star rating.'; return; }
-  fbStatus.textContent = 'Sending…'; fbSubmitBtn.disabled = true;
-  try {
-    const res = await fetch(FEEDBACK_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ game: 'Cattle Drive', rating: fbRating, feedback: fbText.value, score }),
-    });
-    if (res.ok) {
-      fbStatus.textContent = 'Thanks! 🤠';
-      setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500);
-    } else throw new Error();
-  } catch {
-    fbStatus.textContent = "Couldn’t send — try again.";
-    fbSubmitBtn.textContent = 'Retry'; fbSubmitBtn.disabled = false;
-  }
+fbSubmitBtn.addEventListener(‘click’, () => {
+  if (fbRating === 0) { fbStatus.textContent = ‘Please pick a star rating.’; return; }
+  fbStatus.textContent = ‘Sending…’; fbSubmitBtn.disabled = true;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: ‘POST’,
+    mode: ‘no-cors’,
+    body: JSON.stringify({ game: ‘Cattle Drive’, rating: fbRating, message: fbText.value, score }),
+  }).finally(() => {
+    fbStatus.textContent = ‘Thanks! 🤠’;
+    setTimeout(() => { feedbackOverlay.style.display = ‘none’; }, 1500);
+  });
 });
 
 canvas.addEventListener('mousedown', e => {

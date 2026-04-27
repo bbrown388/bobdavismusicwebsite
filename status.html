@@ -222,6 +222,63 @@ function render(d) {
 }
 
 render(STATUS);
+
+// ── Feedback form ─────────────────────────────────────────────────────────
+const FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('fb-form');
+  const statusEl = document.getElementById('fb-form-status');
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const target  = document.getElementById('fb-target').value.trim() || 'general';
+    const message = document.getElementById('fb-message').value.trim();
+    const fix     = document.getElementById('fb-fix').checked;
+    if (!message) { statusEl.textContent = 'Please enter a message.'; return; }
+    statusEl.textContent = 'Sending…';
+    fetch(FEEDBACK_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({ game: target, message, fixRequested: fix }),
+    }).finally(() => {
+      statusEl.textContent = 'Sent. Director picks it up on next run.';
+      form.reset();
+    });
+  });
+});
 </script>
+
+<div style="margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,215,0,0.08);">
+  <div class="section-head">Leave feedback for the director</div>
+  <form id="fb-form" style="display:flex;flex-direction:column;gap:12px;">
+    <select id="fb-target" style="background:#1a0a06;color:#C8B89A;border:1px solid rgba(255,215,0,0.2);
+      border-radius:6px;padding:10px 12px;font-size:13px;font-family:'Courier New',monospace;">
+      <option value="general">General / next game</option>
+      <option value="Dust Devil">Upcoming: Dust Devil (Game 08)</option>
+      <option value="Wanted Poster">Upcoming: Wanted Poster (Game 09)</option>
+      <option value="Gold Rush">Upcoming: Gold Rush (Game 10)</option>
+      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+      <option value="Cattle Drive">Existing: Cattle Drive</option>
+      <option value="Outlaw Run">Existing: Outlaw Run</option>
+      <option value="Gone Fishin'">Existing: Gone Fishin'</option>
+      <option value="Honky Tonk">Existing: Honky Tonk</option>
+    </select>
+    <textarea id="fb-message" rows="4" placeholder="What's on your mind? Skip a game, change a concept, request a mechanic…"
+      style="background:#1a0a06;color:#E8DCC8;border:1px solid rgba(255,215,0,0.2);border-radius:6px;
+      padding:10px 12px;font-size:13px;font-family:'Courier New',monospace;resize:none;"></textarea>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#907860;cursor:pointer;">
+      <input id="fb-fix" type="checkbox" style="accent-color:#FFD700;">
+      Update the existing game (not just context for future games)
+    </label>
+    <button type="submit" style="background:rgba(255,215,0,0.12);border:1px solid rgba(255,215,0,0.3);
+      color:#FFD700;font-family:'Courier New',monospace;font-size:13px;letter-spacing:1px;
+      padding:10px 20px;border-radius:6px;cursor:pointer;text-transform:uppercase;">
+      Send to Director
+    </button>
+    <p id="fb-form-status" style="font-size:12px;color:#705848;min-height:16px;margin:0;"></p>
+  </form>
+</div>
+
 </body>
 </html>

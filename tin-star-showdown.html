@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -16,7 +16,7 @@ canvas { display: block; }
 <div id="wrap"><canvas id="c"></canvas></div>
 <script>
 const W = 360, H = 640;
-const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
 const MUSIC_SRC = '';
 
 const READY_MIN  = 1400;
@@ -802,22 +802,17 @@ feedbackOverlay.querySelector('#fb-cancel').addEventListener('click', () => {
   feedbackOverlay.style.display = 'none';
 });
 
-fbSubmitBtn.addEventListener('click', async () => {
+fbSubmitBtn.addEventListener('click', () => {
   if (fbRating === 0) { fbStatus.textContent = 'Please pick a star rating.'; return; }
   fbStatus.textContent = 'Sending…'; fbSubmitBtn.disabled = true;
-  try {
-    const res = await fetch(FEEDBACK_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ game: 'Tin Star Showdown', rating: fbRating,
-        feedback: fbText.value, score: matchWins }),
-    });
-    if (res.ok) { fbStatus.textContent = 'Thanks! 🤠'; setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500); }
-    else throw new Error();
-  } catch {
-    fbStatus.textContent = "Couldn't send — try again.";
-    fbSubmitBtn.textContent = 'Retry'; fbSubmitBtn.disabled = false;
-  }
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({ game: 'Tin Star Showdown', rating: fbRating, message: fbText.value, score: matchWins }),
+  }).finally(() => {
+    fbStatus.textContent = 'Thanks! 🤠';
+    setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500);
+  });
 });
 
 // ── Test hooks ─────────────────────────────────────────────

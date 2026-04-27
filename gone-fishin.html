@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -25,7 +25,7 @@ const ROD_TIP  = { x: 110, y: 140 };
 const BPM = 90;
 const BEAT_MS   = 60000 / BPM;
 const EIGHTH_MS = BEAT_MS / 2;
-const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
 
 const FISH_TYPES = [
   { name: 'Sunfish',     pts: 50,  w: 16, depthMin: WATER_Y+10,  depthMax: WATER_Y+120, speed: 55, rarity: 0.40, bold: 0.7  },
@@ -1005,24 +1005,17 @@ feedbackOverlay.querySelector('#fb-cancel').addEventListener('click', () => {
   feedbackOverlay.style.display = 'none';
 });
 
-fbSubmitBtn.addEventListener('click', async () => {
-  if (fbRating === 0) { fbStatus.textContent = 'Please pick a star rating.'; return; }
-  fbStatus.textContent = 'Sending…'; fbSubmitBtn.disabled = true;
-  try {
-    const res = await fetch(FEEDBACK_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ game: "Gone Fishin'", rating: fbRating,
-        feedback: fbText.value, score, fish_count: fishCount }),
-    });
-    if (res.ok) {
-      fbStatus.textContent = 'Thanks! 🤠';
-      setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500);
-    } else throw new Error();
-  } catch {
-    fbStatus.textContent = "Couldn’t send — try again.";
-    fbSubmitBtn.textContent = 'Retry'; fbSubmitBtn.disabled = false;
-  }
+fbSubmitBtn.addEventListener(‘click’, () => {
+  if (fbRating === 0) { fbStatus.textContent = ‘Please pick a star rating.’; return; }
+  fbStatus.textContent = ‘Sending…’; fbSubmitBtn.disabled = true;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: ‘POST’,
+    mode: ‘no-cors’,
+    body: JSON.stringify({ game: "Gone Fishin’", rating: fbRating, message: fbText.value, score, fish_count: fishCount }),
+  }).finally(() => {
+    fbStatus.textContent = ‘Thanks! 🤠’;
+    setTimeout(() => { feedbackOverlay.style.display = ‘none’; }, 1500);
+  });
 });
 
 // ── Tap handler (called from onPointerUp for short presses) ──
