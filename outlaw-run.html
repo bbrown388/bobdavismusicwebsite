@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Outlaw Run</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640, WORLD_H = 1920;
+const WIN_Y            = 100;
+const RIDER_SPEED      = 120;
+const SHERIFF_SPEED    = 80;
+const SHERIFF_DELAY    = 5000;
+const PROVISIONS_START = 100;
+const PROVISIONS_COST  = 1 / 12;
+const PROVISIONS_GAIN  = 35;
+const HALT_TIMEOUT     = 4;
+const CATCH_RADIUS     = 20;
+const CACHE_RADIUS     = 20;
+const PATH_SAMPLE      = 8;
+const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+
+const RIVER_TOP = 820, RIVER_BOTTOM = 1020;
+
+const ROCKS = [
+  { x: 55,  y: 1070, r: 28 }, { x: 145, y: 1110, r: 24 },
+  { x: 248, y: 1055, r: 34 }, { x: 95,  y: 1185, r: 27 },
+  { x: 292, y: 1195, r: 31 }, { x: 68,  y: 1275, r: 24 },
+  { x: 195, y: 1315, r: 29 }, { x: 305, y: 1355, r: 21 },
+  { x: 32,  y: 710,  r: 19 }, { x: 328, y: 745,  r: 21 },
+  { x: 170, y: 280,  r: 18 },
+];
+
+const FORDS = [
+  { x: 60,  y: 920, hw: 20 },
+  { x: 180, y: 940, hw: 20 },
+  { x: 300, y: 910, hw: 20 },
+];
+
+const FENCE_ROWS = [
+  { y: 480, gaps: [{ x0: 80, x1: 130 }, { x0: 255, x1: 305 }] },
+  { y: 590, gaps: [{ x0: 155, x1: 205 }] },
+];
+
+const CACHE_DEFS = [
+  { x: 90,  y: 1550, type: 'canteen'   },
+  { x: 262, y: 1450, type: 'saddlebag' },
+  { x: 160, y: 1200, type: 'ammo'      },
+  { x: 72,  y: 950,  type: 'canteen'   },
+  { x: 242, y: 762,  type: 'bedroll'   },
+  { x: 148, y: 520,  type: 'saddlebag' },
+];
+
+const WAYPOINTS = [
+  { x: 60,  y: 920 }, { x: 180, y: 940 }, { x: 300, y: 910 },
+  { x: 105, y: 480 }, { x: 280, y: 480 }, { x: 180, y: 590 },
+];
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+// ── State ─────────────────────────────────────────────────
+let state      = 'title';
+let score      = 0;
+let loseReason = '';
+let startTime  = 0;
+let bestScore  = parseInt(localStorage.getItem('outlaw_run_best') || '0', 10);
+
+let path         = [];
+let provisions   = PROVISIONS_START;
+let caches       = [];
+let particles    = [];
+let popups       = [];
+let cameraOffset = 0;
+let sheriffSpawnAt = 0;
+let haltTimer    = 0;
+let gallopAt     = 0;
+let drawing      = false;
+let lastDrawPt   = null;
+
+let rider = { worldX: W / 2, worldY: 1680, pathIdx: 0, pathT: 0, moving: false };
+let sheriff = { worldX: W + 60, worldY: 1600, active: false, waypointTarget: null, recalcAt: 0 };
+
+function startGame() {
+  state          = 'playing';
+  score          = 0;
+  loseReason     = '';
+  startTime      = performance.now();
+  path           = [];
+  provisions     = PROVISIONS_START;
+  caches         = CACHE_DEFS.map(c => ({ ...c, collected: false }));
+  particles      = [];
+  popups         = [];
+  haltTimer      = 0;
+  gallopAt       = 0;
+  drawing        = false;
+  lastDrawPt     = null;
+  rider          = { worldX: W / 2, worldY: 1680, pathIdx: 0, pathT: 0, moving: false };
+  sheriff        = { worldX: W + 60, worldY: 1600, active: false, waypointTarget: null, recalcAt: 0 };
+  sheriffSpawnAt = performance.now() + SHERIFF_DELAY;
+  updateCamera();
+  ensureAudio().then(() => startBeat());
+}
+
+function triggerWin() {
+  if (state !== 'playing') return;
+  state = 'win';
+  const elapsed = (performance.now() - startTime) / 1000;
+  const parTime = 60;
+  const bonus   = Math.round(clamp((parTime - elapsed) / parTime, 0, 1) * 500);
+  score = Math.round(provisions * 10 + bonus);
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('outlaw_run_best', bestScore);
+  }
+  stopBeat();
+  playWin();
+}
+
+function triggerLose(reason) {
+  if (state !== 'playing') return;
+  state      = 'lose';
+  loseReason = reason;
+  score      = Math.round(provisions * 10);
+  stopBeat();
+  playLose();
+}
+
+// ── Camera ────────────────────────────────────────────────
+function updateCamera() {
+  const target = Math.round(H * 0.75 - rider.worldY);
+  cameraOffset = clamp(target, H - WORLD_H, 0);
+}
+
+function screenToWorld(sx, sy) {
+  return { x: sx, y: sy - cameraOffset };
+}
+
+// ── Collision helpers ─────────────────────────────────────
+function isInRiver(p) {
+  if (p.y < RIVER_TOP || p.y > RIVER_BOTTOM) return false;
+  for (const f of FORDS) {
+    if (Math.abs(p.x - f.x) < f.hw) return false;
+  }
+  return true;
+}
+
+function isInRock(p, extraR = 14) {
+  for (const r of ROCKS) {
+    if (dist2(p, r) < r.r + extraR) return true;
+  }
+  return false;
+}
+
+function isInFence(p, margin = 8) {
+  for (const row of FENCE_ROWS) {
+    if (Math.abs(p.y - row.y) > margin) continue;
+    let inGap = false;
+    for (const g of row.gaps) { if (p.x >= g.x0 && p.x <= g.x1) { inGap = true; break; } }
+    if (!inGap) return true;
+  }
+  return false;
+}
+
+function isBlocked(p) {
+  return isInRock(p, 14) || isInRiver(p) || isInFence(p, 8);
+}
+
+function lineClear(a, b) {
+  const steps = Math.max(2, Math.ceil(dist2(a, b) / 20));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const p = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+    if (isInRock(p, 0)) return false;
+    if (isInRiver(p))   return false;
+    if (isInFence(p, 4)) return false;
+  }
+  return true;
+}
+
+// ── Input ─────────────────────────────────────────────────
+function getCanvasPoint(e) {
+  const r  = canvas.getBoundingClientRect();
+  const pt = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+  return {
+    x: (pt.clientX - r.left) * (W / r.width),
+    y: (pt.clientY - r.top)  * (H / r.height),
+  };
+}
+
+function onPointerDown(e) {
+  const p = getCanvasPoint(e);
+  if (state === 'title')                    { startGame(); return; }
+  if (state === 'win' || state === 'lose')  { state = 'title'; return; }
+  if (state !== 'playing') return;
+  drawing    = true;
+  lastDrawPt = screenToWorld(p.x, p.y);
+}
+
+function onPointerMove(e) {
+  if (!drawing || state !== 'playing') return;
+  const p  = getCanvasPoint(e);
+  const wp = screenToWorld(p.x, p.y);
+  if (!lastDrawPt) { lastDrawPt = wp; return; }
+  const d = dist2(wp, lastDrawPt);
+  if (d < PATH_SAMPLE) return;
+
+  if (isBlocked(wp)) { drawing = false; return; }
+
+  const cost = d * PROVISIONS_COST;
+  if (provisions <= 0) return;
+  provisions = Math.max(0, provisions - cost);
+
+  path.push({ x: wp.x, y: wp.y });
+  lastDrawPt = wp;
+
+  for (const c of caches) {
+    if (!c.collected && dist2(wp, c) < CACHE_RADIUS) {
+      c.collected = true;
+      provisions  = Math.min(PROVISIONS_START, provisions + PROVISIONS_GAIN);
+      addPopup('+Supplies', c.x, c.y - 20, '#FFD700');
+      playPickup();
+    }
+  }
+}
+
+function onPointerUp() { drawing = false; }
+
+canvas.addEventListener('touchstart',  e => { e.preventDefault(); onPointerDown(e); }, { passive: false });
+canvas.addEventListener('touchmove',   e => { e.preventDefault(); onPointerMove(e); }, { passive: false });
+canvas.addEventListener('touchend',    e => { e.preventDefault(); onPointerUp();    }, { passive: false });
+canvas.addEventListener('touchcancel', () => { onPointerUp(); },                        { passive: false });
+canvas.addEventListener('mousedown',   onPointerDown);
+canvas.addEventListener('mousemove',   onPointerMove);
+canvas.addEventListener('mouseup',     onPointerUp);
+
+// ── Update functions ──────────────────────────────────────
+function updateRider(dt, now) {
+  if (state !== 'playing') return;
+
+  if (rider.pathIdx >= path.length - 1) {
+    rider.moving = false;
+    if (provisions <= 0) {
+      haltTimer += dt;
+      if (haltTimer >= HALT_TIMEOUT) { triggerLose('Stranded!'); return; }
+    } else {
+      haltTimer = 0;
+    }
+    return;
+  }
+
+  rider.moving = true;
+  haltTimer = 0;
+
+  let distLeft = RIDER_SPEED * dt;
+  while (distLeft > 0 && rider.pathIdx < path.length - 1) {
+    const a = path[rider.pathIdx];
+    const b = path[rider.pathIdx + 1];
+    const segLen = dist2(a, b) || 0.001;
+    const remaining = segLen * (1 - rider.pathT);
+    if (distLeft >= remaining) {
+      rider.pathIdx++;
+      rider.pathT = 0;
+      distLeft -= remaining;
+    } else {
+      rider.pathT += distLeft / segLen;
+      distLeft = 0;
+    }
+  }
+
+  if (rider.pathIdx < path.length - 1) {
+    const a = path[rider.pathIdx], b = path[rider.pathIdx + 1];
+    rider.worldX = lerp(a.x, b.x, rider.pathT);
+    rider.worldY = lerp(a.y, b.y, rider.pathT);
+  } else if (path.length > 0) {
+    const last = path[path.length - 1];
+    rider.worldX = last.x; rider.worldY = last.y;
+  }
+
+  if (rider.worldY <= WIN_Y) { triggerWin(); return; }
+
+  const rp = { x: rider.worldX, y: rider.worldY };
+  if (isInRock(rp, 14))    { triggerLose('Wrecked!'); return; }
+  if (isInRiver(rp))       { triggerLose('Swept Away!'); return; }
+  if (isInFence(rp, 6))    { triggerLose('Fenced In!'); return; }
+
+  if (now > gallopAt + 300) {
+    addDust(rider.worldX, rider.worldY);
+    gallopAt = now;
+    playGallop();
+  }
+}
+
+function updateSheriff(dt, now) {
+  if (state !== 'playing') return;
+  if (!sheriff.active) {
+    if (now >= sheriffSpawnAt) sheriff.active = true;
+    else return;
+  }
+
+  const target = { x: rider.worldX, y: rider.worldY };
+
+  if (now > sheriff.recalcAt) {
+    sheriff.recalcAt = now + 500;
+    const sPos = { x: sheriff.worldX, y: sheriff.worldY };
+    if (lineClear(sPos, target)) {
+      sheriff.waypointTarget = null;
+    } else {
+      let best = null, bestDist = Infinity;
+      for (const wp of WAYPOINTS) {
+        const d = dist2(sPos, wp) + dist2(wp, target);
+        if (d < bestDist) { bestDist = d; best = wp; }
+      }
+      sheriff.waypointTarget = best;
+    }
+  }
+
+  const moveTo = sheriff.waypointTarget || target;
+  const dx = moveTo.x - sheriff.worldX;
+  const dy = moveTo.y - sheriff.worldY;
+  const d  = Math.hypot(dx, dy) || 1;
+  const step = SHERIFF_SPEED * dt;
+
+  if (d <= step) {
+    sheriff.worldX = moveTo.x;
+    sheriff.worldY = moveTo.y;
+    if (sheriff.waypointTarget) sheriff.waypointTarget = null;
+  } else {
+    sheriff.worldX += (dx / d) * step;
+    sheriff.worldY += (dy / d) * step;
+  }
+
+  if (dist2({ x: sheriff.worldX, y: sheriff.worldY }, target) < CATCH_RADIUS) {
+    triggerLose('Caught!');
+  }
+}
+
+function updateParticles(dt, now) {
+  particles = particles.filter(p => now - p.born < p.life * 1000);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; }
+}
+
+function updatePopups(now) {
+  popups = popups.filter(p => now - p.born < p.life);
+}
+
+// ── Particle / popup helpers ──────────────────────────────
+function addDust(x, y) {
+  const now = performance.now();
+  for (let i = 0; i < 3; i++) {
+    const a = Math.random() * Math.PI * 2;
+    particles.push({
+      x, y, vx: Math.cos(a) * 20, vy: Math.sin(a) * 20 - 15,
+      r: 1.5 + Math.random(), born: now, life: 0.4, color: '#C8A04A',
+    });
+  }
+}
+
+function addBurst(x, y, count, color) {
+  const now = performance.now();
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2, spd = 60 + Math.random() * 100;
+    particles.push({
+      x, y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 40,
+      r: 2 + Math.random() * 3, born: now, life: 0.7, color,
+    });
+  }
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, color, born: performance.now(), life: 1000 });
+}
+
+// ── Draw functions ────────────────────────────────────────
+function drawTerrain(now) {
+  ctx.save();
+
+  // Zone fills
+  ctx.fillStyle = '#C8A04A'; ctx.fillRect(0, 1380, W, WORLD_H - 1380); // open flats 1
+  ctx.fillStyle = '#B89040'; ctx.fillRect(0, 1020, W, 360);              // rock canyon
+  ctx.fillStyle = '#2a4a6a'; ctx.fillRect(0, RIVER_TOP, W, RIVER_BOTTOM - RIVER_TOP); // river
+  ctx.fillStyle = '#C8A04A'; ctx.fillRect(0, 680, W, 140);               // open flats 2
+  ctx.fillStyle = '#B89040'; ctx.fillRect(0, 380, W, 300);               // fence maze
+  ctx.fillStyle = '#C8A04A'; ctx.fillRect(0, 120, W, 260);               // final run
+
+  // Sky strip (hideout zone)
+  const sky = ctx.createLinearGradient(0, 0, 0, 120);
+  sky.addColorStop(0, '#1a0d35'); sky.addColorStop(1, '#8B3A1A');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, 120);
+
+  // Ford crossings
+  for (const f of FORDS) {
+    ctx.fillStyle = '#5a9aba';
+    ctx.fillRect(f.x - f.hw, RIVER_TOP, f.hw * 2, RIVER_BOTTOM - RIVER_TOP);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '8px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('FORD', f.x, (RIVER_TOP + RIVER_BOTTOM) / 2);
+  }
+
+  // Water shimmer
+  const shimX = ((now / 1800) % 1) * (W + 40) - 20;
+  const shimG = ctx.createLinearGradient(shimX - 20, 0, shimX + 20, 0);
+  shimG.addColorStop(0, 'rgba(255,255,255,0)');
+  shimG.addColorStop(0.5, 'rgba(255,255,255,0.1)');
+  shimG.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = shimG;
+  ctx.fillRect(0, RIVER_TOP, W, RIVER_BOTTOM - RIVER_TOP);
+
+  // Rocks
+  for (const r of ROCKS) {
+    ctx.fillStyle = '#3a2a1a';
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a3a2a';
+    ctx.beginPath(); ctx.arc(r.x - r.r * 0.3, r.y - r.r * 0.3, r.r * 0.45, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Fences
+  for (const row of FENCE_ROWS) {
+    const sortedGaps = [...row.gaps].sort((a, b) => a.x0 - b.x0);
+    const segments = [];
+    let x = 0;
+    for (const g of sortedGaps) {
+      if (x < g.x0) segments.push({ x0: x, x1: g.x0 });
+      x = g.x1;
+    }
+    if (x < W) segments.push({ x0: x, x1: W });
+
+    ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    for (const seg of segments) {
+      ctx.beginPath(); ctx.moveTo(seg.x0, row.y); ctx.lineTo(seg.x1, row.y); ctx.stroke();
+    }
+    ctx.fillStyle = '#4a2a10';
+    for (let px = 0; px < W; px += 30) {
+      const inGap = sortedGaps.some(g => px >= g.x0 && px <= g.x1);
+      if (!inGap) ctx.fillRect(px - 2, row.y - 8, 4, 16);
+    }
+
+    // Gap hint markers
+    ctx.strokeStyle = 'rgba(255,220,100,0.35)'; ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    for (const g of row.gaps) {
+      ctx.beginPath(); ctx.moveTo(g.x0, row.y - 12); ctx.lineTo(g.x0, row.y + 12); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(g.x1, row.y - 12); ctx.lineTo(g.x1, row.y + 12); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Hideout cabin
+  ctx.fillStyle = '#3a2510';
+  ctx.fillRect(W/2 - 22, 44, 44, 32);
+  ctx.fillStyle = '#2a1808';
+  ctx.beginPath();
+  ctx.moveTo(W/2 - 30, 44); ctx.lineTo(W/2, 18); ctx.lineTo(W/2 + 30, 44);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1a0a04'; ctx.fillRect(W/2 - 6, 58, 12, 18); // door
+
+  const glow = ctx.createRadialGradient(W/2, 60, 2, W/2, 60, 28);
+  glow.addColorStop(0, 'rgba(255,224,102,0.55)');
+  glow.addColorStop(1, 'rgba(255,224,102,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(W/2, 60, 28, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 8px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('HIDEOUT', W/2, 80);
+
+  // Zone labels (subtle)
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+  ctx.fillText('FENCE MAZE', W - 6, 385);
+  ctx.fillText('ROCK CANYON', W - 6, 1025);
+
+  ctx.restore();
+}
+
+function drawPath() {
+  if (path.length < 2) return;
+  ctx.save();
+  ctx.lineWidth   = 2.5;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.setLineDash([8, 6]);
+
+  // Behind rider — faded
+  const behind = path.slice(0, rider.pathIdx + 1);
+  if (behind.length >= 2) {
+    ctx.strokeStyle = 'rgba(255,215,0,0.2)';
+    ctx.beginPath();
+    ctx.moveTo(behind[0].x, behind[0].y);
+    for (let i = 1; i < behind.length; i++) ctx.lineTo(behind[i].x, behind[i].y);
+    ctx.stroke();
+  }
+
+  // Ahead — bright
+  const ahead = path.slice(rider.pathIdx);
+  if (ahead.length >= 2) {
+    ctx.strokeStyle = '#FFD700';
+    ctx.globalAlpha = 0.88;
+    ctx.beginPath();
+    ctx.moveTo(ahead[0].x, ahead[0].y);
+    for (let i = 1; i < ahead.length; i++) ctx.lineTo(ahead[i].x, ahead[i].y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.setLineDash([]);
+
+  // Arrowhead at tip
+  if (path.length >= 2) {
+    const a = path[path.length - 2], b = path[path.length - 1];
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    ctx.fillStyle = 'rgba(255,215,0,0.75)';
+    ctx.beginPath();
+    ctx.moveTo(b.x + Math.cos(angle) * 9, b.y + Math.sin(angle) * 9);
+    ctx.lineTo(b.x + Math.cos(angle + 2.4) * 5, b.y + Math.sin(angle + 2.4) * 5);
+    ctx.lineTo(b.x + Math.cos(angle - 2.4) * 5, b.y + Math.sin(angle - 2.4) * 5);
+    ctx.closePath(); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawCaches() {
+  ctx.save();
+  const icons = { canteen: '≋', saddlebag: '◈', ammo: '▸', bedroll: '≡' };
+  for (const c of caches) {
+    if (c.collected) continue;
+    ctx.strokeStyle = 'rgba(255,215,0,0.45)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(c.x, c.y, 14, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#3a2510';
+    ctx.beginPath(); ctx.arc(c.x, c.y, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(icons[c.type] || '•', c.x, c.y);
+  }
+  ctx.restore();
+}
+
+function drawRider(now) {
+  ctx.save();
+  ctx.translate(rider.worldX, rider.worldY);
+  const legBob = rider.moving ? Math.sin(now / 80) * 3 : 0;
+
+  // Horse body
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.ellipse(0, 2, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Legs
+  ctx.strokeStyle = '#1a0520'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  [-8, -3, 3, 8].forEach((lx, i) => {
+    ctx.beginPath();
+    ctx.moveTo(lx, 6);
+    ctx.lineTo(lx + (i % 2 === 0 ? legBob : -legBob), 14);
+    ctx.stroke();
+  });
+
+  // Head / neck
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.ellipse(12, -1, 5, 4, 0.5, 0, Math.PI * 2); ctx.fill();
+
+  // Rider torso
+  ctx.beginPath(); ctx.ellipse(1, -6, 5, 8, 0.15, 0, Math.PI * 2); ctx.fill();
+
+  // Hat brim + crown
+  ctx.fillRect(-5, -15, 14, 3);
+  ctx.beginPath(); ctx.arc(2, -15, 5, Math.PI, 0); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawSheriff() {
+  if (!sheriff.active) return;
+  ctx.save();
+  ctx.translate(sheriff.worldX, sheriff.worldY);
+
+  // Horse body — red tint
+  ctx.fillStyle = '#5a1010';
+  ctx.beginPath(); ctx.ellipse(0, 2, 16, 9, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Head
+  ctx.beginPath(); ctx.ellipse(14, -1, 6, 4, 0.5, 0, Math.PI * 2); ctx.fill();
+
+  // Torso
+  ctx.fillStyle = '#6a1010';
+  ctx.beginPath(); ctx.ellipse(1, -6, 6, 9, 0.15, 0, Math.PI * 2); ctx.fill();
+
+  // Wide sheriff hat
+  ctx.fillStyle = '#3a0808';
+  ctx.fillRect(-7, -16, 20, 3);
+  ctx.beginPath(); ctx.arc(3, -16, 9, Math.PI, 0); ctx.fill();
+
+  // Badge
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('★', 2, -7);
+
+  ctx.restore();
+}
+
+function drawParticles(now) {
+  ctx.save();
+  for (const p of particles) {
+    const age = Math.max(0, (now - p.born) / (p.life * 1000));
+    ctx.globalAlpha = 1 - age;
+    ctx.fillStyle   = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.r * (1 - age * 0.5)), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPopups(now) {
+  ctx.save();
+  for (const p of popups) {
+    const age = Math.max(0, (now - p.born) / p.life);
+    ctx.globalAlpha  = age < 0.6 ? 1 : 1 - (age - 0.6) / 0.4;
+    ctx.fillStyle    = p.color;
+    ctx.font         = 'bold 14px Georgia,serif';
+    ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y - age * 35);
+  }
+  ctx.restore();
+}
+
+function drawHUD(now) {
+  if (state !== 'playing') return;
+  ctx.save();
+
+  // Provisions bar
+  const bx = 12, by = H - 32, bw = 140, bh = 14;
+  const pct = clamp(provisions / PROVISIONS_START, 0, 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 5); ctx.fill();
+  if (pct > 0) {
+    const barColor = pct < 0.25 ? '#e05030' : pct < 0.5 ? '#e0a030' : '#e8a020';
+    ctx.fillStyle = barColor;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw * pct, bh, 5); ctx.fill();
+  }
+  ctx.fillStyle = '#E8DCC8'; ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText('PROVISIONS', bx, by - 2);
+
+  // Distance bar (top center)
+  const totalDist = 1680 - WIN_Y;
+  const traveled  = clamp(1680 - rider.worldY, 0, totalDist);
+  const distPct   = traveled / totalDist;
+  const dx = W/2 - 60, dy = 10, dw = 120, dh = 12;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.roundRect(dx, dy, dw, dh, 4); ctx.fill();
+  if (distPct > 0) {
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath(); ctx.roundRect(dx, dy, dw * distPct, dh, 4); ctx.fill();
+  }
+  ctx.fillStyle = '#E8DCC8'; ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('TO HIDEOUT', W/2, dy - 1);
+
+  // Sheriff badge (top right)
+  if (sheriff.active) {
+    const sd     = dist2({ x: sheriff.worldX, y: sheriff.worldY }, { x: rider.worldX, y: rider.worldY });
+    const danger = sd < 300;
+    const pulse  = danger ? (0.6 + 0.4 * Math.sin(now / 100)) : 0.55;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle   = danger ? '#e03020' : '#706050';
+    ctx.font = '20px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText('★', W - 10, 8);
+    ctx.globalAlpha = 1;
+  }
+
+  // Stranded warning
+  if (!rider.moving && provisions <= 0 && haltTimer > 0) {
+    const remaining = Math.max(0, HALT_TIMEOUT - haltTimer);
+    ctx.fillStyle = `rgba(200,60,20,${0.12 + 0.1 * Math.sin(now / 60)})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#e05030'; ctx.font = 'bold 20px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#e05030'; ctx.shadowBlur = 12;
+    ctx.fillText('STRANDED! ' + remaining.toFixed(1) + 's', W/2, H/2);
+    ctx.shadowBlur = 0;
+  }
+
+  // Draw hint
+  if (path.length === 0 && haltTimer === 0) {
+    ctx.fillStyle = 'rgba(255,220,150,0.55)'; ctx.font = '13px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('Draw to ride — reach the hideout', W/2, H - 42);
+  }
+
+  ctx.restore();
+}
+
+function drawTitle(now) {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#1a0d35'); sky.addColorStop(0.5, '#8B3A1A'); sky.addColorStop(1, '#C8A04A');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  // Silhouette hills
+  ctx.fillStyle = '#0d1a0f';
+  ctx.beginPath(); ctx.moveTo(0, H * 0.65);
+  [0,50,90,130,170,220,270,310,360].forEach((x, i) => {
+    ctx.lineTo(x, H * 0.65 - [20,45,30,55,25,40,35,50,15][i]);
+  });
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 46px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 28;
+  ctx.fillText('Outlaw Run', W/2, H/2 - 90);
+
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 600);
+  ctx.fillStyle = '#A09070'; ctx.font = '18px Georgia,serif';
+  ctx.fillText('Tap to ride', W/2, H/2 - 22);
+  ctx.globalAlpha = 1;
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#70584a'; ctx.font = '13px sans-serif';
+    ctx.fillText('Best: ' + bestScore.toLocaleString(), W/2, H/2 + 16);
+  }
+  ctx.fillStyle = '#554030'; ctx.font = '12px sans-serif';
+  ctx.fillText('Draw your escape route', W/2, H/2 + 50);
+  ctx.restore();
+}
+
+function drawWinLose(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,10,15,0.9)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  if (state === 'win') {
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 40px Georgia,serif';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 22;
+    ctx.fillText('ESCAPED!', W/2, H/2 - 118);
+    ctx.shadowBlur = 0;
+    addBurst(W/2, H/2 - 80, 12, '#FFD700');
+  } else {
+    ctx.fillStyle = '#e05030'; ctx.font = 'bold 34px Georgia,serif';
+    ctx.fillText(loseReason || 'CAUGHT!', W/2, H/2 - 118);
+  }
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 26px sans-serif';
+  ctx.fillText(score.toLocaleString() + ' pts', W/2, H/2 - 68);
+
+  if (state === 'win' && score > 0 && score >= bestScore) {
+    const pulse = 0.75 + 0.25 * Math.sin(now / 180);
+    ctx.globalAlpha = pulse; ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+    ctx.fillText('NEW RECORD!', W/2, H/2 - 36);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  ctx.fillStyle = '#907860'; ctx.font = '13px sans-serif';
+  ctx.fillText('Best: ' + bestScore.toLocaleString(), W/2, H/2 - 12);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath(); ctx.roundRect(W/2 - 80, H/2 + 20, 160, 44, 10); ctx.fill();
+  ctx.fillStyle = '#0d0608'; ctx.font = 'bold 18px sans-serif';
+  ctx.fillText('Ride Again', W/2, H/2 + 42);
+
+  ctx.fillStyle = 'rgba(255,215,0,0.1)';
+  ctx.beginPath(); ctx.roundRect(W/2 - 105, H/2 + 76, 210, 36, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(W/2 - 105, H/2 + 76, 210, 36, 8); ctx.stroke();
+  ctx.fillStyle = '#907860'; ctx.font = '13px sans-serif';
+  ctx.fillText('Tell Us What You Think 🤠', W/2, H/2 + 94);
+
+  ctx.restore();
+}
+
+// ── Audio ─────────────────────────────────────────────────
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = AC.createGain();
+masterGain.connect(AC.destination);
+masterGain.gain.setValueAtTime(1.0, AC.currentTime);
+
+async function ensureAudio() {
+  if (AC.state === 'suspended') await AC.resume();
+}
+canvas.addEventListener('touchstart', () => ensureAudio(), { once: true });
+canvas.addEventListener('mousedown',  () => ensureAudio(), { once: true });
+
+const CHORD_BARS = [
+  [196, 247, 294, 247, 196, 247, 294, 247],
+  [262, 330, 392, 330, 262, 330, 392, 330],
+  [294, 370, 440, 370, 294, 370, 440, 370],
+  [196, 247, 294, 247, 196, 247, 294, 247],
+];
+const BPM = 95;
+const EIGHTH_S = (60 / BPM) / 2;
+
+function scheduleNote(freq, t, gain) {
+  const osc = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
+  osc.connect(f); f.connect(g); g.connect(masterGain);
+  osc.type = 'triangle'; f.type = 'lowpass'; f.frequency.value = 900; f.Q.value = 0.8;
+  osc.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+  osc.start(t); osc.stop(t + 0.32);
+}
+
+let beatTimer = null, nextBarTime = 0, barIndex = 0;
+
+function startBeat() {
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.setValueAtTime(1.0, AC.currentTime);
+  nextBarTime = AC.currentTime + 0.05;
+  barIndex    = 0;
+  function tick() {
+    const barDur = EIGHTH_S * 8;
+    while (nextBarTime < AC.currentTime + 2.0) {
+      const bar = CHORD_BARS[barIndex % CHORD_BARS.length];
+      bar.forEach((freq, i) => scheduleNote(freq, nextBarTime + i * EIGHTH_S, i % 2 === 0 ? 0.28 : 0.14));
+      nextBarTime += barDur;
+      barIndex++;
+    }
+    beatTimer = setTimeout(tick, 500);
+  }
+  tick();
+}
+
+function stopBeat() {
+  if (beatTimer) { clearTimeout(beatTimer); beatTimer = null; }
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0, AC.currentTime + 0.15);
+  setTimeout(() => masterGain.gain.setValueAtTime(1.0, AC.currentTime), 300);
+}
+
+function playPickup() {
+  [392, 494].forEach((freq, i) => {
+    const t = AC.currentTime + i * 0.08;
+    const osc = AC.createOscillator(), g = AC.createGain();
+    osc.connect(g); g.connect(masterGain);
+    osc.type = 'triangle'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.14, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.start(t); osc.stop(t + 0.18);
+  });
+}
+
+function playWin() {
+  [392, 494, 587, 784].forEach((freq, i) => {
+    const t = AC.currentTime + i * 0.09;
+    const osc = AC.createOscillator(), g = AC.createGain();
+    osc.connect(g); g.connect(masterGain);
+    osc.type = 'triangle'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.start(t); osc.stop(t + 0.28);
+  });
+}
+
+function playLose() {
+  [330, 247].forEach((freq, i) => {
+    const t = AC.currentTime + i * 0.15;
+    const osc = AC.createOscillator(), g = AC.createGain();
+    osc.connect(g); g.connect(masterGain);
+    osc.type = 'square'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.start(t); osc.stop(t + 0.25);
+  });
+}
+
+function playGallop() {
+  const len = Math.floor(AC.sampleRate * 0.06);
+  const buf = AC.createBuffer(1, len, AC.sampleRate);
+  const d   = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = AC.createBufferSource(), lpf = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = buf; lpf.type = 'lowpass'; lpf.frequency.value = 180; g.gain.value = 0.07;
+  src.connect(lpf); lpf.connect(g); g.connect(masterGain);
+  src.start(); src.stop(AC.currentTime + 0.06);
+}
+
+// ── Feedback overlay ──────────────────────────────────────
+const feedbackOverlay = document.createElement('div');
+feedbackOverlay.id = 'feedback-overlay';
+feedbackOverlay.style.cssText = 'display:none;position:absolute;top:0;left:0;width:100%;height:100%;' +
+  'flex-direction:column;align-items:center;justify-content:center;gap:14px;' +
+  'background:rgba(10,4,8,0.97);border:2px solid #FFD700;box-sizing:border-box;padding:28px;z-index:10;';
+feedbackOverlay.innerHTML = `
+  <h2 style="color:#FFD700;font-family:serif;font-size:22px;margin:0;text-align:center;">Tell Us What You Think &#x1F920;</h2>
+  <div id="stars" style="display:flex;gap:10px;font-size:34px;cursor:pointer;user-select:none;">
+    <span data-v="1" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="2" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="3" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="4" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="5" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+  </div>
+  <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+    style="width:100%;max-width:300px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;
+    border-radius:6px;padding:10px;font-size:14px;resize:none;font-family:sans-serif;"></textarea>
+  <button id="fb-submit" style="background:#FFD700;color:#0d0608;font-weight:bold;font-size:16px;
+    padding:10px 36px;border:none;border-radius:8px;cursor:pointer;">Submit</button>
+  <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:14px;
+    cursor:pointer;text-decoration:underline;">Cancel</button>
+  <p id="fb-status" style="color:#A09070;font-size:13px;min-height:18px;margin:0;text-align:center;"></p>
+`;
+wrap.appendChild(feedbackOverlay);
+
+const starSpans   = feedbackOverlay.querySelectorAll('#stars span');
+const fbText      = feedbackOverlay.querySelector('#fb-text');
+const fbStatus    = feedbackOverlay.querySelector('#fb-status');
+const fbSubmitBtn = feedbackOverlay.querySelector('#fb-submit');
+let fbRating = 0;
+
+starSpans.forEach(span => {
+  span.addEventListener('click', () => {
+    fbRating = parseInt(span.dataset.v, 10);
+    starSpans.forEach(s => {
+      const v = parseInt(s.dataset.v, 10);
+      s.textContent = v <= fbRating ? '★' : '☆';
+      s.style.color = v <= fbRating ? '#FFD700' : 'rgba(255,215,0,0.4)';
+    });
+  });
+});
+
+feedbackOverlay.querySelector('#fb-cancel').addEventListener('click', () => {
+  feedbackOverlay.style.display = 'none';
+});
+
+fbSubmitBtn.addEventListener('click', async () => {
+  if (fbRating === 0) { fbStatus.textContent = 'Please pick a star rating.'; return; }
+  fbStatus.textContent = 'Sending…'; fbSubmitBtn.disabled = true;
+  try {
+    const res = await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ game: 'Outlaw Run', rating: fbRating,
+        feedback: fbText.value, score }),
+    });
+    if (res.ok) {
+      fbStatus.textContent = 'Thanks! 🤠';
+      setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500);
+    } else throw new Error();
+  } catch {
+    fbStatus.textContent = "Couldn't send — try again.";
+    fbSubmitBtn.textContent = 'Retry'; fbSubmitBtn.disabled = false;
+  }
+});
+
+// Tap on "Tell Us" button in win/lose overlay
+canvas.addEventListener('mousedown', e => {
+  if (feedbackOverlay.style.display === 'flex') return;
+  if (state !== 'win' && state !== 'lose') return;
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (W / r.width);
+  const y = (e.clientY - r.top)  * (H / r.height);
+  if (x > W/2-105 && x < W/2+105 && y > H/2+76 && y < H/2+112) {
+    fbRating = 0; fbText.value = ''; fbStatus.textContent = '';
+    fbSubmitBtn.textContent = 'Submit'; fbSubmitBtn.disabled = false;
+    starSpans.forEach(s => { s.textContent = '☆'; s.style.color = 'rgba(255,215,0,0.4)'; });
+    feedbackOverlay.style.display = 'flex';
+  }
+});
+
+// ── Main loop ─────────────────────────────────────────────
+let lastTime = 0;
+function loop(now) {
+  try {
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+
+    if (state === 'playing') {
+      updateCamera();
+      updateRider(dt, now);
+      updateSheriff(dt, now);
+      updateParticles(dt, now);
+      updatePopups(now);
+    }
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (state === 'title') {
+      drawTitle(now);
+    } else if (state === 'playing') {
+      ctx.save();
+      ctx.translate(0, cameraOffset);
+      drawTerrain(now);
+      drawPath();
+      drawCaches();
+      drawParticles(now);
+      drawRider(now);
+      drawSheriff();
+      ctx.restore();
+      // Screen-space elements (no camera offset)
+      drawPopups(now);
+      drawHUD(now);
+    } else {
+      // win or lose — draw scene behind overlay
+      ctx.save();
+      ctx.translate(0, cameraOffset);
+      drawTerrain(now);
+      drawPath();
+      drawRider(now);
+      ctx.restore();
+      drawParticles(now);
+      drawWinLose(now);
+    }
+  } catch(e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(t => { lastTime = t; loop(t); });
+</script>
+</body>
+</html>
