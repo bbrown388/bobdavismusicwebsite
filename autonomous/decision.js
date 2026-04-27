@@ -30,7 +30,7 @@ function classifyAndDecide(feedbackItems, state) {
     };
   }
 
-  // All feedback (game-specific or general) informs the next game design.
+  // All feedback informs the next game design. Pass full items so director can act on specifics.
   const themes = {};
   for (const item of feedbackItems) {
     const words = (item.message || '').toLowerCase().split(/\W+/).filter(w => w.length > 4);
@@ -41,17 +41,16 @@ function classifyAndDecide(feedbackItems, state) {
     .sort((a, b) => b[1] - a[1])
     .map(([w]) => w);
 
-  // Collect all messages as context
-  const allMessages = feedbackItems.map(i => i.message).filter(Boolean);
-
   return {
     action: 'new_game',
-    context: [
-      recurring.length ? `Recurring themes: ${recurring.join(', ')}` : null,
-      allMessages.length ? `Player feedback: ${allMessages.join(' | ')}` : null,
-    ].filter(Boolean).join('. ') || 'Positive feedback — raise the bar on next game',
+    context: 'See feedbackItems for specific instructions — read each one carefully before proceeding.',
     target: null,
     recurringThemes: recurring,
+    feedbackItems: feedbackItems.map(i => ({
+      game:         i.game || 'general',
+      message:      i.message || '',
+      fixRequested: i.fixRequested || false,
+    })),
   };
 }
 

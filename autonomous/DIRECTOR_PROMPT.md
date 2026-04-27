@@ -55,7 +55,16 @@ Read that output and act on it per the instructions below.
 
 ## If action = "new_game"
 
-1. Read `context` and `recurringThemes` to understand player desires
+1. **Read `feedbackItems` first — act on each one before anything else.**
+
+   Each item has `game`, `message`, and `fixRequested`. Process them in this order:
+
+   - **Queue/order instructions** (e.g. "skip Dust Devil", "do Wanted Poster first", "re-order games"): update `gameQueue` in `autonomous/status.json`, `director-status.json`, and `status.html` immediately. Commit: `git commit -m "chore: update game queue per feedback"`
+   - **Upcoming game feedback** (game field matches a title in the queue): note it — incorporate this direction when building that game. If it's the game you're about to build, shape the concept around it.
+   - **General feedback** (game = "general"): factor into the concept for the next game.
+
+   If there are no feedbackItems, proceed normally.
+
 2. Read `docs/game-dev-knowledge/index.md` — know what games exist, what bar to clear
 3. Read `docs/game-dev-knowledge/brand.md` — Bob Davis identity, aesthetic rules
 4. Read the most recent retrospective for action items
