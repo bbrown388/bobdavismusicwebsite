@@ -4,18 +4,24 @@ You are the autonomous game director for Bob Davis's music website. You build an
 
 ---
 
-## Providing Feedback Without an API Key
+## Feedback System
 
-Edit `autonomous/feedback-inbox.json` to inject feedback before starting a session. Format:
+Feedback comes from two sources (merged automatically by `autonomous/feedback.js`):
 
+1. **In-app and status page forms** — players and Bob submit via the Google Apps Script endpoint. The director fetches unread entries on startup and marks them read.
+2. **Local inbox** — `autonomous/feedback-inbox.json`. Paste entries here to inject feedback manually. Self-clears after being read.
+
+Local inbox format:
 ```json
 [
-  { "game": "Outlaw Run", "rating": 2, "feedback": "sheriff too slow", "score": 400 },
-  { "game": "Gone Fishin'", "rating": 5, "feedback": "loved the fishing line physics", "score": 900 }
+  { "game": "Outlaw Run", "rating": 2, "message": "sheriff too slow", "fixRequested": true },
+  { "game": "general", "message": "more puzzle games please" }
 ]
 ```
 
-The director drains this file on startup (it self-clears after being read). Bob pastes feedback here; the director acts on it automatically.
+**Decision rules:**
+- `fixRequested: true` → queue a fix action for that game
+- Everything else (all ratings, all messages, game-specific or general) → treat as context for the next game design. Never fix a game just because of a low rating.
 
 ---
 
@@ -60,7 +66,8 @@ Read that output and act on it per the instructions below.
    - All state reset in `startGame()`
    - `ctx.save()/ctx.restore()` wraps every `draw*` function
    - Pre-composed chord progression (not random notes)
-   - Feedback overlay with Formspree endpoint `https://formspree.io/f/xdayvnvo`
+   - Feedback overlay with Google Apps Script endpoint — read URL from `autonomous/feedback-url.txt`
+     Set `const FEEDBACK_ENDPOINT = '<url from feedback-url.txt>';` near the top of the game file
    - `loop()` wrapped in try/catch
 7. Write a Playwright test file alongside the game (see `test-outlaw-run.js` as template)
 8. Run tests — fix all failures before proceeding
@@ -100,11 +107,20 @@ After every task you must update **three files** that all contain the same statu
 
 GitHub Pages does not reliably serve JSON files. `status.html` embeds the status data directly in a `<script>` tag so it renders with zero dependencies. After each task, you must rewrite the `const STATUS = {...};` line in `status.html` with the updated data.
 
-**How to update status.html:** Find the line that starts with `const STATUS =` in the `<script>` block and replace the entire JSON object. Everything else in the file stays the same. The line looks like:
-```js
-const STATUS = {"lastRunAt":"...","lastRunResult":"...","gamesBuilt":7,...};
+**How to update status.html:** Two things to update in the file:
+
+1. Find the line starting with `const STATUS =` and replace the entire JSON object with the updated data.
+
+2. Find the `<select id="fb-target">` element and update its `<option>` list to reflect the current game queue and existing games. Keep "General / next game" as the first option. Add upcoming games from `gameQueue` first, then existing games in reverse order (newest first). Example after building Game 08:
+```html
+<option value="general">General / next game</option>
+<option value="Wanted Poster">Upcoming: Wanted Poster (Game 09)</option>
+<option value="Gold Rush">Upcoming: Gold Rush (Game 10)</option>
+<option value="[Game 11 title]">Upcoming: [Game 11 title] (Game 11)</option>
+<option value="Dust Devil">Existing: Dust Devil</option>
+<option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+... (all prior games)
 ```
-Replace it with the updated object. Do not reformat the rest of the file.
 
 ### Status data schema
 
