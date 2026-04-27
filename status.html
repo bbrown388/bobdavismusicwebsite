@@ -22,7 +22,7 @@ a { color: inherit; text-decoration: none; }
 .back {
   display: inline-block;
   font-size: 12px;
-  color: #443328;
+  color: #705848;
   letter-spacing: 1px;
   margin-bottom: 36px;
 }
@@ -38,7 +38,7 @@ h1 {
 
 .subtitle {
   font-size: 11px;
-  color: #443328;
+  color: #705848;
   letter-spacing: 2px;
   margin-bottom: 36px;
 }
@@ -67,14 +67,14 @@ h1 {
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
 .status-text { font-size: 13px; color: #C8B89A; }
-.status-time { font-size: 11px; color: #443328; margin-left: auto; }
+.status-time { font-size: 11px; color: #705848; margin-left: auto; }
 
 /* ── Section headings ── */
 .section-head {
   font-size: 10px;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: #443328;
+  color: #705848;
   margin-bottom: 12px;
   padding-bottom: 6px;
   border-bottom: 1px solid rgba(255,215,0,0.08);
@@ -89,7 +89,7 @@ h1 {
   font-size: 13px;
   color: #C8B89A;
 }
-.current-task.none { color: #443328; font-style: italic; }
+.current-task.none { color: #705848; font-style: italic; }
 
 /* ── Queue ── */
 .queue { margin-bottom: 32px; }
@@ -105,7 +105,7 @@ h1 {
   background: rgba(255,215,0,0.03);
 }
 
-.queue-num { font-size: 10px; color: #443328; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 3px; }
+.queue-num { font-size: 10px; color: #705848; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 3px; }
 .queue-title { font-size: 15px; color: #FFD700; margin-bottom: 5px; }
 .queue-concept { font-size: 12px; color: #705848; line-height: 1.5; margin-bottom: 5px; }
 .queue-bar { font-size: 11px; color: #4aaa60; }
@@ -133,7 +133,7 @@ h1 {
   font-size: 12px;
 }
 .log-entry:last-child { border-bottom: none; }
-.log-time { color: #443328; }
+.log-time { color: #705848; }
 .log-result { }
 .log-result.success { color: #4aaa60; }
 .log-result.warning { color: #e0a030; }
@@ -148,7 +148,7 @@ h1 {
   letter-spacing: -2px;
   line-height: 1;
 }
-.games-label { font-size: 11px; color: #443328; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; margin-bottom: 32px; }
+.games-label { font-size: 11px; color: #705848; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; margin-bottom: 32px; }
 
 .error-box {
   padding: 16px 18px;
@@ -168,7 +168,11 @@ h1 {
 <h1>Game Director</h1>
 <p class="subtitle">Autonomous status — last updated each session</p>
 
-<div id="app"><p style="color:#443328;font-size:13px">Loading status…</p></div>
+<div id="app">
+  <div style="color:#907860;font-size:13px;padding:14px 18px;border:1px solid rgba(255,215,0,0.1);border-radius:8px;">
+    Loading status…
+  </div>
+</div>
 
 <script>
 const STATUS_URL = 'autonomous/status.json';
@@ -224,8 +228,11 @@ function renderLog(log) {
 async function load() {
   const app = document.getElementById('app');
   try {
-    const res = await fetch(STATUS_URL + '?t=' + Date.now());
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(STATUS_URL + '?t=' + Date.now(), { signal: controller.signal });
+    clearTimeout(tid);
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' — status.json not found. May still be deploying.');
     const d = await res.json();
 
     const dotHtml = statusDot(d.currentTask ? 'working' : d.lastRunResult);
