@@ -55,17 +55,23 @@ Read that output and act on it per the instructions below.
 
 ## If action = "new_game"
 
-1. **Read `feedbackItems` first — act on each one before anything else.**
+1. **Read the current queue and confirm the plan before doing anything else.**
 
-   Each item has `game`, `message`, and `fixRequested`. Process them in this order:
+   - Read `autonomous/status.json` — note the current `gameQueue` order. The first entry is what you will build this session.
+   - Read `feedbackItems` from the EXECUTE payload. Even if empty, the queue may have been updated by a prior run based on earlier feedback.
 
-   - **Queue/order instructions** (e.g. "skip Dust Devil", "do Wanted Poster first", "re-order games"): update `gameQueue` in `autonomous/status.json`, `director-status.json`, and `status.html` immediately. Commit: `git commit -m "chore: update game queue per feedback"`
-   - **Upcoming game feedback** (game field matches a title in the queue): note it — incorporate this direction when building that game. If it's the game you're about to build, shape the concept around it.
-   - **General feedback** (game = "general"): factor into the concept for the next game.
+2. **Act on each feedbackItem before touching any game files.**
 
-   If there are no feedbackItems, proceed normally.
+   Each item has `game`, `message`, and `fixRequested`. Process in this order:
 
-2. Read `docs/game-dev-knowledge/index.md` — know what games exist, what bar to clear
+   - **Queue/order instructions** ("skip X", "do Y next", "do Y after Z", "don't do X"): update `gameQueue` immediately. "Do Y after Z" means Y goes to the position directly after Z — not at the end. Update `autonomous/status.json`, `director-status.json`, and `status.html`. Commit: `git commit -m "chore: update game queue per feedback"`
+   - **Feedback targeting the game you are about to build** (game field matches first entry in queue): incorporate this direction into the design — treat it as a design constraint, not optional context.
+   - **Feedback targeting a future queued game**: attach a note to yourself and incorporate when you build that game.
+   - **General feedback** (game = "general"): factor into concept direction.
+
+   After processing all feedbackItems, re-read the queue to confirm which game is now first. That is what you build.
+
+3. Read `docs/game-dev-knowledge/index.md` — know what games exist, what bar to clear
 3. Read `docs/game-dev-knowledge/brand.md` — Bob Davis identity, aesthetic rules
 4. Read the most recent retrospective for action items
 5. Brainstorm a concept that is **distinctly different** from all prior games and more impressive in at least 2 dimensions
