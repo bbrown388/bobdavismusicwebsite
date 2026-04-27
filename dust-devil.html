@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dust Devil</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const SLUG = 'dust_devil';
+
+// Physics constants
+const GRAVITY       = 210;    // px/s²
+const DRAG          = 0.986;  // multiplier per frame at 60fps (~0.42 per second)
+const GUST_POWER    = 245;    // px/s impulse per gust
+const MAX_V         = 460;    // px/s per-axis speed cap
+const GUST_COOLDOWN = 0.20;   // seconds between gusts
+const TW_RADIUS     = 18;     // tumbleweed radius
+
+// World constants
+const SCROLL_BASE        = 108;  // px/s starting wall scroll speed
+const WALL_WIDTH_HALF    = 24;   // half-width of each wall column
+const WALL_INTERVAL_BASE = 1.85; // seconds between walls
+const GAP_HALF_START     = 98;   // gap half-height at score 0
+const GAP_HALF_MIN       = 52;   // gap half-height at max difficulty
+
+// ── Canvas setup ──────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ──────────────────────────────────────────────────
+let ac = null;
+function initAudio() {
+  if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playGust() {
+  try {
+    initAudio();
+    const buf  = ac.createBuffer(1, ac.sampleRate * 0.16, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (data.length * 0.25)) * 0.35;
+    }
+    const src  = ac.createBufferSource();
+    const filt = ac.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.frequency.value = 850;
+    filt.Q.value = 0.9;
+    const gain = ac.createGain();
+    gain.gain.setValueAtTime(0.55, ac.currentTime);
+    gain.gain.linearRampToValueAtTime(0, ac.currentTime + 0.16);
+    src.buffer = buf;
+    src.connect(filt);
+    filt.connect(gain);
+    gain.connect(ac.destination);
+    src.start();
+  } catch {}
+}
+
+function playImpact() {
+  try {
+    initAudio();
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(100, ac.currentTime);
+    osc.frequency.linearRampToValueAtTime(35, ac.currentTime + 0.22);
+    gain.gain.setValueAtTime(0.55, ac.currentTime);
+    gain.gain.linearRampToValueAtTime(0, ac.currentTime + 0.28);
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.start();
+    osc.stop(ac.currentTime + 0.28);
+  } catch {}
+}
+
+// Looping ambient wind noise during play
+let windNode = null;
+function startWind() {
+  if (windNode) return;
+  try {
+    initAudio();
+    const buf  = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    windNode = ac.createBufferSource();
+    windNode.buffer = buf;
+    windNode.loop   = true;
+    const filt = ac.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = 260;
+    const gain = ac.createGain();
+    gain.gain.value = 0.07;
+    windNode.connect(filt);
+    filt.connect(gain);
+    gain.connect(ac.destination);
+    windNode.start();
+  } catch {}
+}
+
+function stopWind() {
+  if (!windNode) return;
+  try { windNode.stop(); } catch {}
+  windNode = null;
+}
+
+// Optional music slot
+let musicEl = null;
+if (MUSIC_SRC) { musicEl = new Audio(MUSIC_SRC); musicEl.loop = true; }
+
+// ── Game state ─────────────────────────────────────────────
+let gameState = 'title';
+let score     = 0;
+let bestScore = parseInt(localStorage.getItem(SLUG + '_best') || '0', 10);
+let prevTime  = 0;
+
+// Tumbleweed physics
+let tw = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
+
+// Wall columns: { x, gapY, gapHalf, scored }
+let walls = [];
+
+// Timing
+let gustCooldown  = 0;
+let wallTimer     = 0;
+
+// Visual effects
+let particles  = []; // { x, y, vx, vy, life, maxLife, r }
+let gustRings  = []; // { x, y, r, life }
+let popups     = []; // { x, y, text, life, color }
+
+// ── Helpers ────────────────────────────────────────────────
+function gapHalfForScore(s) {
+  return GAP_HALF_START - (GAP_HALF_START - GAP_HALF_MIN) * Math.min(s / 16, 1);
+}
+
+function wallIntervalForScore(s) {
+  return Math.max(0.95, WALL_INTERVAL_BASE - s * 0.04);
+}
+
+function scrollSpeedForScore(s) {
+  return SCROLL_BASE + s * 3.2;
+}
+
+function circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
+  if (rh <= 0 || rw <= 0) return false;
+  const nx = Math.max(rx, Math.min(cx, rx + rw));
+  const ny = Math.max(ry, Math.min(cy, ry + rh));
+  return Math.hypot(cx - nx, cy - ny) < cr;
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+// ── Game control ───────────────────────────────────────────
+function startGame() {
+  score      = 0;
+  walls      = [];
+  particles  = [];
+  gustRings  = [];
+  popups     = [];
+  gustCooldown  = 0;
+  wallTimer  = WALL_INTERVAL_BASE * 0.5; // spawn first wall soon
+  tw = { x: W / 2, y: H * 0.42, vx: 0, vy: 0, angle: 0 };
+  gameState  = 'playing';
+  startWind();
+  if (musicEl) musicEl.play().catch(() => {});
+}
+
+function endGame() {
+  gameState = 'over';
+  stopWind();
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem(SLUG + '_best', bestScore);
+  }
+  playImpact();
+}
+
+function spawnWall(gapY, gapHalf) {
+  const gh = gapHalf !== undefined ? gapHalf : gapHalfForScore(score);
+  const gy = gapY   !== undefined ? gapY   : (150 + Math.random() * (H - 300));
+  walls.push({ x: W + WALL_WIDTH_HALF + 10, gapY: gy, gapHalf: gh, scored: false });
+}
+
+function applyGust(tapX, tapY) {
+  if (gustCooldown > 0) return;
+  const dx = tw.x - tapX;
+  const dy = tw.y - tapY;
+  const d  = Math.hypot(dx, dy) || 1;
+  tw.vx = Math.max(-MAX_V, Math.min(MAX_V, tw.vx + (dx / d) * GUST_POWER));
+  tw.vy = Math.max(-MAX_V, Math.min(MAX_V, tw.vy + (dy / d) * GUST_POWER));
+  gustCooldown = GUST_COOLDOWN;
+  gustRings.push({ x: tapX, y: tapY, r: 10, life: 0.3 });
+  playGust();
+  particles.push(
+    { x: tapX, y: tapY, vx: (Math.random()-0.5)*40, vy: (Math.random()-0.5)*40, life: 0.4, maxLife: 0.4, r: 4 },
+    { x: tapX, y: tapY, vx: (Math.random()-0.5)*60, vy: (Math.random()-0.5)*60, life: 0.3, maxLife: 0.3, r: 3 }
+  );
+}
+
+// ── Update ─────────────────────────────────────────────────
+function update(dt) {
+  if (gameState !== 'playing') return;
+
+  gustCooldown = Math.max(0, gustCooldown - dt);
+
+  // Physics
+  tw.vy += GRAVITY * dt;
+  const dragFactor = Math.pow(DRAG, dt * 60);
+  tw.vx *= dragFactor;
+  tw.vy *= dragFactor;
+  tw.x  += tw.vx * dt;
+  tw.y  += tw.vy * dt;
+  // Rolling angle accumulates proportionally to horizontal movement
+  tw.angle += tw.vx * dt * 0.055;
+
+  // Boundary death
+  if (tw.y - TW_RADIUS < 0 || tw.y + TW_RADIUS > H) { endGame(); return; }
+  if (tw.x + TW_RADIUS < 0 || tw.x - TW_RADIUS > W) { endGame(); return; }
+
+  // Spawn walls
+  wallTimer += dt;
+  if (wallTimer >= wallIntervalForScore(score)) {
+    wallTimer = 0;
+    spawnWall();
+  }
+
+  // Scroll + score + collision
+  const spd = scrollSpeedForScore(score);
+  for (let i = walls.length - 1; i >= 0; i--) {
+    const w = walls[i];
+    w.x -= spd * dt;
+
+    // Score when tumbleweed fully clears the right edge of the wall
+    if (!w.scored && w.x + WALL_WIDTH_HALF < tw.x - TW_RADIUS) {
+      w.scored = true;
+      score++;
+      popups.push({ x: tw.x, y: tw.y - 34, text: '+1', life: 0.8, color: '#FFE066' });
+    }
+
+    // Wall collision — two rectangles (top section + bottom section)
+    const topH   = w.gapY - w.gapHalf;           // height of top rock
+    const botTop = w.gapY + w.gapHalf;             // y where bottom rock starts
+    const wx     = w.x - WALL_WIDTH_HALF;
+    const ww     = WALL_WIDTH_HALF * 2;
+    if (
+      (topH > 0 && circleRectCollide(tw.x, tw.y, TW_RADIUS, wx, 0, ww, topH)) ||
+      (H - botTop > 0 && circleRectCollide(tw.x, tw.y, TW_RADIUS, wx, botTop, ww, H - botTop))
+    ) {
+      endGame();
+      return;
+    }
+
+    if (w.x < -WALL_WIDTH_HALF - 10) walls.splice(i, 1);
+  }
+
+  // Tumbleweed dust trail
+  if (Math.random() < 0.35) {
+    particles.push({
+      x: tw.x + (Math.random() - 0.5) * TW_RADIUS,
+      y: tw.y + TW_RADIUS * 0.75,
+      vx: -tw.vx * 0.08 + (Math.random() - 0.5) * 18,
+      vy: (Math.random() - 0.5) * 12,
+      life: 0.45 + Math.random() * 0.25,
+      maxLife: 0.7,
+      r: 1.5 + Math.random() * 2.5,
+    });
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Gust rings
+  for (let i = gustRings.length - 1; i >= 0; i--) {
+    const g = gustRings[i];
+    g.r    += 160 * dt;
+    g.life -= dt;
+    if (g.life <= 0) gustRings.splice(i, 1);
+  }
+
+  // Popups
+  for (let i = popups.length - 1; i >= 0; i--) {
+    popups[i].y -= 38 * dt;
+    popups[i].life -= dt;
+    if (popups[i].life <= 0) popups.splice(i, 1);
+  }
+}
+
+// ── Draw helpers ───────────────────────────────────────────
+function drawBackground() {
+  ctx.save();
+  // Sunset canyon sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0,    '#0d0520');
+  sky.addColorStop(0.28, '#3d1005');
+  sky.addColorStop(0.58, '#7a2406');
+  sky.addColorStop(1,    '#be3c0a');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // Distant mesa ridge silhouettes (static decorative layer)
+  ctx.fillStyle = '#1a0806';
+  ctx.beginPath();
+  ctx.moveTo(0,   H * 0.52);
+  ctx.lineTo(50,  H * 0.40);
+  ctx.lineTo(90,  H * 0.46);
+  ctx.lineTo(140, H * 0.36);
+  ctx.lineTo(200, H * 0.43);
+  ctx.lineTo(255, H * 0.33);
+  ctx.lineTo(305, H * 0.42);
+  ctx.lineTo(360, H * 0.38);
+  ctx.lineTo(360, H);
+  ctx.lineTo(0,   H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Warm dust haze at horizon
+  const haze = ctx.createLinearGradient(0, H * 0.48, 0, H * 0.72);
+  haze.addColorStop(0, 'rgba(170,72,8,0)');
+  haze.addColorStop(1, 'rgba(170,72,8,0.13)');
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, H * 0.48, W, H * 0.24);
+  ctx.restore();
+}
+
+function drawWalls() {
+  ctx.save();
+  for (const w of walls) {
+    const topH   = w.gapY - w.gapHalf;
+    const botTop = w.gapY + w.gapHalf;
+    const wx     = w.x - WALL_WIDTH_HALF;
+    const ww     = WALL_WIDTH_HALF * 2;
+
+    // Top rock body
+    if (topH > 0) {
+      ctx.fillStyle = '#1c0907';
+      ctx.fillRect(wx, 0, ww, topH);
+      // Jagged bottom edge of top rock
+      ctx.fillStyle = '#2e1208';
+      for (let jx = wx; jx < wx + ww; jx += 7) {
+        const jh = 7 + Math.sin(jx * 0.72 + w.x * 0.1) * 4;
+        ctx.fillRect(jx, topH - jh, Math.min(7, wx + ww - jx), jh);
+      }
+    }
+
+    // Bottom rock body
+    if (H - botTop > 0) {
+      ctx.fillStyle = '#1c0907';
+      ctx.fillRect(wx, botTop, ww, H - botTop);
+      // Jagged top edge of bottom rock
+      ctx.fillStyle = '#2e1208';
+      for (let jx = wx; jx < wx + ww; jx += 7) {
+        const jh = 7 + Math.sin(jx * 0.72 + w.x * 0.1 + 2.5) * 4;
+        ctx.fillRect(jx, botTop, Math.min(7, wx + ww - jx), jh);
+      }
+    }
+
+    // Gap edge glow — danger warning
+    ctx.strokeStyle = 'rgba(200,60,10,0.3)';
+    ctx.lineWidth   = 1.5;
+    if (topH > 0) {
+      ctx.beginPath(); ctx.moveTo(wx, topH); ctx.lineTo(wx + ww, topH); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(wx, botTop); ctx.lineTo(wx + ww, botTop); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTumbleweedAt(x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  // Drop shadow
+  ctx.save();
+  ctx.translate(2, TW_RADIUS * 0.65);
+  ctx.scale(1, 0.3);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.arc(0, 0, TW_RADIUS * 0.88, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Main sphere — radial gradient for depth
+  const grad = ctx.createRadialGradient(-TW_RADIUS * 0.3, -TW_RADIUS * 0.3, 2, 0, 0, TW_RADIUS);
+  grad.addColorStop(0,   '#D4873A');
+  grad.addColorStop(0.5, '#8B4513');
+  grad.addColorStop(1,   '#3a1a05');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, TW_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Clip to circle for twig drawing
+  ctx.beginPath();
+  ctx.arc(0, 0, TW_RADIUS - 0.5, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Radial twig spokes
+  ctx.strokeStyle = '#5C2C08';
+  ctx.lineWidth   = 1.4;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * TW_RADIUS, Math.sin(a) * TW_RADIUS);
+    ctx.stroke();
+  }
+
+  // Arc-curve crossing twigs for that tangled-brush look
+  ctx.strokeStyle = '#4a2208';
+  ctx.lineWidth   = 1;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    const cx2 = Math.cos(a) * TW_RADIUS * 0.32;
+    const cy2 = Math.sin(a) * TW_RADIUS * 0.32;
+    ctx.beginPath();
+    ctx.arc(cx2, cy2, TW_RADIUS * 0.52, a + Math.PI * 0.5, a + Math.PI * 1.5);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  ctx.save();
+  for (const p of particles) {
+    const alpha = (p.life / p.maxLife) * 0.5;
+    ctx.fillStyle = `rgba(180,96,28,${alpha.toFixed(2)})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * (p.life / p.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGustRings() {
+  ctx.save();
+  for (const g of gustRings) {
+    const alpha = Math.max(0, g.life / 0.3) * 0.65;
+    ctx.strokeStyle = `rgba(255,218,90,${alpha.toFixed(2)})`;
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  for (const p of popups) {
+    ctx.globalAlpha = Math.max(0, p.life / 0.8);
+    ctx.fillStyle   = p.color;
+    ctx.font        = 'bold 18px Georgia, serif';
+    ctx.textAlign   = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Score pill — center top
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(W / 2 - 38, 8, 76, 28, 10);
+  ctx.fill();
+  ctx.fillStyle   = '#FFE066';
+  ctx.font        = 'bold 18px Georgia, serif';
+  ctx.textAlign   = 'center';
+  ctx.fillText(score, W / 2, 28);
+
+  // Gust cooldown ring — small arc just below score pill
+  if (gustCooldown > 0) {
+    const frac = 1 - gustCooldown / GUST_COOLDOWN;
+    ctx.strokeStyle = 'rgba(255,218,90,0.55)';
+    ctx.lineWidth   = 2.5;
+    ctx.beginPath();
+    ctx.arc(W / 2, 50, 9, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBackground();
+
+  // Title text
+  ctx.fillStyle = '#FFE066';
+  ctx.font      = 'bold 54px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(200,60,10,0.8)';
+  ctx.shadowBlur  = 18;
+  ctx.fillText('DUST DEVIL', W / 2, H * 0.26);
+  ctx.shadowBlur  = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font      = '17px Georgia, serif';
+  ctx.fillText('steer the tumbleweed', W / 2, H * 0.35);
+  ctx.fillText('tap anywhere to gust', W / 2, H * 0.40);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = 'rgba(255,224,102,0.65)';
+    ctx.font      = '15px Georgia, serif';
+    ctx.fillText('BEST  ' + bestScore, W / 2, H * 0.48);
+  }
+
+  // Play button
+  ctx.fillStyle = '#C84010';
+  roundRect(W / 2 - 72, H * 0.565, 144, 46, 14);
+  ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font      = 'bold 20px Georgia, serif';
+  ctx.fillText('TAP TO RIDE', W / 2, H * 0.565 + 30);
+
+  // Preview tumbleweed
+  drawTumbleweedAt(W / 2, H * 0.78, Date.now() * 0.0009);
+
+  ctx.restore();
+}
+
+function drawOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle   = '#FFE066';
+  ctx.font        = 'bold 40px Georgia, serif';
+  ctx.textAlign   = 'center';
+  ctx.fillText('WIPEOUT', W / 2, H * 0.24);
+
+  ctx.font = 'bold 28px Georgia, serif';
+  ctx.fillText('SCORE  ' + score, W / 2, H * 0.35);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = 'rgba(200,160,74,0.8)';
+    ctx.font      = '18px Georgia, serif';
+    ctx.fillText('BEST  ' + bestScore, W / 2, H * 0.43);
+  }
+
+  if (score > 0 && score >= bestScore) {
+    const pulse = 0.82 + 0.18 * Math.sin(Date.now() * 0.008);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle   = '#FF9F43';
+    ctx.font        = 'bold 22px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, H * 0.51);
+    ctx.restore();
+  }
+
+  // Ride Again button
+  ctx.fillStyle = '#C84010';
+  roundRect(W / 2 - 80, H * 0.575, 160, 46, 14);
+  ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font      = 'bold 20px Georgia, serif';
+  ctx.fillText('RIDE AGAIN', W / 2, H * 0.575 + 30);
+
+  // Share button
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  roundRect(W / 2 - 60, H * 0.695, 120, 38, 10);
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font      = '16px Georgia, serif';
+  ctx.fillText('SHARE', W / 2, H * 0.695 + 24);
+
+  // Feedback button
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  roundRect(W / 2 - 68, H * 0.795, 136, 36, 10);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(200,160,74,0.65)';
+  ctx.font      = '14px Georgia, serif';
+  ctx.fillText('LEAVE FEEDBACK', W / 2, H * 0.795 + 22);
+
+  ctx.restore();
+}
+
+// ── Input ──────────────────────────────────────────────────
+function onTap(e) {
+  e.preventDefault();
+  if (feedbackOverlay.style.display === 'flex') return;
+  initAudio();
+
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const src    = e.touches ? e.touches[0] : e;
+  const x      = (src.clientX - rect.left) * scaleX;
+  const y      = (src.clientY - rect.top)  * scaleY;
+
+  if (gameState === 'title') { startGame(); return; }
+
+  if (gameState === 'over') {
+    // Ride Again: y = H*0.575 .. H*0.575+46
+    if (y > H * 0.575 && y < H * 0.575 + 46) { startGame(); return; }
+    // Share: y = H*0.695 .. H*0.695+38
+    if (y > H * 0.695 && y < H * 0.695 + 38) {
+      if (navigator.share) navigator.share({ title: 'Dust Devil', text: `I scored ${score} on Dust Devil! Can you beat it?` }).catch(() => {});
+      return;
+    }
+    // Feedback: y = H*0.795 .. H*0.795+36
+    if (y > H * 0.795 && y < H * 0.795 + 36) {
+      fbRating = 0; fbTextEl.value = ''; fbStatusEl.textContent = '';
+      fbSubmitBtn.textContent = 'Submit'; fbSubmitBtn.disabled = false;
+      starSpans.forEach(s => { s.textContent = '☆'; s.style.color = 'rgba(255,215,0,0.4)'; });
+      feedbackOverlay.style.display = 'flex';
+      return;
+    }
+    return;
+  }
+
+  if (gameState === 'playing') { applyGust(x, y); }
+}
+
+canvas.addEventListener('pointerdown', onTap);
+
+// ── Feedback overlay (HTML) ────────────────────────────────
+const feedbackOverlay = document.createElement('div');
+feedbackOverlay.id = 'feedback-overlay';
+feedbackOverlay.style.cssText =
+  'display:none;position:absolute;top:0;left:0;width:100%;height:100%;' +
+  'flex-direction:column;align-items:center;justify-content:center;gap:12px;' +
+  'background:rgba(5,2,8,0.97);border:2px solid #FFD700;box-sizing:border-box;padding:28px;z-index:10;';
+feedbackOverlay.innerHTML = `
+  <h2 style="color:#FFD700;font-family:Georgia,serif;font-size:20px;margin:0;text-align:center;">How\'d That Ride?</h2>
+  <div id="stars" style="display:flex;gap:10px;font-size:34px;cursor:pointer;user-select:none;">
+    <span data-v="1" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="2" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="3" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="4" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="5" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+  </div>
+  <textarea id="fb-text" rows="3" placeholder="What do you think? (optional)"
+    style="width:90%;max-width:280px;background:#1a0808;color:#C8A04A;border:1px solid #5a2c08;
+           border-radius:8px;padding:8px;font-size:14px;font-family:Georgia,serif;resize:none;"></textarea>
+  <button id="fb-submit"
+    style="background:#C84010;color:#FFE066;border:none;padding:10px 32px;border-radius:10px;
+           font-family:Georgia,serif;font-size:16px;font-weight:bold;cursor:pointer;">Submit</button>
+  <button id="fb-cancel"
+    style="background:none;color:#C8A04A;border:none;font-size:14px;cursor:pointer;text-decoration:underline;">Cancel</button>
+  <p id="fb-status" style="color:#A09070;font-size:13px;min-height:18px;margin:0;text-align:center;"></p>
+`;
+wrap.appendChild(feedbackOverlay);
+
+const starSpans   = feedbackOverlay.querySelectorAll('#stars span');
+const fbTextEl    = feedbackOverlay.querySelector('#fb-text');
+const fbStatusEl  = feedbackOverlay.querySelector('#fb-status');
+const fbSubmitBtn = feedbackOverlay.querySelector('#fb-submit');
+let fbRating = 0;
+
+starSpans.forEach(span => {
+  span.addEventListener('click', () => {
+    fbRating = parseInt(span.dataset.v, 10);
+    starSpans.forEach(s => {
+      const v = parseInt(s.dataset.v, 10);
+      s.textContent = v <= fbRating ? '★' : '☆';
+      s.style.color = v <= fbRating ? '#FFD700' : 'rgba(255,215,0,0.4)';
+    });
+  });
+});
+
+feedbackOverlay.querySelector('#fb-cancel').addEventListener('click', () => {
+  feedbackOverlay.style.display = 'none';
+});
+
+fbSubmitBtn.addEventListener('click', () => {
+  if (!fbRating) { fbStatusEl.textContent = 'Please pick a star rating.'; return; }
+  fbStatusEl.textContent = 'Sending…';
+  fbSubmitBtn.disabled   = true;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    mode:   'no-cors',
+    body: JSON.stringify({ game: 'Dust Devil', rating: fbRating, message: fbTextEl.value, score }),
+  }).finally(() => {
+    fbStatusEl.textContent = 'Thanks! 🤠';
+    setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500);
+  });
+});
+
+// ── Main loop ──────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  if (gameState === 'title') { drawTitle(); return; }
+
+  drawBackground();
+  drawWalls();
+  drawParticles();
+  drawGustRings();
+  drawTumbleweedAt(tw.x, tw.y, tw.angle);
+  drawPopups();
+  drawHUD();
+
+  if (gameState === 'over') drawOver();
+}
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - prevTime) / 1000, 0.05);
+    prevTime = ts;
+    update(dt);
+    draw();
+  } catch (err) {
+    console.error('[DustDevil] loop error:', err);
+  }
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(ts => { prevTime = ts; requestAnimationFrame(loop); });
+
+// ── Test hooks ─────────────────────────────────────────────
+window.__test = {
+  getState:  () => ({
+    state:     gameState,
+    score,
+    bestScore,
+    tw:        { x: tw.x, y: tw.y, vx: tw.vx, vy: tw.vy },
+    walls:     walls.map(w => ({ x: w.x, gapY: w.gapY, gapHalf: w.gapHalf, scored: w.scored })),
+    gustCooldown,
+  }),
+  gust:      (tx, ty) => { gustCooldown = 0; applyGust(tx, ty); },
+  spawnWall: (gapY, gapHalf) => spawnWall(gapY, gapHalf),
+  placeWall: (x, gapY, gapHalf) => walls.push({ x, gapY, gapHalf: gapHalf !== undefined ? gapHalf : gapHalfForScore(score), scored: false }),
+  setTW:     (x, y, vx, vy) => { tw.x = x; tw.y = y; tw.vx = vx || 0; tw.vy = vy || 0; },
+  forceOver: () => endGame(),
+  startGame: () => startGame(),
+  resetBest: () => { bestScore = 0; localStorage.setItem(SLUG + '_best', '0'); },
+};
+</script>
+</body>
+</html>
