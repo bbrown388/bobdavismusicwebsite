@@ -124,6 +124,12 @@ If the session prints `RESUME_TASK: {...}`:
 }
 ```
 
+**Two files to update (always both together):**
+- `autonomous/status.json` — internal working copy
+- `director-status.json` — root-level copy served by GitHub Pages (same content)
+
+GitHub Pages only serves root-level files reliably. Always write both files with identical content.
+
 **Rules:**
 - `gameQueue` must always contain the next **3 planned games** (excluding the one just built). After building a game, remove it from the queue (set `status: done` or remove the entry), and add a new entry at the end so there are always 3 planned ahead.
 - `runLog` is append-only — add a new entry each run. Keep the last 20 entries.
