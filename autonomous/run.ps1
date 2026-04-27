@@ -30,6 +30,10 @@ New-Item -Path $lockFile -ItemType File -Force | Out-Null
 Log "=== Autonomous run started ==="
 Set-Location $WorkDir
 
+# Update website status immediately so it shows Running
+$startPatch = '{"currentTask":{"action":"starting","context":"Director session starting — reading feedback and deciding next action"},"lastRunAt":"' + (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ") + '"}'
+& node "$WorkDir\autonomous\update-status.js" $startPatch 2>&1 | ForEach-Object { Log $_ }
+
 $prompt = "Autonomous game director run. CLAUDE.md is loaded - follow it. The session-start hook ran director.js and its output is in context. Execute the EXECUTE or RESUME_TASK action completely: write code, run tests, commit, push, update autonomous/state.json (currentTask null). End with AUTONOMOUS_RUN_COMPLETE."
 
 try {
@@ -82,6 +86,8 @@ try {
     }
 } catch {
     Log "ERROR - $($_.Exception.Message)"
+    $errPatch = '{"currentTask":null,"lastRunResult":"error","lastRunSummary":"Run failed: ' + $_.Exception.Message.Replace('"',"'") + '"}'
+    & node "$WorkDir\autonomous\update-status.js" $errPatch 2>&1 | ForEach-Object { Log $_ }
 } finally {
     Remove-Item -Path $lockFile -Force -ErrorAction SilentlyContinue
     Log "=== Autonomous run ended ==="

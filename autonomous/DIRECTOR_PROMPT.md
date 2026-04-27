@@ -60,6 +60,8 @@ Read that output and act on it per the instructions below.
 3. Read `docs/game-dev-knowledge/brand.md` — Bob Davis identity, aesthetic rules
 4. Read the most recent retrospective for action items
 5. Brainstorm a concept that is **distinctly different** from all prior games and more impressive in at least 2 dimensions
+   **→ Status checkpoint:** after deciding the concept, run:
+   `node autonomous/update-status.js "{\"currentTask\":{\"action\":\"new_game\",\"context\":\"Designing Game NN: Title — one-line concept\"},\"lastRunSummary\":\"Building Game NN: Title\"}"`
 6. Write the game as a single HTML file following the pattern of `outlaw-run.html`:
    - 360×640 canvas, CSS-scaled to fill viewport
    - State machine: title → playing → win/lose → title
@@ -71,6 +73,8 @@ Read that output and act on it per the instructions below.
    - `loop()` wrapped in try/catch
 7. Write a Playwright test file alongside the game (see `test-outlaw-run.js` as template)
 8. Run tests — fix all failures before proceeding
+   **→ Status checkpoint:** after all tests pass, run:
+   `node autonomous/update-status.js "{\"currentTask\":{\"action\":\"new_game\",\"context\":\"Game NN: Title — tests passing, committing\"},\"lastRunSummary\":\"Game NN tests pass\"}"`
 9. Add a game card to `index.html` (above the previous newest game)
 10. Commit: `git commit -m "feat: add Game NN <Title> — <one-line description>"`
 11. Push
