@@ -7,48 +7,33 @@ param(
     [string]$WorkDir = "C:\Users\bobbr\Claude Code Working Folder"
 )
 
-$logFile = "$WorkDir\autonomous\run.log"
-$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$logFile = Join-Path $WorkDir "autonomous\run.log"
 
-function Log($msg) {
-    $line = "[$timestamp] $msg"
+function Log([string]$msg) {
+    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg"
     Write-Host $line
-    Add-Content -Path $logFile -Value $line
+    Add-Content -Path $logFile -Value $line -Encoding UTF8
 }
 
 Log "=== Autonomous run started ==="
-
 Set-Location $WorkDir
 
-# Run claude in non-interactive print mode.
-# --permission-mode bypassPermissions: auto-approves file edits, Bash, git push.
-# --max-budget-usd 2.00: hard cap per run (adjust as needed).
-# The session-start hook fires director.js; CLAUDE.md tells Claude what to do.
-$prompt = @"
-You are running as the autonomous game director for bobdavismusic.com.
-CLAUDE.md has been loaded — follow it exactly.
-The session-start hook has already run director.js and its output is in your context.
-Act on the EXECUTE or RESUME_TASK signal completely:
-- Write all code, run all tests, commit, and push before finishing.
-- When done, update autonomous/state.json (currentTask: null).
-- End your response with AUTONOMOUS_RUN_COMPLETE so the log captures success.
-"@
+$prompt = "Autonomous game director run. CLAUDE.md is loaded - follow it. The session-start hook ran director.js and its output is in context. Execute the EXECUTE or RESUME_TASK action completely: write code, run tests, commit, push, update autonomous/state.json (currentTask null). End with AUTONOMOUS_RUN_COMPLETE."
 
 try {
-    $output = claude --print `
-        --permission-mode bypassPermissions `
-        --max-budget-usd 2.00 `
-        $prompt 2>&1
+    # Pipe empty string to suppress the "no stdin data" warning from claude
+    $output = "" | & claude --print --permission-mode bypassPermissions --max-budget-usd 3.00 $prompt 2>&1
+    $outputStr = $output | Out-String
 
-    Add-Content -Path $logFile -Value $output
+    Add-Content -Path $logFile -Value $outputStr -Encoding UTF8
 
-    if ($output -match "AUTONOMOUS_RUN_COMPLETE") {
-        Log "SUCCESS — task completed"
+    if ($outputStr -match "AUTONOMOUS_RUN_COMPLETE") {
+        Log "SUCCESS - task completed"
     } else {
-        Log "WARNING — run finished but AUTONOMOUS_RUN_COMPLETE not found in output"
+        Log "WARNING - run finished but AUTONOMOUS_RUN_COMPLETE not seen in output"
     }
 } catch {
-    Log "ERROR — $($_.Exception.Message)"
+    Log "ERROR - $($_.Exception.Message)"
 }
 
 Log "=== Autonomous run ended ==="

@@ -18,13 +18,11 @@ $action = New-ScheduledTaskAction `
     -Argument "-NonInteractive -ExecutionPolicy Bypass -File `"$scriptPath`"" `
     -WorkingDirectory $workDir
 
-# Settings: run even if on battery, wake to run, 2-hour timeout
+# Settings: 2-hour timeout, start if missed, wake to run
 $settings = New-ScheduledTaskSettingsSet `
-    -DisallowStartIfOnBatteries:$false `
-    -StopIfGoingOnBatteries:$false `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2) `
-    -WakeToRun:$true `
-    -StartWhenAvailable:$true
+    -StartWhenAvailable `
+    -WakeToRun
 
 # Run as current user (no password needed, session must be active OR
 # "Run whether user is logged on or not" requires stored credentials)
