@@ -14,6 +14,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 4 | Gone Fishin' | `gone-fishin.html` | Cast → wait → bite → reel | 2026-04-26 |
 | 5 | Outlaw Run | `outlaw-run.html` | Path drawing / scrolling world / pursuer AI | 2026-04-27 |
 | 6 | Cattle Drive | `cattle-drive.html` | Multi-entity herding sim / flocking AI / wolf predators | 2026-04-27 |
+| 7 | Tin Star Showdown | `tin-star-showdown.html` | Quick-draw duel / reaction timing / best-of-3 / AI difficulty scaling | 2026-04-27 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -30,6 +31,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Gone Fishin'](retrospectives/02-gone-fishin.md) — session lessons, action items for Game 05
 - [Retrospective: Outlaw Run](retrospectives/03-outlaw-run.md) — session lessons, action items for Game 06
 - [Retrospective: Cattle Drive](retrospectives/04-cattle-drive.md) — session lessons, action items for Game 07
+- [Retrospective: Tin Star Showdown](retrospectives/05-tin-star-showdown.md) — session lessons, action items for Game 08
 - [Canvas techniques](techniques/canvas.md) — setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) — state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) — color palette, art style, HUD conventions
