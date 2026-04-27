@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Director Status — Bob Davis Games</title>
+<title>Director Status â€” Bob Davis Games</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -151,17 +151,17 @@ h1 {
 </head>
 <body>
 
-<a class="back" href="index.html">← bobdavismusic.com</a>
+<a class="back" href="index.html">â† bobdavismusic.com</a>
 
 <h1>Game Director</h1>
-<p class="subtitle">Autonomous status — updated each session</p>
+<p class="subtitle">Autonomous status â€” updated each session</p>
 
 <div id="app"></div>
 
 <script>
-// Status data embedded at build time — no external fetch needed.
+// Status data embedded at build time â€” no external fetch needed.
 // The automated session regenerates this file with updated data after each run.
-const STATUS = {"lastRunAt":"2026-04-27T22:39:01Z","lastRunResult":"success","lastRunSummary":"Built Game 09: Wanted Poster — memory/deduction face-ID game, 15 tests pass.","currentTask":null,"gamesBuilt":9,"lastGameTitle":"Wanted Poster","lastGameFile":"wanted-poster.html","gameQueue":[{"num":10,"title":"Gold Rush","concept":"Resource management + survival: mine for gold in a procedural cave, manage lantern fuel and pickaxe durability, escape before the tunnel collapses.","raisesBarOn":"First inventory/resource system, procedural dungeon generation, dual resource timers creating layered urgency","status":"planned"},{"num":11,"title":"Boot Hill Bluff","concept":"Turn-based poker-style bluffing duel against an AI outlaw: read tells, bet chips, and call their bluff or fold. Text-driven narrative choices between hands.","raisesBarOn":"First turn-based game, first narrative choice system, AI bluffing behavior — completely different genre from all prior games","status":"planned"},{"num":12,"title":"Stampede","concept":"First-person perspective: you are a lone cowboy in the path of a buffalo stampede. Dodge left/right, leap over downed cattle, and signal the herd to split before they trample you.","raisesBarOn":"First first-person perspective in the series, environmental scale and speed, split-second spatial judgment","status":"planned"}],"runLog":[{"runAt":"2026-04-27T18:27:45Z","action":"new_game","game":"Cattle Drive","result":"success","summary":"Built Game 06: Cattle Drive (cattle-drive.html). Flocking AI, wolf predators, 13 tests pass.","commitHash":"582b596"},{"runAt":"2026-04-27T19:23:00Z","action":"new_game","game":"Tin Star Showdown","result":"success","summary":"Built Game 07: Tin Star Showdown (tin-star-showdown.html). Quick-draw duel, best-of-3, AI difficulty scaling, 13 tests pass.","commitHash":"b3329ab"},{"runAt":"2026-04-27T22:10:00Z","action":"new_game","game":"Dust Devil","result":"success","summary":"Built Game 08: Dust Devil (dust-devil.html). 2-axis physics tumbleweed, tap-to-gust canyon navigation, 14 tests pass.","commitHash":"e842087"},{"runAt":"2026-04-27T22:39:01Z","action":"new_game","game":"Wanted Poster","result":"success","summary":"Built Game 09: Wanted Poster. Memory/deduction face-ID mechanic, procedural face system, 15 tests pass.","commitHash":"7fe5965"}]};
+const STATUS = {"lastRunAt":"2026-04-27T22:39:01Z","lastRunResult":"success","lastRunSummary":"Built Game 09: Wanted Poster â€” memory/deduction face-ID game, 15 tests pass.","currentTask":null,"gamesBuilt":9,"lastGameTitle":"Wanted Poster","lastGameFile":"wanted-poster.html","gameQueue":[{"num":10,"title":"Gold Rush","concept":"Resource management + survival: mine for gold in a procedural cave, manage lantern fuel and pickaxe durability, escape before the tunnel collapses.","raisesBarOn":"First inventory/resource system, procedural dungeon generation, dual resource timers creating layered urgency","status":"planned"},{"num":11,"title":"Boot Hill Bluff","concept":"Turn-based poker-style bluffing duel against an AI outlaw: read tells, bet chips, and call their bluff or fold. Text-driven narrative choices between hands.","raisesBarOn":"First turn-based game, first narrative choice system, AI bluffing behavior â€” completely different genre from all prior games","status":"planned"},{"num":12,"title":"Stampede","concept":"First-person perspective: you are a lone cowboy in the path of a buffalo stampede. Dodge left/right, leap over downed cattle, and signal the herd to split before they trample you.","raisesBarOn":"First first-person perspective in the series, environmental scale and speed, split-second spatial judgment","status":"planned"}],"runLog":[{"runAt":"2026-04-27T18:27:45Z","action":"new_game","game":"Cattle Drive","result":"success","summary":"Built Game 06: Cattle Drive (cattle-drive.html). Flocking AI, wolf predators, 13 tests pass.","commitHash":"582b596"},{"runAt":"2026-04-27T19:23:00Z","action":"new_game","game":"Tin Star Showdown","result":"success","summary":"Built Game 07: Tin Star Showdown (tin-star-showdown.html). Quick-draw duel, best-of-3, AI difficulty scaling, 13 tests pass.","commitHash":"b3329ab"},{"runAt":"2026-04-27T22:10:00Z","action":"new_game","game":"Dust Devil","result":"success","summary":"Built Game 08: Dust Devil (dust-devil.html). 2-axis physics tumbleweed, tap-to-gust canyon navigation, 14 tests pass.","commitHash":"e842087"},{"runAt":"2026-04-27T22:39:01Z","action":"new_game","game":"Wanted Poster","result":"success","summary":"Built Game 09: Wanted Poster. Memory/deduction face-ID mechanic, procedural face system, 15 tests pass.","commitHash":"7fe5965"}]};
 
 function timeAgo(iso) {
   if (!iso) return 'never';
@@ -192,7 +192,7 @@ function render(d) {
       <div class="queue-num">Game ${g.num}</div>
       <div class="queue-title">${g.title}</div>
       <div class="queue-concept">${g.concept}</div>
-      <div class="queue-bar">↑ ${g.raisesBarOn}</div>
+      <div class="queue-bar">â†‘ ${g.raisesBarOn}</div>
       <span class="queue-status ${g.status}">${g.status.replace('_', ' ')}</span>
     </div>`).join('');
 
@@ -223,7 +223,7 @@ function render(d) {
 
 render(STATUS);
 
-// ── Feedback form ─────────────────────────────────────────────────────────
+// â”€â”€ Feedback form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -236,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const message = document.getElementById('fb-message').value.trim();
     const fix     = document.getElementById('fb-fix').checked;
     if (!message) { statusEl.textContent = 'Please enter a message.'; return; }
-    statusEl.textContent = 'Sending…';
+    statusEl.textContent = 'Sendingâ€¦';
     fetch(FEEDBACK_URL, {
       method: 'POST',
       mode: 'no-cors',
@@ -255,9 +255,10 @@ document.addEventListener('DOMContentLoaded', () => {
     <select id="fb-target" style="background:#1a0a06;color:#C8B89A;border:1px solid rgba(255,215,0,0.2);
       border-radius:6px;padding:10px 12px;font-size:13px;font-family:'Courier New',monospace;">
       <option value="general">General / next game</option>
-      <option value="Wanted Poster">Upcoming: Wanted Poster (Game 09)</option>
       <option value="Gold Rush">Upcoming: Gold Rush (Game 10)</option>
       <option value="Boot Hill Bluff">Upcoming: Boot Hill Bluff (Game 11)</option>
+      <option value="Stampede">Upcoming: Stampede (Game 12)</option>
+      <option value="Wanted Poster">Existing: Wanted Poster</option>
       <option value="Dust Devil">Existing: Dust Devil</option>
       <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
       <option value="Cattle Drive">Existing: Cattle Drive</option>
@@ -265,7 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <option value="Gone Fishin'">Existing: Gone Fishin'</option>
       <option value="Honky Tonk">Existing: Honky Tonk</option>
     </select>
-    <textarea id="fb-message" rows="4" placeholder="What's on your mind? Skip a game, change a concept, request a mechanic…"
+    <textarea id="fb-message" rows="4" placeholder="What's on your mind? Skip a game, change a concept, request a mechanicâ€¦"
       style="background:#1a0a06;color:#E8DCC8;border:1px solid rgba(255,215,0,0.2);border-radius:6px;
       padding:10px 12px;font-size:13px;font-family:'Courier New',monospace;resize:none;"></textarea>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#907860;cursor:pointer;">
