@@ -32,10 +32,12 @@ Set-Location $WorkDir
 
 # Update website status immediately so it shows Running
 $patchFile = "$WorkDir\autonomous\.status-patch.json"
-@{
+$patchJson = @{
     currentTask = @{ action = "starting"; context = "Director session starting - reading feedback and deciding next action" }
     lastRunAt   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-} | ConvertTo-Json -Compress | Set-Content -Path $patchFile -Encoding UTF8
+} | ConvertTo-Json -Compress
+# Write without BOM — PowerShell 5.1 Set-Content always adds BOM, which breaks JSON.parse
+[System.IO.File]::WriteAllText($patchFile, $patchJson, [System.Text.UTF8Encoding]::new($false))
 try {
     & node "$WorkDir\autonomous\update-status.js" $patchFile 2>&1 | ForEach-Object { Log $_ }
 } catch {
@@ -94,8 +96,8 @@ try {
     }
 } catch {
     Log "ERROR - $($_.Exception.Message)"
-    @{ currentTask = $null; lastRunResult = "error"; lastRunSummary = "Run failed: $($_.Exception.Message)" } |
-        ConvertTo-Json -Compress | Set-Content -Path $patchFile -Encoding UTF8
+    $errJson = @{ currentTask = $null; lastRunResult = "error"; lastRunSummary = "Run failed: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+    [System.IO.File]::WriteAllText($patchFile, $errJson, [System.Text.UTF8Encoding]::new($false))
     & node "$WorkDir\autonomous\update-status.js" $patchFile 2>&1 | ForEach-Object { Log $_ }
 } finally {
     Remove-Item -Path $lockFile -Force -ErrorAction SilentlyContinue
