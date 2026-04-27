@@ -40,7 +40,10 @@ Read that output and act on it per the instructions below.
 6. Fix any test failures
 7. Commit: `git commit -m "fix(<game-slug>): <one-line description>"`
 8. Push
-9. Clear the task: update `autonomous/state.json` → set `"currentTask": null`
+9. Update `autonomous/state.json` → set `"currentTask": null`
+10. Update `autonomous/status.json` — see **Maintaining status.json** below
+11. Commit status: `git commit -m "chore: update director status"`
+12. Push
 
 ---
 
@@ -67,8 +70,9 @@ Read that output and act on it per the instructions below.
 12. Write retrospective to `docs/game-dev-knowledge/retrospectives/NN-<slug>.md`
 13. Update `docs/game-dev-knowledge/index.md` with new game entry
 14. Update `autonomous/state.json`: increment `gamesBuilt`, set `lastGameTitle`, set `currentTask: null`
-15. Commit docs: `git commit -m "docs: Game NN retrospective and knowledge base update"`
-16. Push
+15. Update `autonomous/status.json` — see **Maintaining status.json** below
+16. Commit docs + status: `git commit -m "docs: Game NN retrospective, knowledge base, and status update"`
+17. Push
 
 ---
 
@@ -81,6 +85,57 @@ If the session prints `RESUME_TASK: {...}`:
 3. Check for in-progress files: `Glob *.html` to find any new game file
 4. Continue from where you left off — don't restart from scratch
 5. When complete, follow the same commit/push/state-clear steps above
+
+---
+
+## Maintaining status.json
+
+`autonomous/status.json` is read by `status.html` on the website. Keep it current after every task.
+
+**Schema:**
+```json
+{
+  "lastRunAt": "<ISO timestamp>",
+  "lastRunResult": "success | warning | error",
+  "lastRunSummary": "<one sentence>",
+  "currentTask": null,
+  "gamesBuilt": 6,
+  "lastGameTitle": "Cattle Drive",
+  "lastGameFile": "cattle-drive.html",
+  "gameQueue": [
+    {
+      "num": 7,
+      "title": "Game Title",
+      "concept": "One paragraph description of mechanic and setting.",
+      "raisesBarOn": "What makes this more impressive than prior games.",
+      "status": "planned | in_progress | done"
+    }
+  ],
+  "runLog": [
+    {
+      "runAt": "<ISO timestamp>",
+      "action": "new_game | fix",
+      "game": "Game Title or slug",
+      "result": "success | warning | error",
+      "summary": "One sentence: what was built or fixed.",
+      "commitHash": "short hash"
+    }
+  ]
+}
+```
+
+**Rules:**
+- `gameQueue` must always contain the next **3 planned games** (excluding the one just built). After building a game, remove it from the queue (set `status: done` or remove the entry), and add a new entry at the end so there are always 3 planned ahead.
+- `runLog` is append-only — add a new entry each run. Keep the last 20 entries.
+- `lastRunAt` is the current UTC timestamp (`new Date().toISOString()`).
+- `currentTask` should be `null` after completing a task.
+- After a `fix` action, leave `gameQueue` unchanged; only update `lastRunAt`, `lastRunResult`, `lastRunSummary`, `currentTask`, and append to `runLog`.
+
+**Brainstorming the queue:** When choosing the next 3 games after a new_game build:
+1. Read `docs/game-dev-knowledge/index.md` to see all games built so far
+2. Pick mechanics not yet used in the series (first-person, physics puzzles, stealth, narrative choice, turn-based, etc.)
+3. Each entry must raise the bar on at least 2 dimensions vs. the most recent game
+4. Concepts should fit the Bob Davis brand (country/outlaw/Texas/music)
 
 ---
 
@@ -98,5 +153,4 @@ If the session prints `RESUME_TASK: {...}`:
 
 ## Game Number Sequence
 
-Current: Game 05 (Outlaw Run). Next new game = Game 06.
-Check `autonomous/state.json` for `gamesBuilt` to get the current count.
+Check `autonomous/state.json` for `gamesBuilt` to get the current count. Next new game = `gamesBuilt + 1`.
