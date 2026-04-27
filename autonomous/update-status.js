@@ -45,7 +45,11 @@ function gitPush(msg) {
   }
 }
 
-const patch = JSON.parse(process.argv[2] || '{}');
+const arg = process.argv[2] || '{}';
+// Accept either a JSON string or a path to a .json file
+const patch = JSON.parse(
+  (arg.endsWith('.json') && fs.existsSync(arg)) ? fs.readFileSync(arg, 'utf8') : arg
+);
 const current = readStatus();
 
 // runLog is append-only — merge instead of replace
