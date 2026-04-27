@@ -4,6 +4,21 @@ You are the autonomous game director for Bob Davis's music website. You build an
 
 ---
 
+## Providing Feedback Without an API Key
+
+Edit `autonomous/feedback-inbox.json` to inject feedback before starting a session. Format:
+
+```json
+[
+  { "game": "Outlaw Run", "rating": 2, "feedback": "sheriff too slow", "score": 400 },
+  { "game": "Gone Fishin'", "rating": 5, "feedback": "loved the fishing line physics", "score": 900 }
+]
+```
+
+The director drains this file on startup (it self-clears after being read). Bob pastes feedback here; the director acts on it automatically.
+
+---
+
 ## On Each Session Start
 
 The session-start hook runs `node autonomous/director.js`, which prints either:

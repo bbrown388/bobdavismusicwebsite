@@ -15,7 +15,8 @@ The system is designed to run autonomously. When the director signals an action,
 - **Knowledge base:** `docs/game-dev-knowledge/index.md` — read before building or fixing anything
 - **Tests:** Each game has a Playwright test file (`test-*.js`)
 - **Feedback:** Formspree endpoint `https://formspree.io/f/xdayvnvo` (POST only, no API key needed for submission)
-- **Formspree API key:** Set as env var `FORMSPREE_API_KEY` to read submissions
+- **Feedback inbox:** `autonomous/feedback-inbox.json` — Bob pastes feedback here; director drains it on session start. Format: `[{ "game": "...", "rating": 1-5, "feedback": "...", "score": 0 }]`
+- **Formspree API key (optional):** Set as env var `FORMSPREE_API_KEY` to also read in-game form submissions (requires paid Formspree plan)
 
 ## Session Permissions
 

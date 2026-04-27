@@ -2,6 +2,7 @@ const https = require('https');
 const fs = require('fs');
 
 const STATE_FILE = __dirname + '/state.json';
+const INBOX_FILE = __dirname + '/feedback-inbox.json';
 const FORM_ID = 'xdayvnvo';
 
 function readState() {
@@ -9,8 +10,34 @@ function readState() {
   catch { return { lastFeedbackId: null }; }
 }
 
-function fetchNewFeedback() {
+// Read and drain the local inbox file.
+// Format: array of { game, rating, feedback, score } objects.
+// After reading, the file is cleared so items aren't processed twice.
+function drainInbox() {
+  try {
+    const items = JSON.parse(fs.readFileSync(INBOX_FILE, 'utf8'));
+    if (!Array.isArray(items) || items.length === 0) return [];
+    // Clear the inbox
+    fs.writeFileSync(INBOX_FILE, '[]');
+    console.log('[feedback] Drained', items.length, 'item(s) from inbox file');
+    return items.map((item, i) => ({
+      id: Date.now() + i,
+      game: item.game || 'unknown',
+      rating: parseInt(item.rating || '0', 10),
+      feedback: item.feedback || '',
+      score: parseInt(item.score || '0', 10),
+      submittedAt: new Date().toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// Fetch from Formspree API if a key is available (paid plan required).
+function fetchFromFormspree() {
   const apiKey = process.env.FORMSPREE_API_KEY || '';
+  if (!apiKey) return Promise.resolve([]);
+
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'formspree.io',
@@ -26,7 +53,7 @@ function fetchNewFeedback() {
       res.on('end', () => {
         try {
           if (res.statusCode === 401) {
-            console.warn('[feedback] No API key or invalid key — skipping feedback fetch');
+            console.warn('[feedback] Formspree key invalid — skipping API fetch');
             resolve([]);
             return;
           }
@@ -49,6 +76,12 @@ function fetchNewFeedback() {
     });
     req.on('error', reject);
   });
+}
+
+async function fetchNewFeedback() {
+  const inbox = drainInbox();
+  const api = await fetchFromFormspree();
+  return [...inbox, ...api];
 }
 
 module.exports = { fetchNewFeedback };
