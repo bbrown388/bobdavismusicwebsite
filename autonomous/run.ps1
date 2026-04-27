@@ -1,6 +1,6 @@
 # autonomous/run.ps1
 # Invoked by Windows Task Scheduler (or manually for daytime testing).
-# Streams Claude output live to both the console window and run.log.
+# Uses --output-format stream-json so Claude flushes each event immediately.
 
 param(
     [string]$WorkDir = "C:\Users\bobbr\Claude Code Working Folder"
@@ -13,6 +13,11 @@ function Log([string]$msg) {
     $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg"
     Write-Host $line
     Add-Content -Path $logFile -Value $line -Encoding UTF8
+}
+
+function LogLive([string]$msg) {
+    Write-Host $msg
+    Add-Content -Path $logFile -Value $msg -Encoding UTF8
 }
 
 # Prevent concurrent runs
@@ -28,18 +33,49 @@ Set-Location $WorkDir
 $prompt = "Autonomous game director run. CLAUDE.md is loaded - follow it. The session-start hook ran director.js and its output is in context. Execute the EXECUTE or RESUME_TASK action completely: write code, run tests, commit, push, update autonomous/state.json (currentTask null). End with AUTONOMOUS_RUN_COMPLETE."
 
 try {
-    $collected = [System.Collections.Generic.List[string]]::new()
+    $rawLines = [System.Collections.Generic.List[string]]::new()
 
-    # Stream output live — each line prints to console and appends to log immediately
-    "" | & claude --print --permission-mode bypassPermissions --max-budget-usd 3.00 $prompt 2>&1 | ForEach-Object {
-        $line = [string]$_
-        Write-Host $line
-        Add-Content -Path $logFile -Value $line -Encoding UTF8
-        $collected.Add($line)
+    "" | & claude --print --permission-mode bypassPermissions --max-budget-usd 3.00 --output-format stream-json $prompt 2>&1 | ForEach-Object {
+        $raw = [string]$_
+        $rawLines.Add($raw)
+
+        try {
+            $obj = ConvertFrom-Json $raw -ErrorAction Stop
+
+            switch ($obj.type) {
+                'assistant' {
+                    foreach ($block in $obj.message.content) {
+                        if ($block.type -eq 'text' -and $block.text.Trim()) {
+                            LogLive $block.text.Trim()
+                        }
+                    }
+                }
+                'tool_use' {
+                    $input = $obj.tool_use.input
+                    $detail = switch ($obj.tool_use.name) {
+                        'Bash'      { $input.command }
+                        'Read'      { $input.file_path }
+                        'Edit'      { $input.file_path }
+                        'Write'     { $input.file_path }
+                        'Glob'      { $input.pattern }
+                        'Grep'      { "$($input.pattern) in $($input.path)" }
+                        default     { '' }
+                    }
+                    $msg = "[Tool: $($obj.tool_use.name)] $detail".TrimEnd()
+                    LogLive $msg
+                }
+                'result' {
+                    if ($obj.result) { LogLive $obj.result }
+                }
+            }
+        } catch {
+            # Non-JSON line (warnings, etc.) — pass through as-is
+            if ($raw.Trim()) { LogLive $raw }
+        }
     }
 
-    $outputStr = $collected -join "`n"
-    if ($outputStr -match "AUTONOMOUS_RUN_COMPLETE") {
+    $fullText = $rawLines -join "`n"
+    if ($fullText -match "AUTONOMOUS_RUN_COMPLETE") {
         Log "SUCCESS - task completed"
     } else {
         Log "WARNING - run finished but AUTONOMOUS_RUN_COMPLETE not seen in output"
