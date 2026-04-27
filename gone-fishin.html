@@ -670,9 +670,9 @@ function updateReel(dt, now) {
     fishFighting = false;
   }
 
-  // During fight: fish slowly drifts back down
+  // During fight: fish drifts back down
   if (fishFighting) {
-    reelProgress = Math.min(100, reelProgress + 18 * dt);
+    reelProgress = Math.min(100, reelProgress + 10 * dt);
   }
 
   // Sync lure Y to reelProgress
@@ -694,7 +694,7 @@ function reelTap(now) {
   // Occasionally trigger a fight after a reel tap
   if (!fishFighting && Math.random() < 0.18) {
     fishFighting = true;
-    fightEndTime = now + 1200 + Math.random() * 800;
+    fightEndTime = now + 600 + Math.random() * 400;
     addPopup('Fish is running!', W / 2, H / 2 - 30, '#e04030');
   }
 }
