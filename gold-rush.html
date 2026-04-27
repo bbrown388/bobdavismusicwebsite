@@ -1,0 +1,651 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Gold Rush</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(8,5,2,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">&#9734;</span><span data-v="2">&#9734;</span><span data-v="3">&#9734;</span><span data-v="4">&#9734;</span><span data-v="5">&#9734;</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Boot Hill Bluff">Upcoming: Boot Hill Bluff (Game 11)</option>
+      <option value="Stampede">Upcoming: Stampede (Game 12)</option>
+      <option value="Gold Rush" selected>Existing: Gold Rush</option>
+      <option value="Wanted Poster">Existing: Wanted Poster</option>
+      <option value="Dust Devil">Existing: Dust Devil</option>
+      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+      <option value="Cattle Drive">Existing: Cattle Drive</option>
+      <option value="Outlaw Run">Existing: Outlaw Run</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0608;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const SLUG = 'gold_rush';
+const COLS = 9, ROWS = 14, TILE = 40;
+const HUD_H = 80;
+const GRID_X = 0, GRID_Y = HUD_H;
+const T = { EMPTY: 0, ROCK: 1, GOLD: 2, OIL: 3, PICK: 4, EXIT: 5 };
+const COLLAPSE_TIME = 90;
+const FUEL_START    = 70;
+const FUEL_DRAIN    = 1;
+const PICK_START    = 24;
+const GOLD_TARGET   = 4;
+const GOLD_COUNT    = 6;
+const OIL_COUNT     = 3;
+const OIL_REFILL    = 26;
+const PICK_COUNT    = 2;
+const PICK_REFILL   = 12;
+const STEP_DUR      = 0.13;
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+let AC = null;
+function getAC() {
+  if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+  return AC;
+}
+canvas.addEventListener('pointerdown', () => { try { getAC().resume(); } catch(e){} }, { once: true });
+
+function tone(freq, type, dur, gain, delay) {
+  gain = gain || 0.28; delay = delay || 0;
+  try {
+    const ac = getAC();
+    const osc = ac.createOscillator();
+    const env = ac.createGain();
+    osc.connect(env); env.connect(ac.destination);
+    osc.type = type; osc.frequency.value = freq;
+    const t = ac.currentTime + delay;
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(gain, t + 0.01);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.start(t); osc.stop(t + dur + 0.05);
+  } catch(e) {}
+}
+function sndMine()   { tone(75,'square',0.1,0.22); tone(110,'square',0.08,0.1,0.03); }
+function sndGold()   { [330,415,523,659].forEach(function(f,i){ tone(f,'triangle',0.28,0.22,i*0.08); }); }
+function sndOil()    { tone(440,'sine',0.18,0.2); tone(550,'sine',0.14,0.14,0.1); }
+function sndPick()   { tone(260,'triangle',0.18,0.2); tone(350,'triangle',0.14,0.16,0.09); }
+function sndDanger() { tone(110,'square',0.08,0.14); }
+function sndWin()    { [261,330,392,523].forEach(function(f,i){ tone(f,'triangle',0.55,0.26,i*0.1); }); }
+function sndLose()   { [330,294,262,220].forEach(function(f,i){ tone(f,'sawtooth',0.32,0.2,i*0.12); }); }
+function sndBlock()  { tone(180,'square',0.06,0.12); }
+
+let state = 'title';
+let grid = [];
+let player = { col:4, row:ROWS-1, px:0, py:0, path:[], animT:0, moving:false };
+let fuel, pickaxe, collapseT, gold, score, popups, sparks, dangerTick, feedbackSent;
+let best = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+let lastT = 0;
+
+function cellX(c) { return GRID_X + c * TILE + TILE / 2; }
+function cellY(r) { return GRID_Y + r * TILE + TILE / 2; }
+
+function initGrid() {
+  grid = [];
+  for (var r = 0; r < ROWS; r++) {
+    grid[r] = [];
+    for (var c = 0; c < COLS; c++) {
+      grid[r][c] = (r === 0 && c === 4) ? T.EXIT : T.ROCK;
+    }
+  }
+  grid[ROWS-1][4] = T.EMPTY; grid[ROWS-1][3] = T.EMPTY;
+  grid[ROWS-1][5] = T.EMPTY; grid[ROWS-2][4] = T.EMPTY;
+
+  var forbid = {'0,4':1};
+  for (var rr = ROWS-2; rr < ROWS; rr++) for (var cc = 3; cc <= 5; cc++) forbid[rr+','+cc] = 1;
+
+  // Distribute gold across thirds
+  var thirdSize = Math.floor(ROWS / 3);
+  var thirds = [
+    [1, thirdSize],
+    [thirdSize, thirdSize*2],
+    [thirdSize*2, ROWS-2]
+  ];
+  var goldLeft = GOLD_COUNT;
+  for (var ti = 0; ti < thirds.length; ti++) {
+    var rMin = thirds[ti][0], rMax = thirds[ti][1];
+    var inThird = ti < 2 ? 2 : goldLeft;
+    var placed = 0, tries = 0;
+    while (placed < inThird && tries < 300) {
+      tries++;
+      var r2 = rMin + Math.floor(Math.random() * (rMax - rMin));
+      var c2 = Math.floor(Math.random() * COLS);
+      var k = r2+','+c2;
+      if (!forbid[k] && grid[r2][c2] === T.ROCK) { grid[r2][c2] = T.GOLD; forbid[k]=1; placed++; }
+    }
+    goldLeft -= placed;
+  }
+
+  function placeRand(type, count) {
+    var placed = 0, tries = 0;
+    while (placed < count && tries < 300) {
+      tries++;
+      var r3 = 1 + Math.floor(Math.random() * (ROWS-2));
+      var c3 = Math.floor(Math.random() * COLS);
+      var k3 = r3+','+c3;
+      if (!forbid[k3] && grid[r3][c3] === T.ROCK) { grid[r3][c3] = type; forbid[k3]=1; placed++; }
+    }
+  }
+  placeRand(T.OIL,  OIL_COUNT);
+  placeRand(T.PICK, PICK_COUNT);
+}
+
+function startGame() {
+  initGrid();
+  player.col=4; player.row=ROWS-1; player.px=cellX(4); player.py=cellY(ROWS-1);
+  player.path=[]; player.animT=0; player.moving=false;
+  fuel=FUEL_START; pickaxe=PICK_START; collapseT=COLLAPSE_TIME;
+  gold=0; score=0; popups=[]; sparks=[]; dangerTick=0; feedbackSent=false;
+  state='playing'; lastT=0;
+}
+
+function bfs(fc, fr, tc, tr) {
+  if (fc===tc && fr===tr) return [];
+  var visited = {}; visited[fc+','+fr] = 1;
+  var q = [{ c:fc, r:fr, path:[] }];
+  var dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+  while (q.length) {
+    var cur = q.shift();
+    for (var d = 0; d < 4; d++) {
+      var nc = cur.c + dirs[d][0], nr = cur.r + dirs[d][1];
+      if (nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+      var key = nc+','+nr;
+      if (visited[key]) continue;
+      var tp = grid[nr][nc];
+      var walkable = (tp===T.EMPTY || tp===T.EXIT);
+      var isTarget = (nc===tc && nr===tr);
+      if (!walkable && !isTarget) continue;
+      var np = cur.path.concat([{c:nc,r:nr}]);
+      if (isTarget) return np;
+      if (walkable) { visited[key]=1; q.push({c:nc,r:nr,path:np}); }
+    }
+  }
+  return null;
+}
+
+function isAdj(c1,r1,c2,r2) { return Math.abs(c1-c2)+Math.abs(r1-r2)===1; }
+
+function doMine(col, row) {
+  if (pickaxe <= 0) { addPopup('NO PICK!','#E74C3C'); sndBlock(); return; }
+  var tp = grid[row][col];
+  grid[row][col] = T.EMPTY;
+  pickaxe = Math.max(0, pickaxe - 1);
+  sndMine();
+  if (tp === T.GOLD) {
+    gold++; score += 100;
+    addPopup('GOLD!','#FFD700');
+    spawnSparks(cellX(col), cellY(row),'#FFD700');
+    sndGold();
+  } else if (tp === T.OIL) {
+    fuel = Math.min(FUEL_START + OIL_REFILL*OIL_COUNT, fuel + OIL_REFILL);
+    addPopup('OIL +'+OIL_REFILL,'#FF9F43'); sndOil();
+  } else if (tp === T.PICK) {
+    pickaxe = Math.min(PICK_START, pickaxe + PICK_REFILL);
+    addPopup('PICK +'+PICK_REFILL,'#A0D8FF'); sndPick();
+  }
+}
+
+function spawnSparks(x, y, col) {
+  for (var i = 0; i < 12; i++) {
+    var a = Math.random() * Math.PI * 2;
+    var sp = 40 + Math.random() * 80;
+    sparks.push({ x:x, y:y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, col:col });
+  }
+}
+
+function handleTap(cx, cy) {
+  if (state === 'title') { startGame(); return; }
+  if (state !== 'playing') { state = 'title'; return; }
+  if (player.moving) return;
+  var col = Math.floor((cx - GRID_X) / TILE);
+  var row = Math.floor((cy - GRID_Y) / TILE);
+  if (col<0||col>=COLS||row<0||row>=ROWS) return;
+  var tp = grid[row][col];
+  var pc = player.col, pr = player.row;
+  if (tp === T.EMPTY || tp === T.EXIT) {
+    var path = bfs(pc, pr, col, row);
+    if (path && path.length > 0) { player.path=path; player.moving=true; player.animT=0; }
+  } else {
+    if (isAdj(pc, pr, col, row)) {
+      doMine(col, row);
+    } else {
+      var dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+      var bestPath = null;
+      for (var d = 0; d < 4; d++) {
+        var nc = col+dirs[d][0], nr = row+dirs[d][1];
+        if (nc<0||nc>=COLS||nr<0||nr>=ROWS) continue;
+        if (nc===pc && nr===pr) { bestPath = []; break; }
+        if (grid[nr][nc] !== T.EMPTY) continue;
+        var p2 = bfs(pc, pr, nc, nr);
+        if (p2 !== null && (bestPath===null || p2.length < bestPath.length)) bestPath = p2;
+      }
+      if (bestPath !== null) {
+        if (bestPath.length === 0) {
+          doMine(col, row);
+        } else {
+          player.path = bestPath.concat([{c:col,r:row,mine:true}]);
+          player.moving=true; player.animT=0;
+        }
+      }
+    }
+  }
+}
+
+function addPopup(text, color) {
+  popups.push({ text:text, color:color, x:player.px, y:player.py-22, life:1, vy:-38 });
+}
+
+function update(dt) {
+  if (state !== 'playing') return;
+  fuel = Math.max(0, fuel - FUEL_DRAIN*dt);
+  collapseT = Math.max(0, collapseT - dt);
+  dangerTick -= dt;
+  if (dangerTick <= 0 && (fuel < 20 || collapseT < 20)) { sndDanger(); dangerTick=0.75; }
+
+  for (var i = sparks.length-1; i >= 0; i--) {
+    var s = sparks[i];
+    s.x += s.vx*dt; s.y += s.vy*dt; s.vy += 60*dt; s.life -= dt*1.8;
+    if (s.life <= 0) sparks.splice(i,1);
+  }
+  for (var j = popups.length-1; j >= 0; j--) {
+    var p = popups[j]; p.y += p.vy*dt; p.life -= dt*1.1;
+    if (p.life <= 0) popups.splice(j,1);
+  }
+
+  if (player.moving && player.path.length > 0) {
+    player.animT += dt;
+    if (player.animT >= STEP_DUR) {
+      player.animT -= STEP_DUR;
+      var step = player.path.shift();
+      if (step.mine) {
+        doMine(step.c, step.r);
+        player.moving = false;
+      } else {
+        player.col=step.c; player.row=step.r;
+        player.px=cellX(step.c); player.py=cellY(step.r);
+        if (player.path.length === 0) player.moving=false;
+      }
+    } else {
+      var next = player.path[0];
+      if (next && !next.mine) {
+        var t = player.animT / STEP_DUR;
+        player.px = cellX(player.col) + (cellX(next.c)-cellX(player.col))*t;
+        player.py = cellY(player.row) + (cellY(next.r)-cellY(player.row))*t;
+      }
+    }
+  }
+
+  if (player.row === 0 && player.col === 4) {
+    if (gold >= GOLD_TARGET) {
+      score += Math.floor(fuel)*3 + Math.floor(collapseT)*2;
+      if (score > best) { best=score; localStorage.setItem(SLUG+'_best', best); }
+      state='win'; sndWin();
+    } else {
+      addPopup('NEED '+(GOLD_TARGET-gold)+' MORE','#E74C3C');
+      sndBlock();
+      player.col=4; player.row=1; player.px=cellX(4); player.py=cellY(1);
+      player.path=[]; player.moving=false;
+    }
+  }
+  if (fuel <= 0 || collapseT <= 0) { state='lose'; sndLose(); }
+}
+
+function drawRock(x, y) {
+  ctx.fillStyle='#2a1e14'; ctx.fillRect(x,y,TILE,TILE);
+  ctx.strokeStyle='#3b2a1c'; ctx.lineWidth=0.8;
+  ctx.beginPath();
+  ctx.moveTo(x+6,y+10); ctx.lineTo(x+20,y+7);
+  ctx.moveTo(x+22,y+20); ctx.lineTo(x+36,y+26);
+  ctx.moveTo(x+4,y+28); ctx.lineTo(x+15,y+33);
+  ctx.stroke();
+  ctx.strokeStyle='#1c1108'; ctx.lineWidth=0.5;
+  ctx.beginPath();
+  ctx.moveTo(x+28,y+5); ctx.lineTo(x+33,y+16);
+  ctx.moveTo(x+9,y+36); ctx.lineTo(x+14,y+27);
+  ctx.stroke();
+}
+
+function drawEmpty(x, y) {
+  ctx.fillStyle='#16100a'; ctx.fillRect(x,y,TILE,TILE);
+  ctx.strokeStyle='#1e1610'; ctx.lineWidth=0.5;
+  ctx.beginPath();
+  ctx.moveTo(x+7,y+19); ctx.lineTo(x+25,y+19);
+  ctx.moveTo(x+13,y+31); ctx.lineTo(x+35,y+31);
+  ctx.stroke();
+}
+
+function drawExit(x, y) {
+  ctx.fillStyle='#0c0804'; ctx.fillRect(x,y,TILE,TILE);
+  var g = ctx.createLinearGradient(x+TILE/2,y,x+TILE/2,y+TILE);
+  g.addColorStop(0,'rgba(255,220,90,0.7)');
+  g.addColorStop(1,'rgba(255,160,40,0)');
+  ctx.fillStyle=g; ctx.fillRect(x+7,y,TILE-14,TILE);
+  ctx.fillStyle='#FFE066'; ctx.font='bold 8px Georgia,serif'; ctx.textAlign='center';
+  ctx.fillText('EXIT', x+TILE/2, y+TILE/2+2);
+  ctx.fillStyle = gold >= GOLD_TARGET ? '#FFD700' : '#555';
+  ctx.font='7px Georgia,serif';
+  ctx.fillText(gold+'/'+GOLD_TARGET, x+TILE/2, y+TILE/2+12);
+}
+
+function drawTile(c, r) {
+  ctx.save();
+  var x=GRID_X+c*TILE, y=GRID_Y+r*TILE, tp=grid[r][c];
+  if (tp===T.EMPTY) drawEmpty(x,y);
+  else if (tp===T.EXIT) drawExit(x,y);
+  else drawRock(x,y);
+  ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=0.5;
+  ctx.strokeRect(x+0.5,y+0.5,TILE-1,TILE-1);
+  ctx.restore();
+}
+
+function drawPlayer() {
+  ctx.save();
+  var x=player.px, y=player.py;
+  ctx.fillStyle='rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(x,y+15,9,3.5,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#1a0520';
+  ctx.fillRect(x-7,y+5,5,11); ctx.fillRect(x+2,y+5,5,11);
+  ctx.beginPath(); ctx.roundRect(x-9,y-8,18,15,3); ctx.fill();
+  ctx.beginPath(); ctx.arc(x,y-14,7,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#241200';
+  ctx.fillRect(x-11,y-21,22,5); ctx.fillRect(x-7,y-30,14,11);
+  ctx.fillStyle='#FFE066';
+  ctx.beginPath(); ctx.arc(x,y-27,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,220,80,0.35)';
+  ctx.beginPath(); ctx.arc(x,y-27,7,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawDarkness() {
+  ctx.save();
+  var radius = 24 + (fuel/FUEL_START)*88;
+  var cx=player.px, cy=player.py;
+  var grd=ctx.createRadialGradient(cx,cy,0,cx,cy,radius);
+  grd.addColorStop(0,'rgba(10,6,2,0)');
+  grd.addColorStop(0.55,'rgba(10,6,2,0.12)');
+  grd.addColorStop(0.78,'rgba(10,6,2,0.72)');
+  grd.addColorStop(1,'rgba(10,6,2,0.97)');
+  ctx.fillStyle=grd; ctx.fillRect(0,HUD_H,W,H-HUD_H);
+  ctx.fillStyle='rgba(10,6,2,0.97)';
+  ctx.beginPath();
+  ctx.rect(0,HUD_H,W,H-HUD_H);
+  ctx.arc(cx,cy,radius,0,Math.PI*2,true);
+  ctx.fill();
+  var warm=ctx.createRadialGradient(cx,cy,0,cx,cy,radius*0.45);
+  warm.addColorStop(0,'rgba(200,140,40,0.08)');
+  warm.addColorStop(1,'rgba(200,140,40,0)');
+  ctx.fillStyle=warm;
+  ctx.beginPath(); ctx.arc(cx,cy,radius*0.45,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawBar(x, y, w, h, pct, c1, c2, label) {
+  ctx.save();
+  ctx.fillStyle='#160e08';
+  ctx.beginPath(); ctx.roundRect(x,y,w,h,3); ctx.fill();
+  if (pct > 0) {
+    var fw = Math.max(2, w*Math.min(1,pct));
+    var g=ctx.createLinearGradient(x,y,x+w,y);
+    g.addColorStop(0,c1); g.addColorStop(1,c2);
+    ctx.fillStyle=g; ctx.beginPath(); ctx.roundRect(x,y,fw,h,3); ctx.fill();
+  }
+  ctx.strokeStyle='rgba(255,200,80,0.15)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.roundRect(x,y,w,h,3); ctx.stroke();
+  ctx.fillStyle='#7a5a3a'; ctx.font='8px sans-serif'; ctx.textAlign='left';
+  ctx.fillText(label,x,y+h+10);
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle='#0c0804'; ctx.fillRect(0,0,W,HUD_H);
+  ctx.strokeStyle='#3a2010'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,HUD_H); ctx.lineTo(W,HUD_H); ctx.stroke();
+  var BW=88, BH=10, BY=15, gap=10;
+  var x0=(W-(BW*3+gap*2))/2;
+  var cpct=collapseT/COLLAPSE_TIME;
+  var cc1=cpct<0.25?'#E74C3C':'#FF9F43';
+  drawBar(x0,BY,BW,BH,cpct,'#E74C3C',cc1,'COLLAPSE');
+  drawBar(x0+BW+gap,BY,BW,BH,fuel/FUEL_START,'#D35400','#FFD700','LANTERN');
+  drawBar(x0+BW*2+gap*2,BY,BW,BH,pickaxe/PICK_START,'#2980B9','#A0D8FF','PICK');
+  ctx.fillStyle='#FFE066'; ctx.font='bold 22px Georgia,serif'; ctx.textAlign='center';
+  ctx.fillText(score,W/2,58);
+  var stars='';
+  for(var i=0;i<gold;i++) stars+='★';
+  for(var j=gold;j<GOLD_TARGET;j++) stars+='☆';
+  ctx.fillStyle=gold>=GOLD_TARGET?'#FFD700':'#C8A04A';
+  ctx.font='13px Georgia,serif';
+  ctx.fillText(stars+'  '+gold+'/'+GOLD_TARGET+' gold',W/2,76);
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  var bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#080504'); bg.addColorStop(0.6,'#1c0f06'); bg.addColorStop(1,'#0a0604');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(200,160,74,0.18)'; ctx.lineWidth=4;
+  [[30,90,140,380],[220,50,170,430],[70,210,310,520],[295,140,200,610]].forEach(function(v){
+    ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.lineTo(v[2],v[3]); ctx.stroke();
+  });
+  ctx.shadowColor='#C8A04A'; ctx.shadowBlur=22;
+  ctx.fillStyle='#FFE066'; ctx.font='bold 62px Georgia,serif'; ctx.textAlign='center';
+  ctx.fillText('GOLD',W/2,195); ctx.fillText('RUSH',W/2,267);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='#C8A04A'; ctx.font='16px Georgia,serif';
+  ctx.fillText('Mine • Survive • Escape',W/2,308);
+  ctx.fillStyle='#6a4a2a'; ctx.font='13px Georgia,serif';
+  ctx.fillText('Collect '+GOLD_TARGET+' gold veins — reach the exit',W/2,378);
+  ctx.fillText('Tap to move  •  Tap adjacent rock to mine',W/2,398);
+  ctx.fillText('Watch your lantern, pickaxe & collapse timer',W/2,418);
+  if (best > 0) {
+    ctx.fillStyle='#FFD700'; ctx.font='bold 14px Georgia,serif';
+    ctx.fillText('BEST: '+best,W/2,458);
+  }
+  var pulse=0.7+0.3*Math.sin(Date.now()/380);
+  ctx.globalAlpha=pulse;
+  ctx.fillStyle='#FFE066'; ctx.font='bold 18px Georgia,serif';
+  ctx.fillText('TAP TO PLAY',W/2,538);
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+function drawEnd(won) {
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.84)'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=won?'#FFD700':'#E74C3C';
+  ctx.font='bold 40px Georgia,serif'; ctx.textAlign='center';
+  var pulse=1+0.05*Math.sin(Date.now()/200);
+  ctx.save(); ctx.translate(W/2,235); ctx.scale(1,pulse); ctx.translate(-W/2,-235);
+  ctx.fillText(won?'STRUCK GOLD!':'CAVED IN',W/2,235);
+  ctx.restore();
+  ctx.fillStyle='#FFE066'; ctx.font='bold 36px Georgia,serif';
+  ctx.fillText(score,W/2,300);
+  if (score>=best && best>0) {
+    ctx.fillStyle='#FF9F43'; ctx.font='bold 15px Georgia,serif';
+    ctx.fillText('NEW RECORD!',W/2,328);
+  }
+  if (best>0) {
+    ctx.fillStyle='#C8A04A'; ctx.font='13px Georgia,serif';
+    ctx.fillText('BEST: '+best,W/2,352);
+  }
+  if (!won) {
+    ctx.fillStyle='#7a5a3a'; ctx.font='13px Georgia,serif';
+    ctx.fillText(fuel<=0?'Lantern ran dry':'Tunnel collapsed',W/2,374);
+  }
+  ctx.fillStyle='#1c0e04';
+  ctx.beginPath(); ctx.roundRect(W/2-82,408,164,44,8); ctx.fill();
+  ctx.strokeStyle='#FFE066'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(W/2-82,408,164,44,8); ctx.stroke();
+  ctx.fillStyle='#FFE066'; ctx.font='bold 18px Georgia,serif';
+  ctx.fillText('PLAY AGAIN',W/2,436);
+  ctx.fillStyle='#3a2010';
+  ctx.beginPath(); ctx.roundRect(W/2-82,464,164,38,8); ctx.fill();
+  ctx.strokeStyle='#7a5030'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect(W/2-82,464,164,38,8); ctx.stroke();
+  ctx.fillStyle='#C8A04A'; ctx.font='14px Georgia,serif';
+  ctx.fillText('Leave Feedback',W/2,488);
+  ctx.restore();
+  if (!feedbackSent) {
+    feedbackSent=true;
+    fetch(FEEDBACK_ENDPOINT,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({game:'Gold Rush',score:score,result:won?'win':'lose',gold:gold,fuel:Math.floor(fuel),collapse:Math.floor(collapseT)}),
+    }).catch(function(){});
+  }
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  if (state==='title') { drawTitle(); return; }
+  ctx.fillStyle='#0a0604'; ctx.fillRect(0,0,W,H);
+  for (var r=0;r<ROWS;r++) for (var c=0;c<COLS;c++) drawTile(c,r);
+  drawPlayer();
+  drawDarkness();
+  for (var si=0;si<sparks.length;si++) {
+    ctx.save(); ctx.globalAlpha=Math.max(0,sparks[si].life)*0.9;
+    ctx.fillStyle=sparks[si].col;
+    ctx.beginPath(); ctx.arc(sparks[si].x,sparks[si].y,2.5,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  for (var pi=0;pi<popups.length;pi++) {
+    ctx.save(); ctx.globalAlpha=Math.max(0,popups[pi].life);
+    ctx.fillStyle=popups[pi].color; ctx.font='bold 14px Georgia,serif'; ctx.textAlign='center';
+    ctx.fillText(popups[pi].text,popups[pi].x,popups[pi].y); ctx.restore();
+  }
+  drawHUD();
+  if (state==='win')  drawEnd(true);
+  if (state==='lose') drawEnd(false);
+}
+
+function loop(ts) {
+  try {
+    var dt=Math.min((ts-(lastT||ts))/1000,0.1);
+    lastT=ts; update(dt); draw();
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+
+function tapCoords(e) {
+  var scale=parseFloat(canvas.style.width)/W;
+  var rect=canvas.getBoundingClientRect();
+  return [(e.clientX-rect.left)/scale,(e.clientY-rect.top)/scale];
+}
+canvas.addEventListener('pointerdown', function(e) {
+  e.preventDefault();
+  var coords=tapCoords(e);
+  var cx=coords[0], cy=coords[1];
+  if (state==='win'||state==='lose') {
+    if (cy>408&&cy<452&&cx>W/2-82&&cx<W/2+82) { state='title'; return; }
+    if (cy>464&&cy<502&&cx>W/2-82&&cx<W/2+82) { showFeedbackForm(); return; }
+    state='title'; return;
+  }
+  handleTap(cx,cy);
+});
+document.addEventListener('keydown', function(e) {
+  if (e.code==='Space') { e.preventDefault(); if(state==='playing') return; handleTap(W/2,H/2); }
+});
+requestAnimationFrame(function(t){ lastT=t; loop(t); });
+
+var fbOv=document.getElementById('fb-ov');
+var fbStar=document.querySelectorAll('#fb-stars span');
+var fbTxt=document.getElementById('fb-text');
+var fbStat=document.getElementById('fb-status');
+var fbBtn=document.getElementById('fb-submit');
+var fbRat=0;
+fbStar.forEach(function(s){ s.addEventListener('click',function(){
+  fbRat=parseInt(s.dataset.v,10);
+  fbStar.forEach(function(t){ t.textContent=parseInt(t.dataset.v,10)<=fbRat?'★':'☆'; });
+}); });
+document.getElementById('fb-cancel').addEventListener('click',function(){ fbOv.style.display='none'; });
+fbBtn.addEventListener('click',async function(){
+  if (!fbRat) { fbStat.textContent='Please pick a star rating.'; return; }
+  fbStat.textContent='Sending…'; fbBtn.disabled=true;
+  try {
+    var res=await fetch(FEEDBACK_ENDPOINT,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({game:'Gold Rush',target:document.getElementById('fb-target').value,rating:fbRat,feedback:fbTxt.value,score:score}),
+    });
+    if (res.ok||res.status===302) {
+      fbStat.textContent='Thanks, pardner!';
+      setTimeout(function(){ fbOv.style.display='none'; },1500);
+    } else throw new Error();
+  } catch(e) {
+    fbStat.textContent="Couldn't send — try again.";
+    fbBtn.textContent='Retry'; fbBtn.disabled=false;
+  }
+});
+function showFeedbackForm() {
+  fbRat=0; fbTxt.value=''; fbStat.textContent='';
+  fbBtn.textContent='Submit'; fbBtn.disabled=false;
+  fbStar.forEach(function(s){ s.textContent='☆'; });
+  fbOv.style.display='flex';
+}
+
+window.__test = {
+  getState:    function(){ return state; },
+  getGrid:     function(){ return grid.map(function(r){ return r.slice(); }); },
+  getPlayer:   function(){ return {col:player.col,row:player.row}; },
+  getScore:    function(){ return score; },
+  getGold:     function(){ return gold; },
+  getFuel:     function(){ return fuel; },
+  getPick:     function(){ return pickaxe; },
+  getCollapse: function(){ return collapseT; },
+  startGame:   startGame,
+  setPlayerPos:function(c,r){ player.col=c;player.row=r;player.px=cellX(c);player.py=cellY(r);player.path=[];player.moving=false; },
+  doMine:      doMine,
+  setFuel:     function(n){ fuel=n; },
+  setPick:     function(n){ pickaxe=n; },
+  setGold:     function(n){ gold=n; },
+  skipCollapse:function(){ collapseT=0; },
+  forceWin:    function(){ gold=GOLD_TARGET;player.col=4;player.row=0;player.px=cellX(4);player.py=cellY(0);player.path=[];player.moving=false; },
+  resetBest:   function(){ best=0;localStorage.removeItem(SLUG+'_best'); },
+  setTile:     function(c,r,v){ grid[r][c]=v; },
+  getTile:     function(c,r){ return grid[r][c]; },
+  T:           T,
+  GOLD_TARGET: GOLD_TARGET,
+  FUEL_START:  FUEL_START,
+  PICK_START:  PICK_START,
+};
+</script>
+</body>
+</html>
