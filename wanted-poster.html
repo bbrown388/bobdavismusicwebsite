@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Wanted Poster</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(10,4,8,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game 🤠</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">☆</span><span data-v="2">☆</span><span data-v="3">☆</span><span data-v="4">☆</span><span data-v="5">☆</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Gold Rush">Upcoming: Gold Rush (Game 10)</option>
+      <option value="Boot Hill Bluff">Upcoming: Boot Hill Bluff (Game 11)</option>
+      <option value="Wanted Poster" selected>Existing: Wanted Poster</option>
+      <option value="Dust Devil">Existing: Dust Devil</option>
+      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+      <option value="Cattle Drive">Existing: Cattle Drive</option>
+      <option value="Outlaw Run">Existing: Outlaw Run</option>
+      <option value="Gone Fishin'">Existing: Gone Fishin'</option>
+      <option value="Honky Tonk">Existing: Honky Tonk</option>
+      <option value="Lasso Loop">Existing: Lasso Loop</option>
+      <option value="On the Road">Existing: On the Road</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0608;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const SLUG = 'wanted_poster';
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  wrap.style.width    = (W * s) + 'px';
+  wrap.style.height   = (H * s) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ── Audio ─────────────────────────────────────────────────────
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+const master = AC.createGain();
+master.gain.value = 0.7;
+master.connect(AC.destination);
+
+function ensureAudio() { if (AC.state === 'suspended') AC.resume(); }
+canvas.addEventListener('touchstart', ensureAudio, { once: true });
+canvas.addEventListener('click', ensureAudio, { once: true });
+
+let droneNodes = [];
+function startDrone() {
+  stopDrone();
+  // A minor chord: A3 C4 E4
+  [220, 261.63, 329.63].forEach(freq => {
+    const osc = AC.createOscillator(), g = AC.createGain();
+    osc.connect(g); g.connect(master);
+    osc.type = 'sine'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, AC.currentTime);
+    g.gain.linearRampToValueAtTime(0.055, AC.currentTime + 0.4);
+    osc.start();
+    droneNodes.push({ osc, g });
+  });
+}
+function stopDrone() {
+  droneNodes.forEach(({ osc, g }) => {
+    try {
+      g.gain.setValueAtTime(g.gain.value, AC.currentTime);
+      g.gain.linearRampToValueAtTime(0, AC.currentTime + 0.25);
+      osc.stop(AC.currentTime + 0.25);
+    } catch(e) {}
+  });
+  droneNodes = [];
+}
+
+function playCatch() {
+  // G major arpeggio: G4 B4 D5
+  [392, 493.88, 587.33].forEach((freq, i) => {
+    const t = AC.currentTime + i * 0.1;
+    const osc = AC.createOscillator(), g = AC.createGain();
+    osc.connect(g); g.connect(master);
+    osc.type = 'triangle'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.28, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.start(t); osc.stop(t + 0.28);
+  });
+}
+
+function playWrong() {
+  const osc = AC.createOscillator(), g = AC.createGain();
+  osc.connect(g); g.connect(master);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(160, AC.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(60, AC.currentTime + 0.18);
+  g.gain.setValueAtTime(0, AC.currentTime);
+  g.gain.linearRampToValueAtTime(0.22, AC.currentTime + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.18);
+  osc.start(); osc.stop(AC.currentTime + 0.18);
+}
+
+function playTick() {
+  const osc = AC.createOscillator(), g = AC.createGain();
+  osc.connect(g); g.connect(master);
+  osc.type = 'sine'; osc.frequency.value = 760;
+  g.gain.setValueAtTime(0, AC.currentTime);
+  g.gain.linearRampToValueAtTime(0.07, AC.currentTime + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.055);
+  osc.start(); osc.stop(AC.currentTime + 0.055);
+}
+
+// ── Face features ─────────────────────────────────────────────
+// hatStyle: 0=wide-brim  1=narrow  2=none
+// hatColor: 0=black  1=brown  2=tan
+// beard:    0=none  1=goatee  2=full  3=handlebar
+// scar:     0=none  1=left  2=right
+// eyeStyle: 0=normal  1=squint  2=bushy-brows
+// hair:     0=dark  1=gray  2=bald  (only shown when hatStyle===2)
+
+const FEAT_KEYS = ['hatStyle','hatColor','beard','scar','eyeStyle','hair'];
+const FEAT_MAX  = { hatStyle:3, hatColor:3, beard:4, scar:3, eyeStyle:3, hair:3 };
+
+function randFace() {
+  const f = {};
+  for (const k of FEAT_KEYS) f[k] = Math.floor(Math.random() * FEAT_MAX[k]);
+  return f;
+}
+
+function diffCount(a, b) {
+  let d = 0;
+  for (const k of FEAT_KEYS) if (a[k] !== b[k]) d++;
+  return d;
+}
+
+// ── Game state ────────────────────────────────────────────────
+let state     = 'title'; // title|study|find|caught|over
+let score     = 0;
+let bestScore = parseInt(localStorage.getItem(SLUG + '_best') || '0', 10);
+let lives     = 3;
+let round     = 0;
+let outlaw    = null;
+let npcs      = [];      // [{features,x,y,hitR,idx}]
+let outlawIdx = -1;
+let studyTimer    = 0;
+let studyDuration = 0;
+let caughtTimer   = 0;
+let popup         = null;  // {text,color,x,y,born}
+let wrongFlash    = {};    // idx→timestamp end
+
+// 6 NPC slots: front row (scale=1), back row (scale=0.78)
+const SLOTS = [
+  { x: 68,  y: 458, hitR: 42, scale: 1.0 },
+  { x: 180, y: 458, hitR: 42, scale: 1.0 },
+  { x: 292, y: 458, hitR: 42, scale: 1.0 },
+  { x: 95,  y: 333, hitR: 34, scale: 0.78 },
+  { x: 180, y: 328, hitR: 34, scale: 0.78 },
+  { x: 265, y: 333, hitR: 34, scale: 0.78 },
+];
+const SLOT_PICKS = { 4:[0,1,2,4], 5:[0,1,2,3,5], 6:[0,1,2,3,4,5] };
+
+function npcCount(r) { return r <= 1 ? 4 : r === 2 ? 5 : 6; }
+function studyTime(r) { return r <= 1 ? 8 : r === 2 ? 6 : r === 3 ? 4 : 3; }
+
+function startRound() {
+  round++;
+  outlaw = randFace();
+  const cnt   = npcCount(round);
+  const picks = SLOT_PICKS[cnt];
+  outlawIdx   = Math.floor(Math.random() * cnt);
+  const used  = [outlaw];
+  npcs = [];
+  for (let i = 0; i < cnt; i++) {
+    const s = SLOTS[picks[i]];
+    let feat;
+    if (i === outlawIdx) {
+      feat = { ...outlaw };
+    } else {
+      let att = 0;
+      do { feat = randFace(); att++; }
+      while (att < 40 && !used.every(f => diffCount(feat, f) >= 2));
+      used.push(feat);
+    }
+    npcs.push({ ...s, features: feat, idx: i });
+  }
+  wrongFlash    = {};
+  studyDuration = studyTime(round);
+  studyTimer    = studyDuration;
+  state         = 'study';
+  startDrone();
+}
+
+function startGame() {
+  score = 0; lives = 3; round = 0; popup = null; wrongFlash = {};
+  startRound();
+}
+
+// ── Face renderer ─────────────────────────────────────────────
+function drawFace(cx, cy, faceR, feat, big) {
+  ctx.save();
+  const fw  = faceR * 0.82;
+  const lw  = big ? 2 : 1.2;
+  const skin = big ? '#C8966B' : '#8B5E3C';
+  const ink  = '#2a1200';
+
+  // Face oval
+  ctx.fillStyle = skin;
+  ctx.beginPath(); ctx.ellipse(cx, cy, fw, faceR, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.stroke();
+
+  // Eyes
+  const ey  = cy - faceR * 0.12;
+  const esp = fw * 0.42;
+  const er  = big ? 5.5 : 3.5;
+  const ir  = big ? 3.5 : 2.2;
+
+  for (const side of [-1, 1]) {
+    const ex = cx + side * esp;
+    if (feat.eyeStyle === 0) {
+      ctx.fillStyle = '#fff8ee';
+      ctx.beginPath(); ctx.ellipse(ex, ey, er, er * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = lw * 0.7; ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.beginPath(); ctx.arc(ex, ey, ir, 0, Math.PI * 2); ctx.fill();
+    } else if (feat.eyeStyle === 1) {
+      ctx.fillStyle = '#fff8ee';
+      ctx.beginPath(); ctx.ellipse(ex, ey, er, er * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.beginPath(); ctx.ellipse(ex, ey, ir * 0.75, ir * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = lw * 0.5;
+      ctx.beginPath(); ctx.moveTo(ex - er, ey - er * 0.28); ctx.lineTo(ex + er, ey - er * 0.28); ctx.stroke();
+    } else {
+      ctx.fillStyle = '#fff8ee';
+      ctx.beginPath(); ctx.ellipse(ex, ey, er, er * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = lw * 0.7; ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.beginPath(); ctx.arc(ex, ey, ir, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = big ? 4.5 : 2.8; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ex - er * 1.1, ey - er * 1.55 + (side === -1 ? er * 0.2 : 0));
+      ctx.lineTo(ex + er * 1.1, ey - er * 1.55 + (side ===  1 ? er * 0.2 : 0));
+      ctx.stroke();
+    }
+  }
+
+  // Nose
+  const ny = cy + faceR * 0.18;
+  ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx, ey + er * 1.5);
+  ctx.lineTo(cx, ny);
+  ctx.lineTo(cx - fw * 0.15, ny + (big ? 4 : 2.5));
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, ny, big ? 4.5 : 2.8, 0, Math.PI); ctx.stroke();
+
+  // Mouth
+  const my = cy + faceR * 0.52;
+  ctx.strokeStyle = ink; ctx.lineWidth = lw * 0.9;
+  ctx.beginPath(); ctx.arc(cx, my - (big ? 4 : 2.5), fw * 0.3, 0.2, Math.PI - 0.2); ctx.stroke();
+
+  // Beard
+  const chinY = cy + faceR;
+  if (feat.beard === 1) {
+    ctx.fillStyle = ink;
+    ctx.beginPath(); ctx.ellipse(cx, chinY - (big ? 5 : 3.5), fw * 0.22, big ? 10 : 6.5, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (feat.beard === 2) {
+    // Full beard — fill lower half of face oval
+    ctx.fillStyle = ink;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + faceR * 0.35, fw * 0.82, faceR * 0.68, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // restore skin on upper area
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - faceR * 0.1, fw * 0.80, faceR * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // re-draw eyes / nose / mouth
+    for (const side of [-1, 1]) {
+      const ex = cx + side * esp;
+      ctx.fillStyle = '#fff8ee';
+      ctx.beginPath(); ctx.ellipse(ex, ey, er, er * (feat.eyeStyle === 1 ? 0.32 : 0.85), 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = lw * 0.7; ctx.stroke();
+      ctx.fillStyle = ink;
+      if (feat.eyeStyle === 1) {
+        ctx.beginPath(); ctx.ellipse(ex, ey, ir * 0.75, ir * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.arc(ex, ey, ir, 0, Math.PI * 2); ctx.fill();
+      }
+      if (feat.eyeStyle === 2) {
+        ctx.strokeStyle = ink; ctx.lineWidth = big ? 4.5 : 2.8; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(ex - er * 1.1, ey - er * 1.55 + (side === -1 ? er * 0.2 : 0));
+        ctx.lineTo(ex + er * 1.1, ey - er * 1.55 + (side ===  1 ? er * 0.2 : 0));
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, ey + er * 1.5); ctx.lineTo(cx, ny);
+    ctx.lineTo(cx - fw * 0.15, ny + (big ? 4 : 2.5)); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, ny, big ? 4.5 : 2.8, 0, Math.PI); ctx.stroke();
+  } else if (feat.beard === 3) {
+    // Handlebar mustache
+    const mwy = my - (big ? 9 : 6);
+    const hw  = fw * 0.38;
+    ctx.strokeStyle = ink; ctx.lineWidth = big ? 3.5 : 2.2; ctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx, mwy);
+      ctx.bezierCurveTo(
+        cx + side * hw * 0.5, mwy - (big ? 5 : 3.5),
+        cx + side * hw,       mwy - (big ? 2 : 1.5),
+        cx + side * hw * 1.1, mwy + (big ? 6 : 4)
+      );
+      ctx.stroke();
+    }
+  }
+
+  // Scar
+  if (feat.scar !== 0) {
+    const sx  = feat.scar === 1 ? cx - fw * 0.44 : cx + fw * 0.44;
+    const sy1 = ey + (big ? 9 : 5.5);
+    ctx.strokeStyle = '#C84A4A'; ctx.lineWidth = big ? 2.5 : 1.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy1); ctx.lineTo(sx + (big ? 3 : 2), sy1 + (big ? 18 : 11)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx - (big ? 3 : 2), sy1 + (big ? 6 : 3.5)); ctx.lineTo(sx + (big ? 3 : 2), sy1 + (big ? 9 : 5.5)); ctx.stroke();
+  }
+
+  // Hat
+  if (feat.hatStyle !== 2) {
+    const hc = ['#1a1208','#5c3010','#C8A06A'][feat.hatColor];
+    const topY  = cy - faceR - (big ? 8 : 5);
+    const cH    = big ? 48 : 30;
+    const cW    = fw * (feat.hatStyle === 0 ? 1.05 : 0.78);
+    const brimW = fw * (feat.hatStyle === 0 ? 2.05 : 1.28);
+    const brimH = big ? 11 : 7;
+    ctx.fillStyle = hc;
+    ctx.beginPath(); ctx.ellipse(cx, topY, brimW, brimH * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.stroke();
+    ctx.fillStyle = hc;
+    rr(ctx, cx - cW, topY - cH, cW * 2, cH + brimH * 0.35, big ? 6 : 4); ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.stroke();
+    ctx.strokeStyle = ink; ctx.lineWidth = big ? 3 : 1.8;
+    ctx.beginPath();
+    ctx.moveTo(cx - cW, topY - (big ? 10 : 6.5));
+    ctx.lineTo(cx + cW, topY - (big ? 10 : 6.5));
+    ctx.stroke();
+  } else {
+    const hc = [null,'#1a0a04','#888888'][feat.hair === 2 ? 0 : feat.hair === 0 ? 1 : 2];
+    if (hc) {
+      ctx.fillStyle = hc;
+      ctx.beginPath(); ctx.ellipse(cx, cy - faceR * 0.85, fw * 0.95, faceR * 0.32, 0, Math.PI, Math.PI * 2); ctx.fill();
+      for (const side of [-1, 1]) {
+        ctx.beginPath(); ctx.ellipse(cx + side * fw * 0.86, cy - faceR * 0.22, fw * 0.17, faceR * 0.44, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+// ── NPC drawing ───────────────────────────────────────────────
+function drawNPC(npc, now) {
+  ctx.save();
+  const { x, y, scale, features, idx } = npc;
+  const fR = 22 * scale;
+  const bW = 34 * scale, bH = 70 * scale;
+  // Body silhouette
+  ctx.fillStyle = '#150a04';
+  rr(ctx, x - bW / 2, y + fR * 0.78, bW, bH, 8 * scale);
+  ctx.fill();
+  // Wrong flash
+  const wfEnd = wrongFlash[idx] || 0;
+  if (now < wfEnd) {
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#E74C3C';
+    ctx.beginPath(); ctx.arc(x, y, fR * 1.9, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  drawFace(x, y, fR, features, false);
+  ctx.restore();
+}
+
+// ── Saloon background ─────────────────────────────────────────
+function drawSaloon() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0d0608');
+  bg.addColorStop(0.5, '#180b06');
+  bg.addColorStop(1, '#261004');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // Wood planks
+  for (let r = 0; r < 18; r++) {
+    ctx.fillStyle = r % 2 === 0 ? 'rgba(255,130,40,0.025)' : 'rgba(0,0,0,0.03)';
+    ctx.fillRect(0, r * 22, W, 22);
+  }
+  // Lanterns
+  [[75, 115], [285, 115], [180, 95]].forEach(([lx, ly]) => {
+    const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, 85);
+    g.addColorStop(0, 'rgba(255,175,55,0.16)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  });
+  // Bar counter bottom
+  ctx.fillStyle = '#210e02';
+  ctx.fillRect(0, H - 52, W, 52);
+  ctx.fillStyle = '#351505';
+  ctx.fillRect(0, H - 56, W, 9);
+  ctx.strokeStyle = '#5c3010'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, H - 46); ctx.lineTo(W, H - 46); ctx.stroke();
+  ctx.restore();
+}
+
+// ── Poster drawing ────────────────────────────────────────────
+function drawPoster(now) {
+  ctx.save();
+  const px = 22, py = 18, pw = W - 44, ph = H - 36;
+  // Aged paper
+  ctx.fillStyle = '#D2B07A';
+  rr(ctx, px, py, pw, ph, 5); ctx.fill();
+  // Vignette
+  const vg = ctx.createRadialGradient(W/2, H/2, pw*0.15, W/2, H/2, pw*0.78);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(60,20,0,0.32)');
+  ctx.fillStyle = vg; rr(ctx, px, py, pw, ph, 5); ctx.fill();
+  // Border
+  ctx.strokeStyle = '#5c3010'; ctx.lineWidth = 2.5;
+  rr(ctx, px + 7, py + 7, pw - 14, ph - 14, 4); ctx.stroke();
+  ctx.lineWidth = 0.8;
+  rr(ctx, px + 10, py + 10, pw - 20, ph - 20, 3); ctx.stroke();
+
+  // WANTED header
+  ctx.fillStyle = '#7a1515';
+  ctx.font = 'bold 54px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('WANTED', W / 2, py + 72);
+  ctx.fillStyle = '#5c3010'; ctx.font = 'bold 15px serif';
+  ctx.fillText('DEAD OR ALIVE', W / 2, py + 93);
+
+  // Portrait frame
+  const pfx = 62, pfy = py + 103, pfw = W - 62*2, pfh = 196;
+  ctx.fillStyle = '#BFA070';
+  rr(ctx, pfx, pfy, pfw, pfh, 4); ctx.fill();
+  ctx.strokeStyle = '#5c3010'; ctx.lineWidth = 1.8; ctx.stroke();
+  if (outlaw) drawFace(W / 2, pfy + pfh / 2, 60, outlaw, true);
+
+  // Feature legend (2 columns below portrait)
+  const lx1 = px + 14, lx2 = W / 2 + 8;
+  let ly = pfy + pfh + 18;
+  const labels = [
+    'Hat: ' + ['Wide-Brim', 'Narrow-Brim', 'None'][outlaw.hatStyle]
+      + (outlaw.hatStyle !== 2 ? ' (' + ['Black','Brown','Tan'][outlaw.hatColor] + ')' : ''),
+    'Beard: ' + ['None', 'Goatee', 'Full Beard', 'Handlebar'][outlaw.beard],
+    'Eyes: ' + ['Normal', 'Squinting', 'Bushy Brows'][outlaw.eyeStyle],
+    'Scar: ' + ['None', 'Left Cheek', 'Right Cheek'][outlaw.scar],
+    outlaw.hatStyle === 2 ? 'Hair: ' + ['Dark', 'Gray', 'Bald'][outlaw.hair] : '',
+  ].filter(Boolean);
+
+  ctx.fillStyle = '#3a1800'; ctx.font = '11.5px serif'; ctx.textAlign = 'left';
+  labels.forEach((lbl, i) => {
+    const lx = i < 3 ? lx1 : lx2;
+    const yy = i < 3 ? ly + i * 16 : ly + (i - 3) * 16;
+    ctx.fillText('• ' + lbl, lx, yy);
+  });
+
+  // Reward
+  const rly = pfy + pfh + 74;
+  ctx.fillStyle = '#7a1515'; ctx.font = 'bold 19px serif'; ctx.textAlign = 'center';
+  ctx.fillText('$500 REWARD', W / 2, rly);
+  ctx.fillStyle = '#5c3010'; ctx.font = '12.5px serif';
+  ctx.fillText('LAST SEEN: DODGE CITY SALOON', W / 2, rly + 18);
+
+  // Study timer bar
+  const barY = H - 86, barW = pw - 16;
+  const prog = studyTimer / studyDuration;
+  ctx.fillStyle = '#5c3010';
+  rr(ctx, px + 14, barY, barW, 15, 4); ctx.fill();
+  ctx.fillStyle = prog > 0.4 ? '#C8963A' : '#E74C3C';
+  rr(ctx, px + 14, barY, barW * Math.max(0, prog), 15, 4); ctx.fill();
+  ctx.strokeStyle = '#3a1800'; ctx.lineWidth = 0.8;
+  rr(ctx, px + 14, barY, barW, 15, 4); ctx.stroke();
+  ctx.fillStyle = '#3a1800'; ctx.font = 'bold 12.5px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('STUDY: ' + Math.ceil(studyTimer) + 's  —  Tap to Hunt', W / 2, barY + 28);
+
+  ctx.restore();
+}
+
+// ── HUD ───────────────────────────────────────────────────────
+function drawHUD() {
+  ctx.save();
+  // Score
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  rr(ctx, W/2 - 55, 8, 110, 27, 8); ctx.fill();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 13.5px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('SCORE: ' + score, W/2, 21.5);
+  // Stars (lives)
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < lives ? '#FFD700' : '#3a2a10';
+    ctx.font = '19px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('★', 8 + i * 22, 22);
+  }
+  // Round
+  ctx.fillStyle = 'rgba(0,0,0,0.48)';
+  rr(ctx, W - 66, 8, 60, 23, 6); ctx.fill();
+  ctx.fillStyle = '#C8A06A'; ctx.font = '11.5px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ROUND ' + round, W - 36, 19.5);
+  ctx.restore();
+}
+
+// ── Find hint ─────────────────────────────────────────────────
+function drawFindHint() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.52)';
+  rr(ctx, W/2 - 115, H - 47, 230, 27, 6); ctx.fill();
+  ctx.fillStyle = '#C8A06A'; ctx.font = '13px serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Tap the outlaw from the poster', W/2, H - 33.5);
+  ctx.restore();
+}
+
+// ── Caught overlay ────────────────────────────────────────────
+function drawCaught() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 54px serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 32;
+  ctx.fillText('CAUGHT!', W/2, H/2 - 22);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A06A'; ctx.font = '19px serif';
+  ctx.fillText('+1  Outlaw Brought In', W/2, H/2 + 30);
+  ctx.restore();
+}
+
+// ── Game over ─────────────────────────────────────────────────
+function drawOver(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.88)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#E8DCC8'; ctx.font = 'bold 42px serif';
+  ctx.fillText('BUSTED!', W/2, H/2 - 132);
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 27px sans-serif';
+  ctx.fillText(score + ' outlaw' + (score !== 1 ? 's' : '') + ' caught', W/2, H/2 - 82);
+  if (score > 0 && score >= bestScore) {
+    const p = 0.75 + 0.25 * Math.sin(now / 180);
+    ctx.save(); ctx.globalAlpha = p;
+    ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+    ctx.font = 'bold 17px sans-serif';
+    ctx.fillText('NEW RECORD!', W/2, H/2 - 44);
+    ctx.restore();
+  }
+  ctx.fillStyle = '#907860'; ctx.font = '14px sans-serif';
+  ctx.fillText('Best: ' + bestScore + ' caught', W/2, H/2 - 10);
+  // Play Again
+  ctx.save();
+  ctx.fillStyle = '#FFD700';
+  rr(ctx, W/2 - 87, H/2 + 22, 174, 46, 10); ctx.fill();
+  ctx.fillStyle = '#0d0608'; ctx.font = 'bold 18px sans-serif';
+  ctx.fillText('Play Again', W/2, H/2 + 45);
+  ctx.restore();
+  // Feedback
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,215,0,0.1)';
+  rr(ctx, W/2 - 112, H/2 + 82, 224, 37, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,215,0,0.28)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#A09070'; ctx.font = '13.5px sans-serif';
+  ctx.fillText('Tell Us What You Think 🤠', W/2, H/2 + 100.5);
+  ctx.restore();
+  ctx.restore();
+}
+
+// ── Title ─────────────────────────────────────────────────────
+function drawTitle(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.78)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 48px serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 26;
+  ctx.fillText('WANTED', W/2, H/2 - 102);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#E8DCC8'; ctx.font = 'bold 28px serif';
+  ctx.fillText('POSTER', W/2, H/2 - 60);
+  ctx.fillStyle = '#C8A06A'; ctx.font = '14.5px Georgia,serif';
+  ctx.fillText('Study the wanted poster.', W/2, H/2 + 0);
+  ctx.fillText('Find the outlaw in the crowd.', W/2, H/2 + 21);
+  ctx.fillText('3 wrong taps — you\'re BUSTED.', W/2, H/2 + 42);
+  const pulse = 0.55 + 0.45 * Math.sin(now / 580);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 19px Georgia,serif';
+  ctx.fillText('Tap to Start', W/2, H/2 + 90);
+  ctx.globalAlpha = 1;
+  if (bestScore > 0) {
+    ctx.fillStyle = '#907860'; ctx.font = '13px sans-serif';
+    ctx.fillText('Best: ' + bestScore + ' caught', W/2, H/2 + 124);
+  }
+  ctx.restore();
+}
+
+// ── Popup float ───────────────────────────────────────────────
+function drawPopup(now) {
+  if (!popup) return;
+  const age = now - popup.born;
+  if (age > 900) { popup = null; return; }
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - age / 900);
+  ctx.fillStyle = popup.color; ctx.shadowColor = popup.color; ctx.shadowBlur = 10;
+  ctx.font = 'bold 23px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(popup.text, popup.x, popup.y - age * 0.032);
+  ctx.restore();
+}
+
+// ── Input ─────────────────────────────────────────────────────
+function getXY(e) {
+  const r = canvas.getBoundingClientRect(), s = e.touches ? e.touches[0] : e;
+  return { x: (s.clientX - r.left) * (W / r.width), y: (s.clientY - r.top) * (H / r.height) };
+}
+
+function handleTapNPC(idx) {
+  if (state !== 'find') return;
+  if (idx === outlawIdx) {
+    score++;
+    if (score > bestScore) { bestScore = score; localStorage.setItem(SLUG + '_best', bestScore); }
+    playCatch();
+    popup = { text: 'CAUGHT!', color: '#FFD700', x: W/2, y: H/2 - 60, born: performance.now() };
+    caughtTimer = 1.55;
+    state = 'caught';
+    stopDrone();
+  } else {
+    lives--;
+    wrongFlash[idx] = performance.now() + 500;
+    playWrong();
+    popup = {
+      text: lives > 0 ? 'WRONG!' : 'BUSTED!',
+      color: '#E74C3C', x: W/2, y: H/3, born: performance.now(),
+    };
+    if (lives <= 0) { state = 'over'; stopDrone(); }
+  }
+}
+
+function onTap(e) {
+  e.preventDefault();
+  ensureAudio();
+  const { x, y } = getXY(e);
+
+  if (state === 'title') { startGame(); return; }
+
+  if (state === 'study') {
+    studyTimer = 0; state = 'find'; stopDrone(); return;
+  }
+
+  if (state === 'find') {
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < npcs.length; i++) {
+      const d = Math.hypot(x - npcs[i].x, y - npcs[i].y);
+      if (d < npcs[i].hitR && d < bestD) { best = i; bestD = d; }
+    }
+    if (best >= 0) handleTapNPC(best);
+    return;
+  }
+
+  if (state === 'over') {
+    if (x > W/2 - 87 && x < W/2 + 87 && y > H/2 + 22 && y < H/2 + 68) startGame();
+    if (x > W/2 - 112 && x < W/2 + 112 && y > H/2 + 82 && y < H/2 + 119) showFeedbackForm();
+    return;
+  }
+}
+
+canvas.addEventListener('touchstart', onTap, { passive: false });
+canvas.addEventListener('click', onTap);
+
+// ── Main loop ─────────────────────────────────────────────────
+let lastT = 0;
+
+function loop(ts) {
+  try {
+    const dt  = Math.min((ts - lastT) / 1000, 0.05);
+    lastT = ts;
+
+    if (state === 'study') {
+      const prev = studyTimer;
+      studyTimer -= dt;
+      const pSec = Math.ceil(prev), cSec = Math.ceil(studyTimer);
+      if (cSec < pSec && cSec <= 3 && cSec > 0) playTick();
+      if (studyTimer <= 0) { studyTimer = 0; state = 'find'; stopDrone(); }
+    }
+
+    if (state === 'caught') {
+      caughtTimer -= dt;
+      if (caughtTimer <= 0) startRound();
+    }
+
+    if (state === 'study') {
+      drawPoster(ts);
+    } else if (state === 'title') {
+      drawSaloon(); drawTitle(ts);
+    } else {
+      drawSaloon();
+      const sorted = [...npcs].sort((a, b) => a.y - b.y);
+      sorted.forEach(npc => drawNPC(npc, ts));
+      drawHUD();
+      if (state === 'find') drawFindHint();
+      if (state === 'caught') drawCaught();
+      if (state === 'over') drawOver(ts);
+    }
+
+    drawPopup(ts);
+  } catch (err) {
+    console.error('[wanted-poster] loop:', err);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(t => { lastT = t; loop(t); });
+
+// ── Feedback form ─────────────────────────────────────────────
+const fbOv   = document.getElementById('fb-ov');
+const fbStar = document.querySelectorAll('#fb-stars span');
+const fbTxt  = document.getElementById('fb-text');
+const fbStat = document.getElementById('fb-status');
+const fbBtn  = document.getElementById('fb-submit');
+let fbRat = 0;
+
+fbStar.forEach(s => s.addEventListener('click', () => {
+  fbRat = parseInt(s.dataset.v, 10);
+  fbStar.forEach(t => t.textContent = parseInt(t.dataset.v, 10) <= fbRat ? '★' : '☆');
+}));
+document.getElementById('fb-cancel').addEventListener('click', () => { fbOv.style.display = 'none'; });
+fbBtn.addEventListener('click', async () => {
+  if (!fbRat) { fbStat.textContent = 'Please pick a star rating.'; return; }
+  fbStat.textContent = 'Sending…'; fbBtn.disabled = true;
+  try {
+    const res = await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Wanted Poster', target: document.getElementById('fb-target').value, rating: fbRat, feedback: fbTxt.value, score }),
+    });
+    if (res.ok || res.status === 302) {
+      fbStat.textContent = 'Thanks, pardner! 🤠';
+      setTimeout(() => { fbOv.style.display = 'none'; }, 1500);
+    } else throw new Error();
+  } catch {
+    fbStat.textContent = "Couldn't send — try again.";
+    fbBtn.textContent = 'Retry'; fbBtn.disabled = false;
+  }
+});
+
+function showFeedbackForm() {
+  fbRat = 0; fbTxt.value = ''; fbStat.textContent = '';
+  fbBtn.textContent = 'Submit'; fbBtn.disabled = false;
+  fbStar.forEach(s => s.textContent = '☆');
+  fbOv.style.display = 'flex';
+}
+
+// ── Test hooks ────────────────────────────────────────────────
+window.__test = {
+  getState:    () => ({ state, score, bestScore, lives, round, outlawIdx, studyTimer, npcCount: npcs.length }),
+  startGame:   () => startGame(),
+  forceOver:   () => { state = 'over'; stopDrone(); },
+  tapNPC:      idx => handleTapNPC(idx),
+  skipStudy:   () => { studyTimer = 0; state = 'find'; stopDrone(); },
+  resetBest:   () => { bestScore = 0; localStorage.removeItem(SLUG + '_best'); },
+  getOutlawIdx:() => outlawIdx,
+  getNPCCount: () => npcs.length,
+  getOutlaw:   () => outlaw ? { ...outlaw } : null,
+};
+</script>
+</body>
+</html>
