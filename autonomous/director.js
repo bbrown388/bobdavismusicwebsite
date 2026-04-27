@@ -20,14 +20,8 @@ async function main() {
   const state = readState();
   console.log('[director] State:', JSON.stringify(state));
 
-  // Resume incomplete task if one exists from a prior session
-  if (state.currentTask) {
-    console.log('[director] Resuming incomplete task from prior session');
-    console.log('RESUME_TASK:', JSON.stringify(state.currentTask));
-    return;
-  }
-
-  // Fetch new feedback since last run
+  // Always fetch feedback — applies even to resume scenarios.
+  // The director reads feedback before deciding whether to resume, pivot, or reorder.
   let feedback = [];
   try {
     feedback = await fetchNewFeedback();
@@ -36,20 +30,27 @@ async function main() {
     console.warn('[director] Could not fetch feedback:', e.message);
   }
 
-  // Persist the highest feedback ID seen so we don't re-process old submissions
-  if (feedback.length > 0) {
-    const lastId = Math.max(...feedback.map(f => f.id));
-    writeState({ lastFeedbackId: lastId });
+  const feedbackItems = feedback.map(i => ({
+    game:         i.game || 'general',
+    message:      i.message || '',
+    fixRequested: i.fixRequested || false,
+  }));
+
+  // Resume incomplete task if one exists — but include feedback so director
+  // can evaluate whether to continue, pivot, or requeue before resuming.
+  if (state.currentTask) {
+    console.log('[director] In-progress task found — evaluating feedback before resuming');
+    console.log('RESUME_TASK:', JSON.stringify({ ...state.currentTask, feedbackItems }));
+    return;
   }
 
   const decision = classifyAndDecide(feedback, state);
+  decision.feedbackItems = feedbackItems;
   console.log('[director] Decision:', JSON.stringify(decision, null, 2));
 
   // Save current task so a mid-session token limit doesn't lose work
   writeState({ currentTask: decision });
 
-  // Signal to the Claude Code session what to do
-  // The session reads DIRECTOR_PROMPT.md and acts on this output
   console.log('\nEXECUTE:', JSON.stringify(decision));
   console.log('\n[director] See autonomous/DIRECTOR_PROMPT.md for execution instructions.');
 }

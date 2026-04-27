@@ -106,11 +106,35 @@ Read that output and act on it per the instructions below.
 
 If the session prints `RESUME_TASK: {...}`:
 
-1. Parse the task JSON — note `action` and `target`
-2. Check git log: `git log --oneline -5` to see what was completed last session
-3. Check for in-progress files: `Glob *.html` to find any new game file
-4. Continue from where you left off — don't restart from scratch
-5. When complete, follow the same commit/push/state-clear steps above
+**Step 1 — Evaluate feedback BEFORE resuming.**
+
+Read `feedbackItems` in the payload. Decide which of these applies:
+
+**A) No feedback, or feedback unrelated to current game → Resume normally.**
+- Check git log: `git log --oneline -5` to see what was completed
+- Check for in-progress files: `Glob *.html`
+- Continue from where you left off
+
+**B) Feedback about the game currently in progress → Incorporate and resume.**
+- Note the feedback as a design constraint
+- Resume, applying it to whatever work remains
+- Do not restart from scratch unless the feedback fundamentally changes the concept
+
+**C) Feedback requests a different game be done instead (higher urgency) → Pause and pivot.**
+1. Check git status — note any in-progress files created this session
+2. If a partial game file exists: leave it in place (it will be found on future resume)
+3. Add the current game back to the FRONT of `gameQueue` with `status: "paused"` and a `"pausedNote"` field summarizing what was done and what remains
+4. Update `autonomous/state.json`: set `currentTask: null`
+5. Update status files, commit: `git commit -m "chore: pause Game NN — pivoting per feedback"`
+6. Push, then proceed as a fresh `new_game` run for the requested game
+
+**D) Feedback says to cancel the current game entirely → Discard and move on.**
+1. Delete any in-progress game file and test file (if not yet committed/shipped)
+2. Remove the game from `gameQueue`
+3. Set `currentTask: null` in state.json
+4. Proceed with the next game in queue
+
+**Urgency judgment:** If feedback says "do X instead" with no qualifier, that is high urgency — pivot. If it says "after this one, do X" or "next time do X" — that is low urgency — update the queue and resume current work.
 
 ---
 
