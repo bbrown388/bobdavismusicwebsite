@@ -15,6 +15,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 5 | Outlaw Run | `outlaw-run.html` | Path drawing / scrolling world / pursuer AI | 2026-04-27 |
 | 6 | Cattle Drive | `cattle-drive.html` | Multi-entity herding sim / flocking AI / wolf predators | 2026-04-27 |
 | 7 | Tin Star Showdown | `tin-star-showdown.html` | Quick-draw duel / reaction timing / best-of-3 / AI difficulty scaling | 2026-04-27 |
+| 8 | Dust Devil | `dust-devil.html` | 2-axis physics tumbleweed / tap-to-gust / canyon gap navigation | 2026-04-27 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -32,6 +33,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Outlaw Run](retrospectives/03-outlaw-run.md) — session lessons, action items for Game 06
 - [Retrospective: Cattle Drive](retrospectives/04-cattle-drive.md) — session lessons, action items for Game 07
 - [Retrospective: Tin Star Showdown](retrospectives/05-tin-star-showdown.md) — session lessons, action items for Game 08
+- [Retrospective: Dust Devil](retrospectives/06-dust-devil.md) — session lessons, action items for Game 09
 - [Canvas techniques](techniques/canvas.md) — setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) — state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) — color palette, art style, HUD conventions

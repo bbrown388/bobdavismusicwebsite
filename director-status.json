@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-04-27T21:59:00Z",
+  "lastRunAt": "2026-04-27T22:10:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 08: Dust Devil",
-  "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
-  },
-  "gamesBuilt": 7,
-  "lastGameTitle": "Tin Star Showdown",
-  "lastGameFile": "tin-star-showdown.html",
+  "lastRunSummary": "Built Game 08: Dust Devil — physics tumbleweed through canyon gaps, 14 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 8,
+  "lastGameTitle": "Dust Devil",
+  "lastGameFile": "dust-devil.html",
   "gameQueue": [
-    {
-      "num": 8,
-      "title": "Dust Devil",
-      "concept": "Physics-based puzzle: steer a tumbleweed through canyon gaps using wind gusts. Tap to puff, chain gusts for momentum. Race the clock.",
-      "raisesBarOn": "First physics simulation in the series (real momentum + drag), puzzle design with spatial reasoning — distinctly different from all prior games",
-      "status": "planned"
-    },
     {
       "num": 9,
       "title": "Wanted Poster",
@@ -29,6 +19,13 @@
       "title": "Gold Rush",
       "concept": "Resource management + survival: mine for gold in a procedural cave, manage lantern fuel and pickaxe durability, escape before the tunnel collapses.",
       "raisesBarOn": "First inventory/resource system, procedural dungeon generation, dual resource timers creating layered urgency",
+      "status": "planned"
+    },
+    {
+      "num": 11,
+      "title": "Boot Hill Bluff",
+      "concept": "Turn-based poker-style bluffing duel against an AI outlaw: read tells, bet chips, and call their bluff or fold. Text-driven narrative choices between hands.",
+      "raisesBarOn": "First turn-based game, first narrative choice system, AI bluffing behavior — completely different genre from all prior games",
       "status": "planned"
     }
   ],
@@ -48,6 +45,14 @@
       "result": "success",
       "summary": "Built Game 07: Tin Star Showdown (tin-star-showdown.html). Quick-draw duel, best-of-3, AI difficulty scaling, 13 tests pass.",
       "commitHash": "b3329ab"
+    },
+    {
+      "runAt": "2026-04-27T22:10:00Z",
+      "action": "new_game",
+      "game": "Dust Devil",
+      "result": "success",
+      "summary": "Built Game 08: Dust Devil (dust-devil.html). 2-axis physics tumbleweed, tap-to-gust canyon navigation, 14 tests pass.",
+      "commitHash": "e842087"
     }
   ]
 }
