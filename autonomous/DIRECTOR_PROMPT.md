@@ -41,7 +41,7 @@ Read that output and act on it per the instructions below.
 7. Commit: `git commit -m "fix(<game-slug>): <one-line description>"`
 8. Push
 9. Update `autonomous/state.json` → set `"currentTask": null`
-10. Update `autonomous/status.json` — see **Maintaining status.json** below
+10. Update status data — see **Maintaining Status Data** below (update all three: `autonomous/status.json`, `director-status.json`, `status.html`)
 11. Commit status: `git commit -m "chore: update director status"`
 12. Push
 
@@ -70,7 +70,7 @@ Read that output and act on it per the instructions below.
 12. Write retrospective to `docs/game-dev-knowledge/retrospectives/NN-<slug>.md`
 13. Update `docs/game-dev-knowledge/index.md` with new game entry
 14. Update `autonomous/state.json`: increment `gamesBuilt`, set `lastGameTitle`, set `currentTask: null`
-15. Update `autonomous/status.json` — see **Maintaining status.json** below
+15. Update status data — see **Maintaining Status Data** below (update all three: `autonomous/status.json`, `director-status.json`, `status.html`)
 16. Commit docs + status: `git commit -m "docs: Game NN retrospective, knowledge base, and status update"`
 17. Push
 
@@ -88,11 +88,26 @@ If the session prints `RESUME_TASK: {...}`:
 
 ---
 
-## Maintaining status.json
+## Maintaining Status Data
 
-`autonomous/status.json` is read by `status.html` on the website. Keep it current after every task.
+After every task you must update **three files** that all contain the same status data:
 
-**Schema:**
+1. `autonomous/status.json` — internal working copy (read by director.js on next run)
+2. `director-status.json` — root-level backup copy (keep in sync, same content)
+3. `status.html` — the live website status page (data is **embedded** in the HTML — no fetch)
+
+### Why status.html must be regenerated
+
+GitHub Pages does not reliably serve JSON files. `status.html` embeds the status data directly in a `<script>` tag so it renders with zero dependencies. After each task, you must rewrite the `const STATUS = {...};` line in `status.html` with the updated data.
+
+**How to update status.html:** Find the line that starts with `const STATUS =` in the `<script>` block and replace the entire JSON object. Everything else in the file stays the same. The line looks like:
+```js
+const STATUS = {"lastRunAt":"...","lastRunResult":"...","gamesBuilt":7,...};
+```
+Replace it with the updated object. Do not reformat the rest of the file.
+
+### Status data schema
+
 ```json
 {
   "lastRunAt": "<ISO timestamp>",
@@ -123,12 +138,6 @@ If the session prints `RESUME_TASK: {...}`:
   ]
 }
 ```
-
-**Two files to update (always both together):**
-- `autonomous/status.json` — internal working copy
-- `director-status.json` — root-level copy served by GitHub Pages (same content)
-
-GitHub Pages only serves root-level files reliably. Always write both files with identical content.
 
 **Rules:**
 - `gameQueue` must always contain the next **3 planned games** (excluding the one just built). After building a game, remove it from the queue (set `status: done` or remove the entry), and add a new entry at the end so there are always 3 planned ahead.
