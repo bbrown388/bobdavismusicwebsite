@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Cattle Drive</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const COW_COUNT   = 10;
+const WOLF_COUNT  = 2;
+const TIME_LIMIT  = 90;
+
+const GATE_LEFT   = 145;
+const GATE_RIGHT  = 215;
+const GATE_Y      = 60;
+
+const FIELD_L     = 18;
+const FIELD_R     = 342;
+const FIELD_T     = GATE_Y + 6;
+const FIELD_B     = 622;
+
+const SCARE_RADIUS   = 130;
+const SCARE_DURATION = 1300;
+const WOLF_DETECT    = 170;
+const WOLF_STARTLE_DIST = 62;
+const WOLF_STARTLE_TIME = 3200;
+const COW_SEPARATE   = 34;
+const COW_SPEED_MAX  = 140;
+const WOLF_SPEED     = 78;
+const WOLF_STARTLE_SPEED = 190;
+
+const FEEDBACK_ENDPOINT = 'https://formspree.io/f/xdayvnvo';
+const MUSIC_SRC = '';
+
+const BOULDERS = [
+  { x: 78,  y: 215, r: 24 },
+  { x: 292, y: 295, r: 20 },
+  { x: 152, y: 415, r: 23 },
+  { x: 308, y: 498, r: 18 },
+];
+
+const COW_STARTS = [
+  { x: 58,  y: 530 }, { x: 138, y: 548 }, { x: 218, y: 568 },
+  { x: 302, y: 528 }, { x: 98,  y: 450 }, { x: 202, y: 468 },
+  { x: 278, y: 462 }, { x: 68,  y: 365 }, { x: 248, y: 348 },
+  { x: 178, y: 388 },
+];
+
+const WOLF_STARTS = [
+  { x: 30,  y: 310 },
+  { x: 330, y: 390 },
+];
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+
+// ── State ──────────────────────────────────────────────────
+let state      = 'title';
+let collected  = 0;
+let timeLeft   = TIME_LIMIT;
+let score      = 0;
+let bestScore  = parseInt(localStorage.getItem('cattle_drive_best') || '0', 10);
+let cattle     = [];
+let wolves     = [];
+let scarePoint = null;
+let particles  = [];
+let popups     = [];
+let scareHeld  = false;
+let scareHeldPos = null;
+
+let fadeAlpha = 0;
+let fadingIn  = false;
+let fadeStart = 0;
+const FADE_DUR = 220;
+
+function makeCow(i) {
+  const s = COW_STARTS[i];
+  return {
+    x: s.x + (Math.random() - 0.5) * 12,
+    y: s.y + (Math.random() - 0.5) * 12,
+    vx: 0, vy: 0,
+    angle: Math.PI * 1.5, // facing up
+    collected: false,
+    wobble: Math.random() * Math.PI * 2,
+  };
+}
+
+function makeWolf(i) {
+  return {
+    x: WOLF_STARTS[i].x,
+    y: WOLF_STARTS[i].y,
+    startled: false,
+    startledAt: 0,
+    startledFrom: { x: 0, y: 0 },
+    angle: 0,
+  };
+}
+
+function startGame() {
+  state      = 'playing';
+  collected  = 0;
+  timeLeft   = TIME_LIMIT;
+  score      = 0;
+  cattle     = COW_STARTS.map((_, i) => makeCow(i));
+  wolves     = WOLF_STARTS.map((_, i) => makeWolf(i));
+  scarePoint = null;
+  scareHeld  = false;
+  scareHeldPos = null;
+  particles  = [];
+  popups     = [];
+  fadingIn   = true;
+  fadeAlpha  = 1;
+  fadeStart  = performance.now();
+  ensureAudio().then(() => startBeat());
+}
+
+function triggerWin() {
+  if (state !== 'playing') return;
+  state = 'win';
+  const timeBonus = Math.round(timeLeft * 10);
+  score = collected * 100 + timeBonus;
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('cattle_drive_best', bestScore);
+  }
+  stopBeat();
+  playWin();
+  fadingIn = true; fadeAlpha = 1; fadeStart = performance.now();
+}
+
+function triggerLose() {
+  if (state !== 'playing') return;
+  state = 'lose';
+  score = collected * 100;
+  stopBeat();
+  playLose();
+  fadingIn = true; fadeAlpha = 1; fadeStart = performance.now();
+}
+
+// ── Input ──────────────────────────────────────────────────
+function getCanvasPoint(e) {
+  const r  = canvas.getBoundingClientRect();
+  const pt = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+  return {
+    x: (pt.clientX - r.left) * (W / r.width),
+    y: (pt.clientY - r.top)  * (H / r.height),
+  };
+}
+
+function onPointerDown(e) {
+  if (e.type === 'touchstart') e.preventDefault();
+  const p = getCanvasPoint(e);
+  if (state === 'title')                   { startGame(); return; }
+  if (state === 'win' || state === 'lose') { state = 'title'; return; }
+  if (state !== 'playing') return;
+  if (feedbackOverlay.style.display === 'flex') return;
+
+  // Check wolf startle first
+  for (const wolf of wolves) {
+    if (dist(p.x, p.y, wolf.x, wolf.y) < WOLF_STARTLE_DIST) {
+      wolf.startled    = true;
+      wolf.startledAt  = performance.now();
+      wolf.startledFrom = { x: p.x, y: p.y };
+      playWolfStartle();
+      addBurst(wolf.x, wolf.y, 6, '#e05030');
+      return;
+    }
+  }
+
+  scareHeld = true;
+  scareHeldPos = { x: p.x, y: p.y };
+  scarePoint = { x: p.x, y: p.y, born: performance.now() };
+}
+
+function onPointerMove(e) {
+  if (e.type === 'touchmove') e.preventDefault();
+  if (!scareHeld || state !== 'playing') return;
+  const p = getCanvasPoint(e);
+  scareHeldPos = { x: p.x, y: p.y };
+  scarePoint   = { x: p.x, y: p.y, born: performance.now() };
+}
+
+function onPointerUp() {
+  scareHeld    = false;
+  scareHeldPos = null;
+}
+
+canvas.addEventListener('touchstart',  onPointerDown, { passive: false });
+canvas.addEventListener('touchmove',   onPointerMove, { passive: false });
+canvas.addEventListener('touchend',    e => { e.preventDefault(); onPointerUp(); }, { passive: false });
+canvas.addEventListener('touchcancel', () => onPointerUp(), { passive: false });
+canvas.addEventListener('mousedown',   onPointerDown);
+canvas.addEventListener('mousemove',   onPointerMove);
+canvas.addEventListener('mouseup',     onPointerUp);
+
+// ── Update ─────────────────────────────────────────────────
+function updateCattle(dt, now) {
+  const scareActive = scarePoint && (now - scarePoint.born < SCARE_DURATION);
+
+  for (const cow of cattle) {
+    if (cow.collected) continue;
+
+    let fx = 0, fy = 0;
+
+    // Drift toward gate center
+    const gx = (GATE_LEFT + GATE_RIGHT) / 2;
+    const gy = GATE_Y - 5;
+    const tdx = gx - cow.x, tdy = gy - cow.y;
+    const td  = Math.hypot(tdx, tdy) || 1;
+    fx += (tdx / td) * 0.6;
+    fy += (tdy / td) * 0.6;
+
+    // Flee scare point
+    if (scareActive) {
+      const sdx = cow.x - scarePoint.x, sdy = cow.y - scarePoint.y;
+      const sd  = Math.hypot(sdx, sdy) || 1;
+      if (sd < SCARE_RADIUS) {
+        const str = (1 - sd / SCARE_RADIUS) * 9;
+        fx += (sdx / sd) * str;
+        fy += (sdy / sd) * str;
+      }
+    }
+
+    // Flee wolves
+    for (const wolf of wolves) {
+      const wdx = cow.x - wolf.x, wdy = cow.y - wolf.y;
+      const wd  = Math.hypot(wdx, wdy) || 1;
+      if (wd < WOLF_DETECT) {
+        const str = (1 - wd / WOLF_DETECT) * 7;
+        fx += (wdx / wd) * str;
+        fy += (wdy / wd) * str;
+      }
+    }
+
+    // Separate from other cattle
+    for (const other of cattle) {
+      if (other === cow || other.collected) continue;
+      const odx = cow.x - other.x, ody = cow.y - other.y;
+      const od  = Math.hypot(odx, ody) || 1;
+      if (od < COW_SEPARATE) {
+        const str = (1 - od / COW_SEPARATE) * 4;
+        fx += (odx / od) * str;
+        fy += (ody / od) * str;
+      }
+    }
+
+    // Avoid boulders
+    for (const b of BOULDERS) {
+      const bdx = cow.x - b.x, bdy = cow.y - b.y;
+      const bd  = Math.hypot(bdx, bdy) || 1;
+      const pad = b.r + 22;
+      if (bd < pad) {
+        const str = (1 - bd / pad) * 11;
+        fx += (bdx / bd) * str;
+        fy += (bdy / bd) * str;
+      }
+    }
+
+    cow.vx += fx * dt * 60;
+    cow.vy += fy * dt * 60;
+
+    // Speed cap — faster while fleeing
+    const isFleeing = (scareActive && Math.hypot(cow.x - scarePoint.x, cow.y - scarePoint.y) < SCARE_RADIUS) ||
+      wolves.some(w => Math.hypot(cow.x - w.x, cow.y - w.y) < WOLF_DETECT);
+    const maxSpd = isFleeing ? COW_SPEED_MAX : 28;
+    const spd = Math.hypot(cow.vx, cow.vy);
+    if (spd > maxSpd) { cow.vx = (cow.vx / spd) * maxSpd; cow.vy = (cow.vy / spd) * maxSpd; }
+
+    // Damping
+    cow.vx *= 0.85;
+    cow.vy *= 0.85;
+
+    cow.x += cow.vx * dt;
+    cow.y += cow.vy * dt;
+    cow.wobble += dt * 6;
+
+    // Update facing angle
+    if (Math.hypot(cow.vx, cow.vy) > 4) {
+      cow.angle = Math.atan2(cow.vy, cow.vx);
+    }
+
+    // Collect if in gate opening
+    if (cow.y < GATE_Y && cow.x > GATE_LEFT && cow.x < GATE_RIGHT) {
+      cow.collected = true;
+      collected++;
+      addPopup('+1', cow.x, GATE_Y + 15, '#FFD700');
+      addBurst(cow.x, GATE_Y + 8, 9, '#FFE066');
+      playMoo();
+      if (collected >= COW_COUNT) { triggerWin(); return; }
+      continue;
+    }
+
+    // Boundary clamp — block at top wall except at gate
+    if (cow.y < FIELD_T) {
+      if (!(cow.x > GATE_LEFT && cow.x < GATE_RIGHT)) {
+        cow.y = FIELD_T; cow.vy = Math.abs(cow.vy) * 0.4;
+      }
+    }
+    if (cow.y > FIELD_B) { cow.y = FIELD_B; cow.vy = -Math.abs(cow.vy) * 0.4; }
+    if (cow.x < FIELD_L) { cow.x = FIELD_L; cow.vx =  Math.abs(cow.vx) * 0.4; }
+    if (cow.x > FIELD_R) { cow.x = FIELD_R; cow.vx = -Math.abs(cow.vx) * 0.4; }
+
+    // Push out of boulders
+    for (const b of BOULDERS) {
+      const d2 = dist(cow.x, cow.y, b.x, b.y);
+      if (d2 < b.r + 12) {
+        const ang = Math.atan2(cow.y - b.y, cow.x - b.x);
+        cow.x = b.x + Math.cos(ang) * (b.r + 13);
+        cow.y = b.y + Math.sin(ang) * (b.r + 13);
+      }
+    }
+  }
+}
+
+function updateWolves(dt, now) {
+  for (const wolf of wolves) {
+    if (wolf.startled) {
+      if (now - wolf.startledAt > WOLF_STARTLE_TIME) {
+        wolf.startled = false;
+      } else {
+        const dx = wolf.x - wolf.startledFrom.x;
+        const dy = wolf.y - wolf.startledFrom.y;
+        const d  = Math.hypot(dx, dy) || 1;
+        wolf.x += (dx / d) * WOLF_STARTLE_SPEED * dt;
+        wolf.y += (dy / d) * WOLF_STARTLE_SPEED * dt;
+        clampWolf(wolf);
+        continue;
+      }
+    }
+
+    // Chase nearest active cow
+    let nearest = null, nearD = Infinity;
+    for (const cow of cattle) {
+      if (cow.collected) continue;
+      const d = dist(wolf.x, wolf.y, cow.x, cow.y);
+      if (d < nearD) { nearD = d; nearest = cow; }
+    }
+
+    if (nearest) {
+      const dx = nearest.x - wolf.x, dy = nearest.y - wolf.y;
+      const d  = Math.hypot(dx, dy) || 1;
+      wolf.x += (dx / d) * WOLF_SPEED * dt;
+      wolf.y += (dy / d) * WOLF_SPEED * dt;
+      wolf.angle = Math.atan2(dy, dx);
+    }
+
+    clampWolf(wolf);
+  }
+}
+
+function clampWolf(w) {
+  if (w.x < FIELD_L) w.x = FIELD_L;
+  if (w.x > FIELD_R) w.x = FIELD_R;
+  if (w.y < FIELD_T) w.y = FIELD_T;
+  if (w.y > FIELD_B) w.y = FIELD_B;
+}
+
+function updateTimer(dt) {
+  if (state !== 'playing') return;
+  timeLeft -= dt;
+  if (timeLeft <= 0) { timeLeft = 0; triggerLose(); }
+}
+
+function updateParticles(dt, now) {
+  particles = particles.filter(p => now - p.born < p.life * 1000);
+  for (const p of particles) {
+    p.x  += p.vx * dt;
+    p.y  += p.vy * dt;
+    p.vy += 40 * dt;
+  }
+}
+
+function updatePopups(now) {
+  popups = popups.filter(p => now - p.born < p.life);
+}
+
+// ── Helpers ────────────────────────────────────────────────
+function addBurst(x, y, count, color) {
+  const now = performance.now();
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2, spd = 50 + Math.random() * 80;
+    particles.push({ x, y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 30,
+      r: 2 + Math.random() * 3, born: now, life: 0.65, color });
+  }
+}
+
+function addDust(x, y) {
+  const now = performance.now();
+  for (let i = 0; i < 2; i++) {
+    const a = Math.random() * Math.PI * 2;
+    particles.push({ x: x + (Math.random()-0.5)*10, y, vx: Math.cos(a)*18, vy: Math.sin(a)*18-10,
+      r: 1.5 + Math.random(), born: now, life: 0.35, color: '#C8A04A' });
+  }
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, color, born: performance.now(), life: 900 });
+}
+
+// ── Draw ───────────────────────────────────────────────────
+function drawBackground(now) {
+  ctx.save();
+
+  // Sky strip
+  const sky = ctx.createLinearGradient(0, 0, 0, 110);
+  sky.addColorStop(0, '#1a0d35');
+  sky.addColorStop(0.6, '#8B3A1A');
+  sky.addColorStop(1, '#C87020');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, 110);
+
+  // Ground
+  const gnd = ctx.createLinearGradient(0, 110, 0, H);
+  gnd.addColorStop(0, '#B88030');
+  gnd.addColorStop(0.4, '#C8A04A');
+  gnd.addColorStop(1, '#D0AA60');
+  ctx.fillStyle = gnd;
+  ctx.fillRect(0, 110, W, H - 110);
+
+  // Horizon hills silhouette
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath();
+  ctx.moveTo(0, 128);
+  const hx = [0, 40, 80, 130, 175, 220, 265, 310, 360];
+  const hy = [18, 32, 22, 38, 28, 42, 25, 36, 20];
+  hx.forEach((x, i) => ctx.lineTo(x, 128 - hy[i]));
+  ctx.lineTo(W, 128); ctx.lineTo(W, 110); ctx.lineTo(0, 110);
+  ctx.closePath(); ctx.fill();
+
+  // Pen zone (between gate posts, top)
+  const penG = ctx.createLinearGradient(0, 0, 0, GATE_Y + 20);
+  penG.addColorStop(0, 'rgba(255,224,102,0.12)');
+  penG.addColorStop(1, 'rgba(255,224,102,0)');
+  ctx.fillStyle = penG;
+  ctx.fillRect(GATE_LEFT, 0, GATE_RIGHT - GATE_LEFT, GATE_Y + 20);
+
+  // Subtle ground texture lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.lineWidth = 1;
+  for (let y = 160; y < H; y += 32) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawGate(now) {
+  ctx.save();
+
+  // Fence line across top (with gap for gate)
+  ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, GATE_Y + 15); ctx.lineTo(GATE_LEFT, GATE_Y + 15); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(GATE_RIGHT, GATE_Y + 15); ctx.lineTo(W, GATE_Y + 15); ctx.stroke();
+
+  // Posts along left fence
+  ctx.fillStyle = '#4a2a10';
+  for (let px = 0; px < GATE_LEFT; px += 30) ctx.fillRect(px - 2, GATE_Y + 7, 4, 16);
+  for (let px = GATE_RIGHT + 30; px < W; px += 30) ctx.fillRect(px - 2, GATE_Y + 7, 4, 16);
+
+  // Gate posts (taller)
+  ctx.fillStyle = '#3a1f08';
+  ctx.fillRect(GATE_LEFT - 5, GATE_Y - 10, 10, 40);
+  ctx.fillRect(GATE_RIGHT - 5, GATE_Y - 10, 10, 40);
+
+  // Gate cross-bar with gold shimmer
+  const shimmer = 0.55 + 0.45 * Math.sin(now / 500);
+  ctx.fillStyle = '#4a2a10'; ctx.fillRect(GATE_LEFT, GATE_Y - 6, GATE_RIGHT - GATE_LEFT, 6);
+  ctx.fillStyle = `rgba(255,215,0,${shimmer * 0.3})`;
+  ctx.fillRect(GATE_LEFT, GATE_Y - 6, GATE_RIGHT - GATE_LEFT, 6);
+
+  // "PEN" label
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('PEN', (GATE_LEFT + GATE_RIGHT) / 2, GATE_Y - 24);
+
+  // Pen count badge
+  if (state === 'playing' || state === 'win' || state === 'lose') {
+    const cx = (GATE_LEFT + GATE_RIGHT) / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.roundRect(cx - 18, GATE_Y - 42, 36, 16, 4); ctx.fill();
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(collected + '/' + COW_COUNT, cx, GATE_Y - 34);
+  }
+
+  // Golden entry shimmer at gate opening
+  const glow = ctx.createLinearGradient(GATE_LEFT, 0, GATE_RIGHT, 0);
+  glow.addColorStop(0, 'rgba(255,215,0,0)');
+  glow.addColorStop(0.5, `rgba(255,215,0,${shimmer * 0.18})`);
+  glow.addColorStop(1, 'rgba(255,215,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(GATE_LEFT, 0, GATE_RIGHT - GATE_LEFT, GATE_Y);
+
+  ctx.restore();
+}
+
+function drawBoulders() {
+  ctx.save();
+  for (const b of BOULDERS) {
+    ctx.fillStyle = '#3a2a1a';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a3a2a';
+    ctx.beginPath(); ctx.arc(b.x - b.r * 0.28, b.y - b.r * 0.28, b.r * 0.45, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCow(cow, now) {
+  if (cow.collected) return;
+  ctx.save();
+  ctx.translate(cow.x, cow.y);
+  ctx.rotate(cow.angle - Math.PI / 2);
+
+  const bob = Math.sin(cow.wobble) * 1.2;
+  const spd = Math.hypot(cow.vx, cow.vy);
+  const legBob = spd > 6 ? Math.sin(cow.wobble * 2) * 3 : 0;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(0, 14, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Body
+  ctx.fillStyle = '#1a0d05';
+  ctx.beginPath(); ctx.ellipse(0, bob, 9, 13, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Legs
+  ctx.strokeStyle = '#1a0d05'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  [[-5, -4], [5, -4], [-5, 4], [5, 4]].forEach(([lx, ly], i) => {
+    ctx.beginPath();
+    ctx.moveTo(lx, ly + 10 + bob);
+    ctx.lineTo(lx + (i < 2 ? legBob : -legBob), ly + 18 + bob);
+    ctx.stroke();
+  });
+
+  // Head
+  ctx.fillStyle = '#1a0d05';
+  ctx.beginPath(); ctx.ellipse(0, -13 + bob, 6, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Ears
+  ctx.beginPath(); ctx.ellipse(-7, -17 + bob, 3, 2, -0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(7, -17 + bob, 3, 2, 0.5, 0, Math.PI * 2); ctx.fill();
+
+  // Eye (white dot)
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(3, -13 + bob, 1.5, 0, Math.PI * 2); ctx.fill();
+
+  // Tail
+  ctx.strokeStyle = '#1a0d05'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 12 + bob);
+  ctx.quadraticCurveTo(12, 14 + bob, 10, 8 + bob);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawWolf(wolf, now) {
+  ctx.save();
+  ctx.translate(wolf.x, wolf.y);
+  ctx.rotate(wolf.angle - Math.PI / 2);
+
+  const startleFrac = wolf.startled ? clamp(1 - (now - wolf.startledAt) / WOLF_STARTLE_TIME, 0, 1) : 0;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(0, 16, 14, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Body
+  ctx.fillStyle = lerp3('#5a1010', '#e05030', startleFrac * 0.5);
+  ctx.beginPath(); ctx.ellipse(0, 0, 11, 14, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Legs (4)
+  ctx.strokeStyle = '#5a1010'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  [[-6,-3],[6,-3],[-6,5],[6,5]].forEach(([lx,ly]) => {
+    ctx.beginPath(); ctx.moveTo(lx, ly + 10); ctx.lineTo(lx, ly + 18); ctx.stroke();
+  });
+
+  // Head (more angular)
+  ctx.fillStyle = lerp3('#5a1010', '#e05030', startleFrac * 0.5);
+  ctx.beginPath(); ctx.ellipse(0, -13, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Snout
+  ctx.fillStyle = '#3a0808';
+  ctx.beginPath(); ctx.ellipse(0, -19, 4, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Ears (pointed)
+  ctx.fillStyle = '#5a1010';
+  ctx.beginPath(); ctx.moveTo(-7, -18); ctx.lineTo(-10, -26); ctx.lineTo(-3, -20); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(7, -18); ctx.lineTo(10, -26); ctx.lineTo(3, -20); ctx.fill();
+
+  // Eyes (red glow when chasing)
+  const eyeColor = wolf.startled ? '#FFA040' : '#e03020';
+  ctx.fillStyle = eyeColor;
+  ctx.beginPath(); ctx.arc(-3, -14, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(3, -14, 2, 0, Math.PI * 2); ctx.fill();
+
+  // Tail (raised menacingly)
+  ctx.strokeStyle = '#5a1010'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 13);
+  ctx.quadraticCurveTo(-16, 8, -14, 0);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function lerp3(a, b, t) {
+  return '#' + [0,2,4].map(i => {
+    const av = parseInt(a.slice(i+1, i+3), 16);
+    const bv = parseInt(b.slice(i+1, i+3), 16);
+    return Math.round(av + (bv - av) * t).toString(16).padStart(2, '0');
+  }).join('');
+}
+
+function drawScare(now) {
+  if (!scarePoint) return;
+  const age = now - scarePoint.born;
+  if (age >= SCARE_DURATION) return;
+  const t = age / SCARE_DURATION;
+  ctx.save();
+  ctx.globalAlpha = (1 - t) * 0.55;
+  ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(scarePoint.x, scarePoint.y, Math.max(1, t * SCARE_RADIUS), 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = (1 - t) * 0.4;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(scarePoint.x, scarePoint.y, Math.max(1, t * SCARE_RADIUS * 0.6), 0, Math.PI * 2); ctx.stroke();
+  // Center dot
+  ctx.globalAlpha = clamp((1 - t * 2) * 0.8, 0, 0.8);
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.arc(scarePoint.x, scarePoint.y, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawWolfStartle(now) {
+  for (const wolf of wolves) {
+    if (!wolf.startled) continue;
+    const frac = clamp((now - wolf.startledAt) / 800, 0, 1);
+    if (frac >= 1) continue;
+    ctx.save();
+    ctx.globalAlpha = (1 - frac) * 0.5;
+    ctx.strokeStyle = '#e05030'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(wolf.x, wolf.y, frac * 40, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawParticles(now) {
+  ctx.save();
+  for (const p of particles) {
+    const age = Math.max(0, (now - p.born) / (p.life * 1000));
+    ctx.globalAlpha = 1 - age;
+    ctx.fillStyle   = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.r * (1 - age * 0.4)), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPopups(now) {
+  ctx.save();
+  for (const p of popups) {
+    const age = Math.max(0, (now - p.born) / p.life);
+    ctx.globalAlpha  = age < 0.6 ? 1 : 1 - (age - 0.6) / 0.4;
+    ctx.fillStyle    = p.color;
+    ctx.font         = 'bold 15px Georgia,serif';
+    ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y - age * 30);
+  }
+  ctx.restore();
+}
+
+function drawHUD(now) {
+  if (state !== 'playing') return;
+  ctx.save();
+
+  // Timer bar top-center
+  const timerFrac = clamp(timeLeft / TIME_LIMIT, 0, 1);
+  const bx = W/2 - 60, by = H - 28, bw = 120, bh = 12;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.fill();
+  if (timerFrac > 0) {
+    const barC = timerFrac < 0.25 ? '#e04030' : timerFrac < 0.5 ? '#e0a030' : '#FFD700';
+    ctx.fillStyle = barC;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw * timerFrac, bh, 4); ctx.fill();
+  }
+  ctx.fillStyle = '#E8DCC8'; ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText(Math.ceil(timeLeft) + 's', W/2, by - 2);
+
+  // Wolf proximity warning
+  const activeCows = cattle.filter(c => !c.collected);
+  let wolfWarning = false;
+  for (const wolf of wolves) {
+    if (wolf.startled) continue;
+    for (const cow of activeCows) {
+      if (dist(wolf.x, wolf.y, cow.x, cow.y) < 60) { wolfWarning = true; break; }
+    }
+    if (wolfWarning) break;
+  }
+  if (wolfWarning) {
+    ctx.globalAlpha = 0.15 + 0.12 * Math.sin(now / 80);
+    ctx.fillStyle = '#e04030';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // Hint on first few seconds
+  if (timeLeft > TIME_LIMIT - 4 && activeCows.length === COW_COUNT) {
+    ctx.fillStyle = 'rgba(255,220,150,0.55)';
+    ctx.font = '13px Georgia,serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('Tap to scare cattle toward the pen', W/2, H - 44);
+  }
+
+  // Wolf tap hint if wolf nearby but not yet startled
+  for (const wolf of wolves) {
+    if (!wolf.startled) {
+      ctx.fillStyle = 'rgba(220,80,48,0.45)';
+      ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText('Tap wolf to scare it!', wolf.x, wolf.y - 30);
+      break;
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawTitle(now) {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#1a0d35');
+  sky.addColorStop(0.45, '#8B3A1A');
+  sky.addColorStop(1, '#C8A04A');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  // Silhouette hills
+  ctx.fillStyle = '#0d1000';
+  ctx.beginPath(); ctx.moveTo(0, H * 0.52);
+  [0,45,90,135,175,220,268,310,360].forEach((x, i) => {
+    ctx.lineTo(x, H * 0.52 - [18,42,28,52,22,38,32,48,14][i]);
+  });
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+
+  // Cattle silhouettes on hill
+  ctx.fillStyle = '#0a0a00';
+  for (let i = 0; i < 5; i++) {
+    const cx = 40 + i * 68, cy = H * 0.52 - 22 - [8,4,10,6,12][i];
+    ctx.beginPath(); ctx.ellipse(cx, cy, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + 6, cy - 5, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 52px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 30;
+  ctx.fillText('Cattle Drive', W/2, H/2 - 100);
+
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.55 + 0.45 * Math.sin(now / 620);
+  ctx.fillStyle = '#A09070'; ctx.font = '18px Georgia,serif';
+  ctx.fillText('Tap to start', W/2, H/2 - 28);
+  ctx.globalAlpha = 1;
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#70584a'; ctx.font = '13px sans-serif';
+    ctx.fillText('Best: ' + bestScore.toLocaleString(), W/2, H/2 + 10);
+  }
+
+  ctx.fillStyle = '#554030'; ctx.font = '12px sans-serif';
+  ctx.fillText('Herd all 10 cattle into the pen', W/2, H/2 + 44);
+  ctx.fillText('Tap wolves to scare them off', W/2, H/2 + 64);
+
+  ctx.restore();
+}
+
+function drawWinLose(now) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.92)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  if (state === 'win') {
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 42px Georgia,serif';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 24;
+    ctx.fillText('DRIVE COMPLETE!', W/2, H/2 - 120);
+    ctx.shadowBlur = 0;
+    addBurst(W/2, H/2 - 85, 14, '#FFD700');
+  } else {
+    ctx.fillStyle = '#e05030'; ctx.font = 'bold 36px Georgia,serif';
+    ctx.fillText('TIME\'S UP!', W/2, H/2 - 120);
+    ctx.fillStyle = '#A08060'; ctx.font = '16px Georgia,serif';
+    ctx.fillText(collected + ' of ' + COW_COUNT + ' cattle penned', W/2, H/2 - 80);
+  }
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 28px sans-serif';
+  ctx.fillText(score.toLocaleString() + ' pts', W/2, H/2 - 52);
+
+  if (state === 'win' && score >= bestScore) {
+    const pulse = 0.75 + 0.25 * Math.sin(now / 180);
+    ctx.globalAlpha = pulse; ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+    ctx.fillText('NEW RECORD!', W/2, H/2 - 18);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  ctx.fillStyle = '#907860'; ctx.font = '13px sans-serif';
+  ctx.fillText('Best: ' + bestScore.toLocaleString(), W/2, H/2 + 4);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath(); ctx.roundRect(W/2 - 85, H/2 + 30, 170, 46, 10); ctx.fill();
+  ctx.fillStyle = '#0d0608'; ctx.font = 'bold 19px sans-serif';
+  ctx.fillText('Ride Again', W/2, H/2 + 53);
+
+  ctx.fillStyle = 'rgba(255,215,0,0.1)';
+  ctx.beginPath(); ctx.roundRect(W/2 - 108, H/2 + 88, 216, 38, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(W/2 - 108, H/2 + 88, 216, 38, 8); ctx.stroke();
+  ctx.fillStyle = '#907860'; ctx.font = '13px sans-serif';
+  ctx.fillText('Tell Us What You Think 🤠', W/2, H/2 + 107);
+
+  ctx.restore();
+}
+
+// ── Audio ──────────────────────────────────────────────────
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = AC.createGain();
+masterGain.connect(AC.destination);
+masterGain.gain.setValueAtTime(1.0, AC.currentTime);
+
+async function ensureAudio() {
+  if (AC.state === 'suspended') await AC.resume();
+}
+canvas.addEventListener('touchstart', () => ensureAudio(), { once: true });
+canvas.addEventListener('mousedown',  () => ensureAudio(), { once: true });
+
+// Country chord progression: G - C - D - G (open-string picking feel)
+const CHORD_BARS = [
+  // G major: alternating bass (G2=98) and chord (G3-B3-D4)
+  [196, 294, 247, 294, 196, 294, 392, 247],
+  // C major: bass C3=131, chord C4-E4-G4
+  [131, 262, 330, 262, 131, 262, 392, 330],
+  // D major: bass D3=147, chord D4-F#4-A4
+  [147, 294, 370, 294, 147, 294, 440, 370],
+  // G major (high): back home
+  [196, 294, 392, 294, 196, 392, 494, 294],
+];
+const BPM    = 92;
+const EIGHTH = (60 / BPM) / 2;
+
+function scheduleNote(freq, t, gain, duration) {
+  const osc = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
+  osc.connect(f); f.connect(g); g.connect(masterGain);
+  osc.type = 'triangle'; f.type = 'lowpass'; f.frequency.value = 1200; f.Q.value = 0.6;
+  osc.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, t + (duration || 0.28));
+  osc.start(t); osc.stop(t + (duration || 0.28));
+}
+
+let beatTimer = null, nextBarTime = 0, barIndex = 0;
+
+function startBeat() {
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.setValueAtTime(1.0, AC.currentTime);
+  nextBarTime = AC.currentTime + 0.05;
+  barIndex    = 0;
+  function tick() {
+    const barDur = EIGHTH * 8;
+    while (nextBarTime < AC.currentTime + 2.5) {
+      const bar = CHORD_BARS[barIndex % CHORD_BARS.length];
+      bar.forEach((freq, i) => {
+        const isBass = (i % 2 === 0);
+        scheduleNote(freq, nextBarTime + i * EIGHTH, isBass ? 0.32 : 0.16, isBass ? 0.24 : 0.20);
+      });
+      nextBarTime += barDur;
+      barIndex++;
+    }
+    beatTimer = setTimeout(tick, 500);
+  }
+  tick();
+}
+
+function stopBeat() {
+  if (beatTimer) { clearTimeout(beatTimer); beatTimer = null; }
+  masterGain.gain.cancelScheduledValues(AC.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0, AC.currentTime + 0.18);
+  setTimeout(() => masterGain.gain.setValueAtTime(1.0, AC.currentTime), 350);
+}
+
+function playMoo() {
+  const osc = AC.createOscillator(), g = AC.createGain();
+  osc.connect(g); g.connect(masterGain);
+  osc.type = 'sawtooth';
+  const t = AC.currentTime;
+  osc.frequency.setValueAtTime(120, t);
+  osc.frequency.exponentialRampToValueAtTime(55, t + 0.45);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.18, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+  osc.start(t); osc.stop(t + 0.5);
+}
+
+function playWolfStartle() {
+  const len = Math.floor(AC.sampleRate * 0.18);
+  const buf = AC.createBuffer(1, len, AC.sampleRate);
+  const d   = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = AC.createBufferSource(), bpf = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = buf;
+  bpf.type = 'bandpass'; bpf.frequency.value = 400; bpf.Q.value = 2;
+  g.gain.value = 0.18;
+  src.connect(bpf); bpf.connect(g); g.connect(masterGain);
+  src.start(); src.stop(AC.currentTime + 0.18);
+}
+
+function playWin() {
+  [196, 247, 294, 392, 494, 587].forEach((freq, i) => {
+    const t = AC.currentTime + i * 0.11;
+    scheduleNote(freq, t, 0.24, 0.35);
+  });
+}
+
+function playLose() {
+  [294, 247, 196, 147].forEach((freq, i) => {
+    const t = AC.currentTime + i * 0.14;
+    scheduleNote(freq, t, 0.16, 0.28);
+  });
+}
+
+// ── Feedback overlay ───────────────────────────────────────
+const feedbackOverlay = document.createElement('div');
+feedbackOverlay.id = 'feedback-overlay';
+feedbackOverlay.style.cssText = 'display:none;position:absolute;top:0;left:0;width:100%;height:100%;' +
+  'flex-direction:column;align-items:center;justify-content:center;gap:14px;' +
+  'background:rgba(10,4,8,0.97);border:2px solid #FFD700;box-sizing:border-box;padding:28px;z-index:10;';
+feedbackOverlay.innerHTML = `
+  <h2 style="color:#FFD700;font-family:serif;font-size:22px;margin:0;text-align:center;">Tell Us What You Think &#x1F920;</h2>
+  <div id="stars" style="display:flex;gap:10px;font-size:34px;cursor:pointer;user-select:none;">
+    <span data-v="1" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="2" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="3" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="4" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+    <span data-v="5" style="color:rgba(255,215,0,0.4)">&#9734;</span>
+  </div>
+  <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+    style="width:100%;max-width:300px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;
+    border-radius:6px;padding:10px;font-size:14px;resize:none;font-family:sans-serif;"></textarea>
+  <button id="fb-submit" style="background:#FFD700;color:#0d0608;font-weight:bold;font-size:16px;
+    padding:10px 36px;border:none;border-radius:8px;cursor:pointer;">Submit</button>
+  <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:14px;
+    cursor:pointer;text-decoration:underline;">Cancel</button>
+  <p id="fb-status" style="color:#A09070;font-size:13px;min-height:18px;margin:0;text-align:center;"></p>
+`;
+wrap.appendChild(feedbackOverlay);
+
+const starSpans   = feedbackOverlay.querySelectorAll('#stars span');
+const fbText      = feedbackOverlay.querySelector('#fb-text');
+const fbStatus    = feedbackOverlay.querySelector('#fb-status');
+const fbSubmitBtn = feedbackOverlay.querySelector('#fb-submit');
+let fbRating = 0;
+
+starSpans.forEach(span => {
+  span.addEventListener('click', () => {
+    fbRating = parseInt(span.dataset.v, 10);
+    starSpans.forEach(s => {
+      const v = parseInt(s.dataset.v, 10);
+      s.textContent  = v <= fbRating ? '★' : '☆';
+      s.style.color  = v <= fbRating ? '#FFD700' : 'rgba(255,215,0,0.4)';
+    });
+  });
+});
+
+feedbackOverlay.querySelector('#fb-cancel').addEventListener('click', () => {
+  feedbackOverlay.style.display = 'none';
+});
+
+fbSubmitBtn.addEventListener('click', async () => {
+  if (fbRating === 0) { fbStatus.textContent = 'Please pick a star rating.'; return; }
+  fbStatus.textContent = 'Sending…'; fbSubmitBtn.disabled = true;
+  try {
+    const res = await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ game: 'Cattle Drive', rating: fbRating, feedback: fbText.value, score }),
+    });
+    if (res.ok) {
+      fbStatus.textContent = 'Thanks! 🤠';
+      setTimeout(() => { feedbackOverlay.style.display = 'none'; }, 1500);
+    } else throw new Error();
+  } catch {
+    fbStatus.textContent = "Couldn’t send — try again.";
+    fbSubmitBtn.textContent = 'Retry'; fbSubmitBtn.disabled = false;
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  if (feedbackOverlay.style.display === 'flex') return;
+  if (state !== 'win' && state !== 'lose') return;
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (W / r.width);
+  const y = (e.clientY - r.top)  * (H / r.height);
+  if (x > W/2 - 108 && x < W/2 + 108 && y > H/2 + 88 && y < H/2 + 126) {
+    fbRating = 0; fbText.value = ''; fbStatus.textContent = '';
+    fbSubmitBtn.textContent = 'Submit'; fbSubmitBtn.disabled = false;
+    starSpans.forEach(s => { s.textContent = '☆'; s.style.color = 'rgba(255,215,0,0.4)'; });
+    feedbackOverlay.style.display = 'flex';
+  }
+});
+
+// ── Test hooks ─────────────────────────────────────────────
+window.__test = {
+  get cattle()    { return cattle; },
+  get wolves()    { return wolves; },
+  getState:       () => state,
+  getCollected:   () => collected,
+  getTimeLeft:    () => timeLeft,
+  scareAt:        (x, y) => { scarePoint = { x, y, born: performance.now() }; },
+  startleWolf:    (i)    => {
+    wolves[i].startled     = true;
+    wolves[i].startledAt   = performance.now();
+    wolves[i].startledFrom = { x: wolves[i].x, y: wolves[i].y + 60 };
+  },
+  collectAll: () => {
+    cattle.forEach(c => { c.collected = true; });
+    collected = COW_COUNT;
+    triggerWin();
+  },
+};
+
+// ── Main loop ──────────────────────────────────────────────
+let lastTime = 0;
+function loop(now) {
+  try {
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+
+    if (state === 'playing') {
+      updateCattle(dt, now);
+      updateWolves(dt, now);
+      updateTimer(dt);
+      updateParticles(dt, now);
+      updatePopups(now);
+    } else if (state === 'win' || state === 'lose') {
+      updateParticles(dt, now);
+      updatePopups(now);
+    }
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (state === 'title') {
+      drawTitle(now);
+    } else if (state === 'playing') {
+      drawBackground(now);
+      drawBoulders();
+      drawGate(now);
+      drawScare(now);
+      drawWolfStartle(now);
+      for (const cow of cattle) drawCow(cow, now);
+      for (const wolf of wolves) drawWolf(wolf, now);
+      drawParticles(now);
+      drawPopups(now);
+      drawHUD(now);
+    } else {
+      drawBackground(now);
+      drawBoulders();
+      drawGate(now);
+      for (const cow of cattle) drawCow(cow, now);
+      drawParticles(now);
+      drawWinLose(now);
+    }
+
+    // Scene fade-in overlay
+    if (fadingIn) {
+      const t = clamp((now - fadeStart) / FADE_DUR, 0, 1);
+      if (t >= 1) { fadingIn = false; fadeAlpha = 0; }
+      else { fadeAlpha = 1 - t; }
+    }
+    if (fadeAlpha > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${fadeAlpha})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+  } catch (e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(t => { lastTime = t; loop(t); });
+</script>
+</body>
+</html>
