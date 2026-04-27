@@ -69,6 +69,14 @@
       "result": "success",
       "summary": "Built Game 10: Gold Rush — lantern-lit cave mining, BFS pathfinding, triple resource management, 16 tests pass.",
       "commitHash": "49d5a49"
+    },
+    {
+      "runAt": "2026-04-27T23:10:00Z",
+      "action": "new_game",
+      "game": "Gold Rush",
+      "result": "success",
+      "summary": "Built Game 10: Gold Rush — lantern-lit cave mining, BFS pathfinding, triple resource management, 16 tests pass.",
+      "commitHash": "49d5a49"
     }
   ]
 }
