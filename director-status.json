@@ -1,27 +1,17 @@
 {
-  "lastRunAt": "2026-04-27T22:46:54Z",
+  "lastRunAt": "2026-04-27T23:10:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 10: Gold Rush tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 10: Gold Rush — tests passing, committing"
-  },
-  "gamesBuilt": 9,
-  "lastGameTitle": "Wanted Poster",
-  "lastGameFile": "wanted-poster.html",
+  "lastRunSummary": "Built Game 10: Gold Rush — lantern-lit cave mining, BFS pathfinding, triple resource management, 16 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 10,
+  "lastGameTitle": "Gold Rush",
+  "lastGameFile": "gold-rush.html",
   "gameQueue": [
     {
-      "num": 10,
+      "num": 11,
       "title": "Boot Hill Bluff",
       "concept": "Turn-based poker-style bluffing duel against an AI outlaw: read tells, bet chips, and call their bluff or fold. Text-driven narrative choices between hands.",
       "raisesBarOn": "First turn-based game, first narrative choice system, AI bluffing behavior — completely different genre from all prior games",
-      "status": "planned"
-    },
-    {
-      "num": 11,
-      "title": "Gold Rush",
-      "concept": "Resource management + survival: mine for gold in a procedural cave, manage lantern fuel and pickaxe durability, escape before the tunnel collapses.",
-      "raisesBarOn": "First inventory/resource system, procedural dungeon generation, dual resource timers creating layered urgency",
       "status": "planned"
     },
     {
@@ -29,6 +19,13 @@
       "title": "Stampede",
       "concept": "First-person perspective: you are a lone cowboy in the path of a buffalo stampede. Dodge left/right, leap over downed cattle, and signal the herd to split before they trample you.",
       "raisesBarOn": "First first-person perspective in the series, environmental scale and speed, split-second spatial judgment",
+      "status": "planned"
+    },
+    {
+      "num": 13,
+      "title": "Snake Oil",
+      "concept": "Fast-talking merchant mini-game: match ingredients to ailments described by townsfolk in real-time. A sliding inventory tray and time pressure create a juggling act between persuasion and supply chain.",
+      "raisesBarOn": "First matching/inventory puzzle, first NPC dialogue-driven mechanic, first game with multiple simultaneous customers",
       "status": "planned"
     }
   ],
@@ -64,6 +61,14 @@
       "result": "success",
       "summary": "Built Game 09: Wanted Poster. Memory/deduction face-ID mechanic, procedural face system, 15 tests pass.",
       "commitHash": "7fe5965"
+    },
+    {
+      "runAt": "2026-04-27T23:10:00Z",
+      "action": "new_game",
+      "game": "Gold Rush",
+      "result": "success",
+      "summary": "Built Game 10: Gold Rush — lantern-lit cave mining, BFS pathfinding, triple resource management, 16 tests pass.",
+      "commitHash": "49d5a49"
     }
   ]
 }
