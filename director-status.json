@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-04-27T19:23:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 07: Tin Star Showdown — quick-draw duel, best-of-3, AI difficulty scaling. 13 Playwright tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 08: Dust Devil",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 08: Dust Devil - physics tumbleweed puzzle through canyon gaps"
+  },
   "gamesBuilt": 7,
   "lastGameTitle": "Tin Star Showdown",
   "lastGameFile": "tin-star-showdown.html",
