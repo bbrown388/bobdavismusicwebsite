@@ -15,6 +15,13 @@ function Log([string]$msg) {
     Add-Content -Path $logFile -Value $line -Encoding UTF8
 }
 
+$lockFile = Join-Path $WorkDir "autonomous\run.lock"
+if (Test-Path $lockFile) {
+    Log "SKIPPED - another run is already in progress (lock file exists)"
+    exit 0
+}
+New-Item -Path $lockFile -ItemType File -Force | Out-Null
+
 Log "=== Autonomous run started ==="
 Set-Location $WorkDir
 
@@ -37,3 +44,4 @@ try {
 }
 
 Log "=== Autonomous run ended ==="
+Remove-Item -Path $lockFile -Force -ErrorAction SilentlyContinue
