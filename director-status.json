@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-04-27T22:26:12Z",
+  "lastRunAt": "2026-04-27T22:39:01Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 09 Wanted Poster tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 09: Wanted Poster — tests passing, committing"
-  },
-  "gamesBuilt": 8,
-  "lastGameTitle": "Dust Devil",
-  "lastGameFile": "dust-devil.html",
+  "lastRunSummary": "Built Game 09: Wanted Poster — memory/deduction face-ID game, 15 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 9,
+  "lastGameTitle": "Wanted Poster",
+  "lastGameFile": "wanted-poster.html",
   "gameQueue": [
-    {
-      "num": 9,
-      "title": "Wanted Poster",
-      "concept": "Memory/deduction game: study a wanted poster, then identify the outlaw in a saloon crowd before time runs out. Procedurally generated faces.",
-      "raisesBarOn": "Cognitive mechanic (first non-physical challenge in the series), procedural face generation, crowd NPC behavior",
-      "status": "planned"
-    },
     {
       "num": 10,
       "title": "Gold Rush",
@@ -29,6 +19,13 @@
       "title": "Boot Hill Bluff",
       "concept": "Turn-based poker-style bluffing duel against an AI outlaw: read tells, bet chips, and call their bluff or fold. Text-driven narrative choices between hands.",
       "raisesBarOn": "First turn-based game, first narrative choice system, AI bluffing behavior — completely different genre from all prior games",
+      "status": "planned"
+    },
+    {
+      "num": 12,
+      "title": "Stampede",
+      "concept": "First-person perspective: you are a lone cowboy in the path of a buffalo stampede. Dodge left/right, leap over downed cattle, and signal the herd to split before they trample you.",
+      "raisesBarOn": "First first-person perspective in the series, environmental scale and speed, split-second spatial judgment",
       "status": "planned"
     }
   ],
@@ -56,6 +53,14 @@
       "result": "success",
       "summary": "Built Game 08: Dust Devil (dust-devil.html). 2-axis physics tumbleweed, tap-to-gust canyon navigation, 14 tests pass.",
       "commitHash": "e842087"
+    },
+    {
+      "runAt": "2026-04-27T22:39:01Z",
+      "action": "new_game",
+      "game": "Wanted Poster",
+      "result": "success",
+      "summary": "Built Game 09: Wanted Poster. Memory/deduction face-ID mechanic, procedural face system, 15 tests pass.",
+      "commitHash": "7fe5965"
     }
   ]
 }
