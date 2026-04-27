@@ -43,7 +43,6 @@ h1 {
   margin-bottom: 36px;
 }
 
-/* ── Status row ── */
 .status-row {
   display: flex;
   align-items: center;
@@ -59,17 +58,16 @@ h1 {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.dot.ok  { background: #4aaa60; box-shadow: 0 0 6px #4aaa60; }
-.dot.err { background: #e05030; box-shadow: 0 0 6px #e05030; }
-.dot.idle { background: #555; }
+.dot.ok      { background: #4aaa60; box-shadow: 0 0 6px #4aaa60; }
+.dot.err     { background: #e05030; box-shadow: 0 0 6px #e05030; }
+.dot.idle    { background: #555; }
 .dot.working { background: #FFD700; box-shadow: 0 0 6px #FFD700; animation: pulse 1s infinite; }
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
 .status-text { font-size: 13px; color: #C8B89A; }
-.status-time { font-size: 11px; color: #705848; margin-left: auto; }
+.status-time { font-size: 11px; color: #705848; margin-left: auto; white-space: nowrap; }
 
-/* ── Section headings ── */
 .section-head {
   font-size: 10px;
   letter-spacing: 3px;
@@ -80,7 +78,6 @@ h1 {
   border-bottom: 1px solid rgba(255,215,0,0.08);
 }
 
-/* ── Current task ── */
 .current-task {
   padding: 14px 18px;
   border: 1px solid rgba(255,215,0,0.15);
@@ -91,7 +88,6 @@ h1 {
 }
 .current-task.none { color: #705848; font-style: italic; }
 
-/* ── Queue ── */
 .queue { margin-bottom: 32px; }
 
 .queue-item {
@@ -105,10 +101,11 @@ h1 {
   background: rgba(255,215,0,0.03);
 }
 
-.queue-num { font-size: 10px; color: #705848; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 3px; }
-.queue-title { font-size: 15px; color: #FFD700; margin-bottom: 5px; }
-.queue-concept { font-size: 12px; color: #705848; line-height: 1.5; margin-bottom: 5px; }
-.queue-bar { font-size: 11px; color: #4aaa60; }
+.queue-num     { font-size: 10px; color: #705848; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 3px; }
+.queue-title   { font-size: 15px; color: #FFD700; margin-bottom: 5px; }
+.queue-concept { font-size: 12px; color: #907860; line-height: 1.5; margin-bottom: 5px; }
+.queue-bar     { font-size: 11px; color: #4aaa60; }
+
 .queue-status {
   display: inline-block;
   font-size: 10px;
@@ -118,14 +115,13 @@ h1 {
   border-radius: 4px;
   margin-top: 6px;
 }
-.queue-status.planned { background: rgba(255,215,0,0.08); color: #907860; }
+.queue-status.planned     { background: rgba(255,215,0,0.08); color: #907860; }
 .queue-status.in_progress { background: rgba(255,215,0,0.18); color: #FFD700; }
-.queue-status.done { background: rgba(74,170,96,0.12); color: #4aaa60; }
+.queue-status.done        { background: rgba(74,170,96,0.12); color: #4aaa60; }
 
-/* ── Run log ── */
 .log-entry {
   display: grid;
-  grid-template-columns: 140px 60px 1fr;
+  grid-template-columns: 150px 60px 1fr;
   gap: 10px;
   align-items: start;
   padding: 10px 0;
@@ -133,21 +129,13 @@ h1 {
   font-size: 12px;
 }
 .log-entry:last-child { border-bottom: none; }
-.log-time { color: #705848; }
-.log-result { }
-.log-result.success { color: #4aaa60; }
-.log-result.warning { color: #e0a030; }
-.log-result.error   { color: #e05030; }
-.log-summary { color: #907860; line-height: 1.5; }
+.log-time              { color: #705848; }
+.log-result.success    { color: #4aaa60; }
+.log-result.warning    { color: #e0a030; }
+.log-result.error      { color: #e05030; }
+.log-summary           { color: #907860; line-height: 1.5; }
 
-/* ── Games built ── */
-.games-count {
-  font-size: 48px;
-  color: #FFD700;
-  font-weight: bold;
-  letter-spacing: -2px;
-  line-height: 1;
-}
+.games-count { font-size: 48px; color: #FFD700; font-weight: bold; letter-spacing: -2px; line-height: 1; }
 .games-label { font-size: 11px; color: #705848; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; margin-bottom: 32px; }
 
 .error-box {
@@ -166,111 +154,74 @@ h1 {
 <a class="back" href="index.html">← bobdavismusic.com</a>
 
 <h1>Game Director</h1>
-<p class="subtitle">Autonomous status — last updated each session</p>
+<p class="subtitle">Autonomous status — updated each session</p>
 
-<div id="app">
-  <div style="color:#907860;font-size:13px;padding:14px 18px;border:1px solid rgba(255,215,0,0.1);border-radius:8px;">
-    Loading status…
-  </div>
-</div>
+<div id="app"></div>
 
 <script>
-const STATUS_URL = 'director-status.json';
+// Status data embedded at build time — no external fetch needed.
+// The automated session regenerates this file with updated data after each run.
+const STATUS = {"lastRunAt":"2026-04-27T19:23:00Z","lastRunResult":"success","lastRunSummary":"Built Game 07: Tin Star Showdown — quick-draw duel, best-of-3, AI difficulty scaling. 13 Playwright tests pass.","currentTask":null,"gamesBuilt":7,"lastGameTitle":"Tin Star Showdown","lastGameFile":"tin-star-showdown.html","gameQueue":[{"num":8,"title":"Dust Devil","concept":"Physics-based puzzle: steer a tumbleweed through canyon gaps using wind gusts. Tap to puff, chain gusts for momentum. Race the clock.","raisesBarOn":"First physics simulation in the series (real momentum + drag), puzzle design with spatial reasoning — distinctly different from all prior games","status":"planned"},{"num":9,"title":"Wanted Poster","concept":"Memory/deduction game: study a wanted poster, then identify the outlaw in a saloon crowd before time runs out. Procedurally generated faces.","raisesBarOn":"Cognitive mechanic (first non-physical challenge in the series), procedural face generation, crowd NPC behavior","status":"planned"},{"num":10,"title":"Gold Rush","concept":"Resource management + survival: mine for gold in a procedural cave, manage lantern fuel and pickaxe durability, escape before the tunnel collapses.","raisesBarOn":"First inventory/resource system, procedural dungeon generation, dual resource timers creating layered urgency","status":"planned"}],"runLog":[{"runAt":"2026-04-27T18:27:45Z","action":"new_game","game":"Cattle Drive","result":"success","summary":"Built Game 06: Cattle Drive (cattle-drive.html). Flocking AI, wolf predators, 13 tests pass.","commitHash":"582b596"},{"runAt":"2026-04-27T19:23:00Z","action":"new_game","game":"Tin Star Showdown","result":"success","summary":"Built Game 07: Tin Star Showdown (tin-star-showdown.html). Quick-draw duel, best-of-3, AI difficulty scaling, 13 tests pass.","commitHash":"b3329ab"}]};
 
-function timeAgo(isoStr) {
-  if (!isoStr) return 'never';
-  const diff = Date.now() - new Date(isoStr).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'just now';
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (m < 1)  return 'just now';
   if (m < 60) return m + 'm ago';
   const h = Math.floor(m / 60);
   if (h < 24) return h + 'h ago';
   return Math.floor(h / 24) + 'd ago';
 }
 
-function fmtDate(isoStr) {
-  if (!isoStr) return '';
-  const d = new Date(isoStr);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function fmtDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
-function statusDot(result) {
-  if (!result) return '<span class="dot idle"></span>';
-  if (result === 'success') return '<span class="dot ok"></span>';
-  if (result === 'working') return '<span class="dot working"></span>';
-  return '<span class="dot err"></span>';
-}
+function render(d) {
+  const dotClass = d.currentTask ? 'working' : (d.lastRunResult === 'success' ? 'ok' : d.lastRunResult === 'error' ? 'err' : 'idle');
+  const statusLabel = d.currentTask ? 'Working' : 'Idle';
+  const currentHtml = d.currentTask
+    ? `Building Game ${d.gamesBuilt + 1}: ${d.currentTask.context || 'new game'}`
+    : 'Waiting for next scheduled run (3 AM nightly)';
 
-function renderQueue(queue) {
-  if (!queue || !queue.length) return '<p style="color:#443328;font-size:13px;font-style:italic">No planned games yet.</p>';
-  return queue.map(g => `
+  const errors = (d.runLog || []).filter(r => r.result === 'error' || r.result === 'warning').slice(-3);
+
+  const queueHtml = (d.gameQueue || []).map(g => `
     <div class="queue-item${g.status === 'in_progress' ? ' active' : ''}">
       <div class="queue-num">Game ${g.num}</div>
       <div class="queue-title">${g.title}</div>
       <div class="queue-concept">${g.concept}</div>
       <div class="queue-bar">↑ ${g.raisesBarOn}</div>
       <span class="queue-status ${g.status}">${g.status.replace('_', ' ')}</span>
-    </div>
-  `).join('');
-}
+    </div>`).join('');
 
-function renderLog(log) {
-  if (!log || !log.length) return '<p style="color:#443328;font-size:13px;font-style:italic">No runs recorded yet.</p>';
-  return [...log].reverse().slice(0, 20).map(e => `
+  const logHtml = [...(d.runLog || [])].reverse().slice(0, 20).map(e => `
     <div class="log-entry">
       <span class="log-time">${fmtDate(e.runAt)}</span>
       <span class="log-result ${e.result}">${e.result}</span>
-      <span class="log-summary">${e.summary}${e.commitHash ? ' <span style="color:#443328">[' + e.commitHash.slice(0,7) + ']</span>' : ''}</span>
+      <span class="log-summary">${e.summary}${e.commitHash ? ' <span style="color:#705848">[' + e.commitHash.slice(0,7) + ']</span>' : ''}</span>
+    </div>`).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="status-row">
+      <span class="dot ${dotClass}"></span>
+      <span class="status-text">${statusLabel}</span>
+      <span class="status-time">Last run: ${timeAgo(d.lastRunAt)}</span>
     </div>
-  `).join('');
+    ${errors.length ? `<div class="error-box">Recent issue: ${errors[errors.length-1].summary}</div>` : ''}
+    <div class="games-count">${d.gamesBuilt}</div>
+    <div class="games-label">Games built</div>
+    <div class="section-head">Current task</div>
+    <div class="current-task${d.currentTask ? '' : ' none'}">${currentHtml}</div>
+    <div class="section-head">Game queue</div>
+    <div class="queue">${queueHtml || '<p style="color:#705848;font-size:13px;font-style:italic">No planned games yet.</p>'}</div>
+    <div class="section-head">Run log</div>
+    ${logHtml || '<p style="color:#705848;font-size:13px;font-style:italic">No runs recorded yet.</p>'}
+  `;
 }
 
-async function load() {
-  const app = document.getElementById('app');
-  try {
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(STATUS_URL + '?t=' + Date.now(), { signal: controller.signal });
-    clearTimeout(tid);
-    if (!res.ok) throw new Error('HTTP ' + res.status + ' — status.json not found. May still be deploying.');
-    const d = await res.json();
-
-    const dotHtml = statusDot(d.currentTask ? 'working' : d.lastRunResult);
-    const currentLabel = d.currentTask
-      ? `Building Game ${d.gamesBuilt + 1}: <strong>${d.currentTask.context || 'new game'}</strong>`
-      : 'Idle — waiting for next scheduled run';
-
-    const errors = d.runLog
-      ? d.runLog.filter(r => r.result === 'error' || r.result === 'warning').slice(-3)
-      : [];
-
-    app.innerHTML = `
-      <div class="status-row">
-        ${dotHtml}
-        <span class="status-text">${d.currentTask ? 'Working' : 'Idle'}</span>
-        <span class="status-time">Last run: ${timeAgo(d.lastRunAt)}</span>
-      </div>
-
-      ${errors.length ? `<div class="error-box">⚠ Recent issue: ${errors[errors.length-1].summary}</div>` : ''}
-
-      <div class="games-count">${d.gamesBuilt}</div>
-      <div class="games-label">Games built</div>
-
-      <div class="section-head">Current task</div>
-      <div class="current-task${d.currentTask ? '' : ' none'}">${currentLabel}</div>
-
-      <div class="section-head">Game queue</div>
-      <div class="queue">${renderQueue(d.gameQueue)}</div>
-
-      <div class="section-head">Run log</div>
-      ${renderLog(d.runLog)}
-    `;
-  } catch(e) {
-    app.innerHTML = `<div class="error-box">Could not load status.json: ${e.message}</div>`;
-  }
-}
-
-load();
+render(STATUS);
 </script>
 </body>
 </html>
