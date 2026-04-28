@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snake Oil</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(8,3,1,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">&#9734;</span><span data-v="2">&#9734;</span><span data-v="3">&#9734;</span><span data-v="4">&#9734;</span><span data-v="5">&#9734;</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Midnight Rodeo">Upcoming: Midnight Rodeo (Game 14)</option>
+      <option value="Prairie Fire">Upcoming: Prairie Fire (Game 15)</option>
+      <option value="Snake Oil" selected>Existing: Snake Oil</option>
+      <option value="Stampede">Existing: Stampede</option>
+      <option value="Boot Hill Bluff">Existing: Boot Hill Bluff</option>
+      <option value="Gold Rush">Existing: Gold Rush</option>
+      <option value="Wanted Poster">Existing: Wanted Poster</option>
+      <option value="Dust Devil">Existing: Dust Devil</option>
+      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+      <option value="Cattle Drive">Existing: Cattle Drive</option>
+      <option value="Outlaw Run">Existing: Outlaw Run</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0400;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const SLUG = 'snake-oil';
+
+// -- Recipes -----------------------------------------------------------
+const AILMENTS = [
+  { name: 'Snake Bite',  clue: "Got bit by a rattler!",              combo: ['Bloodroot',      'Turpentine']  },
+  { name: 'Fever',       clue: "Burnin’ up somethin’ fierce!", combo: ['Willow Bark',   'River Mint']  },
+  { name: 'Bad Back',    clue: "Can’t stand up straight!",          combo: ['Horse Liniment','Camphor']     },
+  { name: 'Toothache',   clue: "Tooth’s been throbbin’ for days!", combo: ['Clove Oil', 'Turpentine']   },
+  { name: 'Low Spirit',  clue: "Feel real cloudy inside...",          combo: ['Miracle Tonic',  'River Mint']  },
+  { name: 'Cough',       clue: "Can’t stop hackin’!",           combo: ['Wild Cherry',  'Willow Bark'] },
+];
+
+const INGREDIENTS = ['Bloodroot','Turpentine','Willow Bark','River Mint','Horse Liniment','Camphor','Clove Oil','Miracle Tonic','Wild Cherry'];
+
+// -- Canvas ------------------------------------------------------------
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+  wrap.style.width    = canvas.style.width;
+  wrap.style.height   = canvas.style.height;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// -- Audio -------------------------------------------------------------
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+function ensureAC() { if (AC.state === 'suspended') AC.resume(); }
+
+let bgOscs = null, bgGain = null;
+const BG_CHORD = [130.81, 164.81, 196.00, 261.63]; // C2 E2 G2 C3
+
+function startBgAudio() {
+  if (bgOscs) return;
+  bgGain = AC.createGain();
+  bgGain.gain.value = 0.06;
+  bgGain.connect(AC.destination);
+  bgOscs = BG_CHORD.map(f => {
+    const o = AC.createOscillator();
+    const g = AC.createGain();
+    o.type = 'triangle'; o.frequency.value = f;
+    g.gain.value = 0.25;
+    o.connect(g); g.connect(bgGain);
+    o.start();
+    return o;
+  });
+}
+
+function stopBgAudio() {
+  if (!bgOscs) return;
+  bgGain.gain.setTargetAtTime(0, AC.currentTime, 0.3);
+  const saved = bgOscs; bgOscs = null;
+  setTimeout(() => saved.forEach(o => { try { o.stop(); } catch(e) {} }), 600);
+}
+
+function playCorrect() {
+  [523, 659, 784, 1047].forEach((f, i) => {
+    const t = AC.currentTime + i * 0.09;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = 'triangle'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.2, t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    o.start(t); o.stop(t + 0.32);
+  });
+}
+
+function playWrong() {
+  [392, 311, 247, 196].forEach((f, i) => {
+    const t = AC.currentTime + i * 0.1;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = 'sawtooth'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.start(t); o.stop(t + 0.26);
+  });
+}
+
+function playLeave() {
+  const t = AC.currentTime;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.connect(g); g.connect(AC.destination);
+  o.type = 'sine'; o.frequency.value = 220;
+  g.gain.setValueAtTime(0.08, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  o.start(t); o.stop(t + 0.35);
+}
+
+function playDie() {
+  [440, 330, 220, 147].forEach((f, i) => {
+    const t = AC.currentTime + i * 0.22;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = 'sawtooth'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.28, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.start(t); o.stop(t + 0.35);
+  });
+}
+
+// -- Particles ---------------------------------------------------------
+let particles = [];
+function addParticles(x, y, count, color) {
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 / count) * i + Math.random() * 0.6;
+    const spd = 1.2 + Math.random() * 2.5;
+    particles.push({
+      x, y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 0.5,
+      life: 35 + Math.random() * 20, maxLife: 55,
+      r: 2 + Math.random() * 2, color
+    });
+  }
+}
+
+// -- Floating popups ---------------------------------------------------
+let popups = [];
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, vy: -1.2, life: 55, maxLife: 55, color });
+}
+
+// -- State -------------------------------------------------------------
+let gameState = 'title';
+let score, mistakes, level, served;
+let customer;
+let trayOffset;
+let selected;
+let mixFlash;
+let nextCustomerTimer;
+let best = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+
+function timerForLevel() {
+  return Math.max(240, 480 - level * 30);
+}
+
+function randomAilmentIdx() {
+  const pools = [
+    [0, 1, 2],
+    [0, 1, 2, 3],
+    [0, 1, 2, 3, 4],
+    [0, 1, 2, 3, 4, 5],
+  ];
+  const pool = pools[Math.min(level - 1, pools.length - 1)];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function spawnCustomer() {
+  const tmax = timerForLevel();
+  customer = {
+    ailmentIdx: randomAilmentIdx(),
+    timer: tmax,
+    timerMax: tmax,
+    walkT: 0,
+    entering: true,
+    leaving: false,
+    leaveDir: 1,
+    reaction: null,
+  };
+}
+
+function startGame() {
+  gameState         = 'playing';
+  score             = 0;
+  mistakes          = 0;
+  level             = 1;
+  served            = 0;
+  trayOffset        = 0;
+  selected          = new Set();
+  particles         = [];
+  popups            = [];
+  mixFlash          = 0;
+  nextCustomerTimer = 0;
+  customer          = null;
+  startBgAudio();
+  spawnCustomer();
+}
+
+function endGame() {
+  if (gameState !== 'playing') return;
+  gameState = 'dead';
+  if (score > best) { best = score; localStorage.setItem(SLUG + '_best', best); }
+  stopBgAudio();
+  playDie();
+}
+
+// -- Tray scroll -------------------------------------------------------
+const TRAY_VISIBLE = 4;
+
+function scrollTrayLeft()  { if (trayOffset > 0) trayOffset--; }
+function scrollTrayRight() { if (trayOffset < INGREDIENTS.length - TRAY_VISIBLE) trayOffset++; }
+
+// -- Ingredient selection ----------------------------------------------
+function toggleIngredient(name) {
+  if (selected.has(name)) {
+    selected.delete(name);
+  } else if (selected.size < 2) {
+    selected.add(name);
+  }
+}
+
+// -- Mix ---------------------------------------------------------------
+function tryMix() {
+  if (selected.size !== 2 || !customer || customer.entering || customer.leaving) return;
+  const ailment = AILMENTS[customer.ailmentIdx];
+  const correct = ailment.combo.every(c => selected.has(c));
+  if (correct) {
+    const timeBonus = Math.round((customer.timer / customer.timerMax) * 10);
+    const earned = 10 + timeBonus;
+    score += earned;
+    served++;
+    if (served % 5 === 0) level = Math.min(level + 1, 4);
+    addParticles(W / 2, 330, 12, '#FFD700');
+    addPopup('+' + earned, W / 2, 310, '#FFD700');
+    customer.reaction = 'happy';
+    customer.leaving  = true;
+    customer.leaveDir = 1;
+    customer.walkT    = 0;
+    playCorrect();
+  } else {
+    mistakes++;
+    addPopup('WRONG!', W / 2, 310, '#E74C3C');
+    customer.reaction = 'sad';
+    mixFlash = 22;
+    playWrong();
+    if (mistakes >= 3) { endGame(); return; }
+  }
+  selected.clear();
+}
+
+// -- Update ------------------------------------------------------------
+function update(dt) {
+  if (gameState !== 'playing') return;
+
+  particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life--; });
+  particles = particles.filter(p => p.life > 0);
+
+  popups.forEach(p => { p.y += p.vy; p.life--; });
+  popups = popups.filter(p => p.life > 0);
+
+  if (mixFlash > 0) mixFlash--;
+
+  if (customer) {
+    if (customer.entering) {
+      customer.walkT = Math.min(1, customer.walkT + 0.07);
+      if (customer.walkT >= 1) customer.entering = false;
+      return;
+    }
+    if (customer.leaving) {
+      customer.walkT = Math.min(1, customer.walkT + 0.06);
+      if (customer.walkT >= 1) {
+        customer = null;
+        nextCustomerTimer = 36;
+      }
+      return;
+    }
+    // Tick timer (timerMax is in frames, dt in seconds)
+    customer.timer -= 60 * dt;
+    if (customer.timer <= 0) {
+      customer.timer    = 0;
+      customer.reaction = 'sad';
+      customer.leaving  = true;
+      customer.leaveDir = -1;
+      customer.walkT    = 0;
+      addPopup('MISSED', W / 2, 310, '#808070');
+      playLeave();
+      selected.clear();
+    }
+  } else {
+    if (nextCustomerTimer > 0) {
+      nextCustomerTimer--;
+    } else {
+      spawnCustomer();
+    }
+  }
+}
+
+// -- Draw helpers ------------------------------------------------------
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+}
+
+function drawWagonBg() {
+  ctx.save();
+  // Wagon body
+  ctx.fillStyle = '#2a1205';
+  roundRect(55, 78, 250, 115, 8); ctx.fill();
+  ctx.strokeStyle = '#8B5A2B'; ctx.lineWidth = 2;
+  roundRect(55, 78, 250, 115, 8); ctx.stroke();
+
+  // Canvas arch top
+  ctx.fillStyle = '#5a2d0c';
+  ctx.beginPath();
+  ctx.moveTo(65, 78);
+  ctx.bezierCurveTo(90, 44, 270, 44, 295, 78);
+  ctx.lineTo(65, 78); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#8B5A2B'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(65, 78); ctx.bezierCurveTo(90, 44, 270, 44, 295, 78);
+  ctx.stroke();
+
+  // Sign text
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('DR. DAVIS', 180, 110);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '10px Georgia, serif';
+  ctx.fillText('MIRACLE CURES & REMEDIES', 180, 127);
+  ctx.fillText('Est. 1883', 180, 143);
+
+  // Wagon wheels
+  [85, 275].forEach(wx => {
+    ctx.strokeStyle = '#5a2d0c'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(wx, 192, 22, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#3a1a04'; ctx.lineWidth = 2;
+    for (let a = 0; a < 360; a += 60) {
+      const rad = a * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(wx, 192);
+      ctx.lineTo(wx + Math.cos(rad) * 20, 192 + Math.sin(rad) * 20);
+      ctx.stroke();
+    }
+  });
+
+  // Decorative bottles on wagon
+  const btColors = ['#2a6040', '#1a3060', '#603020', '#405530'];
+  [108, 148, 196, 232].forEach((bx, i) => {
+    ctx.fillStyle = btColors[i];
+    roundRect(bx, 158, 13, 20, 3); ctx.fill();
+    ctx.fillStyle = '#7a5020'; roundRect(bx + 3, 153, 7, 7, 1); ctx.fill();
+  });
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawBg() {
+  ctx.save();
+  // Sky band
+  const sky = ctx.createLinearGradient(0, 0, 0, 215);
+  sky.addColorStop(0, '#070214'); sky.addColorStop(1, '#1c0a28');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, 215);
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.62)';
+  for (let i = 0; i < 28; i++) {
+    ctx.beginPath();
+    ctx.arc((i * 83 + 17) % W, (i * 113 + 22) % 195, i % 5 === 0 ? 1.3 : 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Town square ground
+  const sq = ctx.createLinearGradient(0, 215, 0, 420);
+  sq.addColorStop(0, '#1e0e04'); sq.addColorStop(1, '#2e1808');
+  ctx.fillStyle = sq; ctx.fillRect(0, 215, W, 205);
+  drawWagonBg();
+  // Lower panel
+  ctx.fillStyle = '#120600'; ctx.fillRect(0, 420, W, H - 420);
+  // Shelf line
+  ctx.strokeStyle = '#5a2d0c'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, 420); ctx.lineTo(W, 420); ctx.stroke();
+  ctx.restore();
+}
+
+function drawCustomer() {
+  if (!customer) return;
+  ctx.save();
+
+  let cx;
+  if (customer.entering) {
+    cx = -50 + customer.walkT * (W / 2 + 50);
+  } else if (customer.leaving) {
+    cx = W / 2 + customer.walkT * (customer.leaveDir * (W + 60));
+  } else {
+    cx = W / 2;
+  }
+  const cy = 365;
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.ellipse(cx, cy + 4, 24, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Silhouette color shifts on reaction
+  const bcolor = customer.reaction === 'happy' ? '#1e4010' :
+                 customer.reaction === 'sad'   ? '#4a1010' : '#1a0830';
+  ctx.fillStyle = bcolor;
+
+  // Torso
+  roundRect(cx - 19, cy - 52, 38, 50, 8); ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.arc(cx, cy - 65, 17, 0, Math.PI * 2); ctx.fill();
+  // Hat brim
+  ctx.fillRect(cx - 22, cy - 82, 44, 5);
+  // Hat crown
+  roundRect(cx - 13, cy - 106, 26, 26, 4); ctx.fill();
+  // Legs
+  ctx.fillRect(cx - 15, cy - 2, 12, 26);
+  ctx.fillRect(cx + 3, cy - 2, 12, 26);
+
+  // Reaction face detail
+  if (customer.reaction === 'happy') {
+    ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 65, 9, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.stroke();
+  } else if (customer.reaction === 'sad') {
+    ctx.strokeStyle = '#E74C3C'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 57, 9, 1.1 * Math.PI, 1.9 * Math.PI);
+    ctx.stroke();
+  }
+
+  if (!customer.leaving) {
+    const ailment = AILMENTS[customer.ailmentIdx];
+    drawSpeechBubble(cx, cy - 110, ailment.clue);
+    drawTimerBar(cx, cy + 32, customer.timer / customer.timerMax);
+  }
+
+  ctx.restore();
+}
+
+function drawSpeechBubble(cx, by, text) {
+  ctx.save();
+  ctx.font = '12px Georgia, serif';
+  const tw = ctx.measureText(text).width;
+  const bw = Math.min(Math.max(tw + 24, 120), 240);
+  const bh = 36;
+  const bx = Math.max(8, Math.min(cx - bw / 2, W - bw - 8));
+
+  ctx.fillStyle = '#F5E8C8';
+  roundRect(bx, by - bh, bw, bh, 8); ctx.fill();
+  ctx.strokeStyle = '#8B5A2B'; ctx.lineWidth = 1.5;
+  roundRect(bx, by - bh, bw, bh, 8); ctx.stroke();
+
+  // Tail
+  ctx.fillStyle = '#F5E8C8';
+  ctx.beginPath();
+  ctx.moveTo(cx - 7, by - 1); ctx.lineTo(cx + 7, by - 1); ctx.lineTo(cx, by + 9);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#8B5A2B'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - 7, by - 1); ctx.lineTo(cx, by + 9); ctx.lineTo(cx + 7, by - 1);
+  ctx.stroke();
+
+  ctx.fillStyle = '#2a1500';
+  ctx.font = '12px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  // Word-wrap if text wider than bubble
+  if (tw <= bw - 24) {
+    ctx.fillText(text, bx + bw / 2, by - bh / 2);
+  } else {
+    const words = text.split(' ');
+    let l1 = '', l2 = '';
+    for (const w of words) {
+      if (ctx.measureText(l1 + w + ' ').width < bw - 24) l1 += w + ' ';
+      else l2 += w + ' ';
+    }
+    ctx.fillText(l1.trim(), bx + bw / 2, by - bh * 0.66);
+    ctx.fillText(l2.trim(), bx + bw / 2, by - bh * 0.33);
+  }
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawTimerBar(cx, ty, frac) {
+  ctx.save();
+  const bw = 88;
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  roundRect(cx - bw / 2, ty, bw, 7, 3); ctx.fill();
+  ctx.fillStyle = frac > 0.5 ? '#FFD700' : frac > 0.25 ? '#FF9F43' : '#E74C3C';
+  roundRect(cx - bw / 2, ty, Math.max(0, bw * frac), 7, 3); ctx.fill();
+  ctx.restore();
+}
+
+function bottleHex(idx) {
+  const colors = ['#2a7045','#1a3580','#703525','#405020','#702060','#384510','#502040','#306040','#4a3010'];
+  return colors[idx % colors.length];
+}
+
+function lightenHex(hex, amt) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgb(${Math.min(255,r+amt)},${Math.min(255,g+amt)},${Math.min(255,b+amt)})`;
+}
+
+function drawTray() {
+  ctx.save();
+  const ty = 430;
+  const cw = (W - 60) / TRAY_VISIBLE; // cell width
+
+  // Left scroll arrow
+  ctx.globalAlpha = trayOffset > 0 ? 0.9 : 0.2;
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath();
+  ctx.moveTo(22, ty + 44); ctx.lineTo(10, ty + 32); ctx.lineTo(10, ty + 56);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Right scroll arrow
+  ctx.globalAlpha = trayOffset < INGREDIENTS.length - TRAY_VISIBLE ? 0.9 : 0.2;
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath();
+  ctx.moveTo(W - 22, ty + 44); ctx.lineTo(W - 10, ty + 32); ctx.lineTo(W - 10, ty + 56);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  for (let i = 0; i < TRAY_VISIBLE; i++) {
+    const idx = trayOffset + i;
+    if (idx >= INGREDIENTS.length) break;
+    const name = INGREDIENTS[idx];
+    const isSel = selected.has(name);
+    const cellX = 30 + i * cw;
+    const cx = cellX + cw / 2;
+
+    // Cell bg
+    ctx.fillStyle = isSel ? 'rgba(255,215,80,0.15)' : 'rgba(255,255,255,0.03)';
+    roundRect(cellX + 2, ty, cw - 4, 88, 7); ctx.fill();
+    if (isSel) {
+      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5;
+      roundRect(cellX + 2, ty, cw - 4, 88, 7); ctx.stroke();
+    }
+
+    // Bottle
+    const bc = bottleHex(idx);
+    const bclr = isSel ? lightenHex(bc, 60) : bc;
+    // Body
+    ctx.fillStyle = bclr;
+    roundRect(cx - 10, ty + 18, 20, 30, 4); ctx.fill();
+    // Neck
+    roundRect(cx - 5, ty + 10, 10, 11, 2); ctx.fill();
+    // Cork
+    ctx.fillStyle = '#8B5A2B'; roundRect(cx - 6, ty + 5, 12, 7, 2); ctx.fill();
+    // Shine
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    roundRect(cx - 8, ty + 20, 4, 14, 2); ctx.fill();
+    // Label
+    ctx.fillStyle = '#F5E8C8';
+    roundRect(cx - 8, ty + 26, 16, 12, 2); ctx.fill();
+
+    if (isSel) {
+      ctx.fillStyle = '#1a0900';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✓', cx, ty + 32);
+    }
+
+    // Ingredient name (wrap at space if needed)
+    ctx.fillStyle = isSel ? '#FFD700' : '#908060';
+    ctx.font = (isSel ? 'bold ' : '') + '8.5px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const parts = name.split(' ');
+    if (parts.length === 1 || ctx.measureText(name).width < cw - 6) {
+      ctx.fillText(name, cx, ty + 62);
+    } else {
+      ctx.fillText(parts[0], cx, ty + 59);
+      ctx.fillText(parts.slice(1).join(' '), cx, ty + 70);
+    }
+  }
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawMixButton() {
+  if (selected.size !== 2 || !customer || customer.entering || customer.leaving) return;
+  ctx.save();
+  const pulse = 0.82 + 0.18 * Math.sin(Date.now() / 200);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFD700';
+  roundRect(W / 2 - 72, 528, 144, 48, 10); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#0d0400';
+  ctx.font = 'bold 17px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('MIX IT UP', W / 2, 552);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+
+  // Mistake marks (top left)
+  for (let i = 0; i < 3; i++) {
+    const hit = i < mistakes;
+    ctx.fillStyle = hit ? 'rgba(231,76,60,0.18)' : 'rgba(0,0,0,0.3)';
+    roundRect(10 + i * 28, 10, 22, 22, 5); ctx.fill();
+    ctx.fillStyle = hit ? '#E74C3C' : '#3a1510';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('✕', 21 + i * 28, 21);
+  }
+
+  // Score (top center)
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(W / 2 - 50, 9, 100, 24, 6); ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(score.toLocaleString() + ' pts', W / 2, 21);
+
+  // Level (top right)
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(W - 60, 9, 52, 24, 6); ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Lvl ' + level, W - 34, 21);
+
+  // Wrong flash
+  if (mixFlash > 0) {
+    ctx.globalAlpha = (mixFlash / 22) * 0.22;
+    ctx.fillStyle = '#E74C3C';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (p.life / p.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawPopups() {
+  ctx.save();
+  popups.forEach(p => {
+    ctx.globalAlpha = Math.min(1, (p.life / p.maxLife) * 2.2);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+// -- Waiting animation (no customer yet) -------------------------------
+function drawWaiting() {
+  if (customer || gameState !== 'playing') return;
+  ctx.save();
+  const pulse = 0.45 + 0.35 * Math.sin(Date.now() / 600);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 14px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Next customer incoming...', W / 2, 340);
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+// -- Title screen ------------------------------------------------------
+function drawTitle() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#070214'); bg.addColorStop(1, '#1c0a28');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,224,102,0.62)';
+  for (let i = 0; i < 30; i++) {
+    ctx.beginPath();
+    ctx.arc((i * 83 + 17) % W, (i * 113 + 22) % 280, i % 5 === 0 ? 1.3 : 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.save(); ctx.translate(0, -36); drawWagonBg(); ctx.restore();
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#C8A04A'; ctx.shadowBlur = 22;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 52px Georgia, serif';
+  ctx.fillText('SNAKE OIL', W / 2, 310);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 13px Georgia, serif';
+  ctx.fillText('Mix the right cure. Don’t keep ’em waiting.', W / 2, 350);
+
+  ctx.strokeStyle = '#5a2d0c'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(50, 368); ctx.lineTo(W - 50, 368); ctx.stroke();
+
+  // Remedy guide on title
+  ctx.fillStyle = '#F5E8C8';
+  ctx.font = 'bold 11px Georgia, serif';
+  ctx.fillText('REMEDY GUIDE', W / 2, 386);
+  ctx.fillStyle = '#908060'; ctx.font = '10px Georgia, serif';
+  AILMENTS.forEach((a, i) => {
+    ctx.fillText(a.name + ': ' + a.combo.join(' + '), W / 2, 402 + i * 16);
+  });
+
+  if (best > 0) {
+    ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia, serif';
+    ctx.fillText('Best: ' + best.toLocaleString() + ' pts', W / 2, 510);
+  }
+
+  const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 480);
+  ctx.fillStyle = `rgba(255,215,90,${pulse})`;
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText('Tap to Start', W / 2, 540);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// -- Dead screen -------------------------------------------------------
+function drawDead() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,2,0,0.88)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#E74C3C'; ctx.shadowBlur = 22;
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 42px Georgia, serif';
+  ctx.fillText('SNAKE GOT YA', W / 2, 200);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = '18px Georgia, serif';
+  ctx.fillText(score.toLocaleString() + ' pts earned', W / 2, 260);
+  ctx.fillStyle = '#A09070'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('Best: ' + best.toLocaleString() + ' pts', W / 2, 292);
+  ctx.fillText('Served: ' + served + ' customers', W / 2, 316);
+
+  if (score >= best && score > 0) {
+    const pulse = 0.78 + 0.22 * Math.sin(Date.now() / 270);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 17px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 344);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.fillStyle = '#FFD700';
+  roundRect(W / 2 - 88, 382, 176, 48, 10); ctx.fill();
+  ctx.fillStyle = '#0d0400'; ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('Try Again', W / 2, 406);
+
+  ctx.fillStyle = '#A09070'; ctx.font = '13px Georgia, serif';
+  ctx.fillText('Rate this game', W / 2, 460);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// -- Game loop ---------------------------------------------------------
+let lastTS = 0;
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTS) / 1000, 0.05);
+    lastTS = ts;
+    ctx.clearRect(0, 0, W, H);
+
+    if (gameState === 'title') {
+      drawTitle();
+    } else if (gameState === 'playing') {
+      update(dt);
+      drawBg();
+      drawWaiting();
+      drawCustomer();
+      drawTray();
+      drawMixButton();
+      drawParticles();
+      drawPopups();
+      drawHUD();
+    } else if (gameState === 'dead') {
+      drawBg();
+      drawDead();
+    }
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(ts => { lastTS = ts; requestAnimationFrame(loop); });
+
+// -- Input helpers -----------------------------------------------------
+const TRAY_CW = (W - 60) / TRAY_VISIBLE;
+
+function getTrayItemAt(cx, cy) {
+  if (cy < 422 || cy > 522) return null;
+  if (cx < 10 && cx >= 0) return 'arrow-left';
+  if (cx > W - 10) return 'arrow-right';
+  if (cx < 30) return 'arrow-left';
+  if (cx > W - 30) return 'arrow-right';
+  const i = Math.floor((cx - 30) / TRAY_CW);
+  if (i < 0 || i >= TRAY_VISIBLE) return null;
+  const idx = trayOffset + i;
+  if (idx >= INGREDIENTS.length) return null;
+  return INGREDIENTS[idx];
+}
+
+function isMixBtn(cx, cy) {
+  return cx >= W / 2 - 72 && cx <= W / 2 + 72 && cy >= 528 && cy <= 576;
+}
+
+function isPlayAgainBtn(cx, cy) {
+  return cx >= W / 2 - 88 && cx <= W / 2 + 88 && cy >= 382 && cy <= 430;
+}
+
+function isRateBtn(cx, cy) {
+  return cx >= 60 && cx <= W - 60 && cy >= 444 && cy <= 476;
+}
+
+function onInput(e) {
+  e.preventDefault();
+  ensureAC();
+  const rect = canvas.getBoundingClientRect();
+  const sc = W / rect.width;
+  const pt = e.touches ? e.touches[0] : e;
+  const cx = (pt.clientX - rect.left) * sc;
+  const cy = (pt.clientY - rect.top) * sc;
+
+  if (gameState === 'title') { startGame(); return; }
+
+  if (gameState === 'dead') {
+    if (isRateBtn(cx, cy)) { openFeedback(); return; }
+    if (isPlayAgainBtn(cx, cy)) { gameState = 'title'; return; }
+    return;
+  }
+
+  if (gameState === 'playing') {
+    if (isMixBtn(cx, cy)) { tryMix(); return; }
+    const item = getTrayItemAt(cx, cy);
+    if (item === 'arrow-left')  { scrollTrayLeft();       return; }
+    if (item === 'arrow-right') { scrollTrayRight();      return; }
+    if (item)                   { toggleIngredient(item); return; }
+  }
+}
+
+canvas.addEventListener('touchstart', onInput, { passive: false });
+canvas.addEventListener('mousedown',  onInput);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); scrollTrayLeft(); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); scrollTrayRight(); }
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (gameState === 'title') startGame();
+    else tryMix();
+  }
+});
+
+// -- Feedback overlay --------------------------------------------------
+let fbRating = 0;
+const fbOv     = document.getElementById('fb-ov');
+const fbStars  = document.getElementById('fb-stars');
+const fbSubmit = document.getElementById('fb-submit');
+const fbCancel = document.getElementById('fb-cancel');
+const fbStatus = document.getElementById('fb-status');
+const fbText   = document.getElementById('fb-text');
+
+fbStars.querySelectorAll('span').forEach(s => {
+  s.addEventListener('click', () => {
+    fbRating = parseInt(s.dataset.v);
+    fbStars.querySelectorAll('span').forEach((x, i) => {
+      x.textContent = i < fbRating ? '★' : '☆';
+    });
+  });
+});
+
+fbSubmit.addEventListener('click', async () => {
+  if (!fbRating) { fbStatus.textContent = 'Please select a rating.'; return; }
+  fbSubmit.disabled = true; fbStatus.textContent = 'Sending...';
+  const target = document.getElementById('fb-target').value;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: target, rating: fbRating, message: fbText.value, source: 'in-app' })
+    });
+    fbStatus.textContent = 'Thanks!';
+    setTimeout(closeFeedback, 1200);
+  } catch {
+    fbStatus.textContent = 'Saved locally. Thanks!';
+    setTimeout(closeFeedback, 1200);
+  }
+});
+
+fbCancel.addEventListener('click', closeFeedback);
+
+function openFeedback() {
+  fbOv.style.display = 'flex'; fbRating = 0;
+  fbStars.querySelectorAll('span').forEach(x => { x.textContent = '☆'; });
+  fbStatus.textContent = ''; fbText.value = ''; fbSubmit.disabled = false;
+}
+function closeFeedback() { fbOv.style.display = 'none'; }
+
+// -- Test hooks --------------------------------------------------------
+window.__test = {
+  getState:           () => gameState,
+  getScore:           () => score,
+  getMistakes:        () => mistakes,
+  getLevel:           () => level,
+  getServed:          () => served,
+  getTrayOffset:      () => trayOffset,
+  getSelected:        () => [...(selected || new Set())],
+  getCustomer:        () => customer ? {
+    ailmentIdx: customer.ailmentIdx,
+    ailmentName: AILMENTS[customer.ailmentIdx].name,
+    timer: customer.timer,
+    timerMax: customer.timerMax,
+    entering: customer.entering,
+    leaving: customer.leaving,
+    reaction: customer.reaction
+  } : null,
+  getBest:            () => best,
+  startGame,
+  endGame,
+  scrollTrayLeft,
+  scrollTrayRight,
+  toggleIngredient,
+  tryMix,
+  spawnCustomer,
+  setCustomerTimer:   v => { if (customer) customer.timer = v; },
+  setCustomerAilment: idx => { if (customer) customer.ailmentIdx = idx; },
+  setCustomerReady:   () => { if (customer) { customer.entering = false; customer.leaving = false; customer.walkT = 1; } },
+  clearSelected:      () => { if (selected) selected.clear(); },
+  selectIngredients:  (...names) => { if (selected) { selected.clear(); names.forEach(n => selected.add(n)); } },
+  getAilmentCombo:    idx => AILMENTS[idx].combo,
+  getIngredients:     () => INGREDIENTS.slice(),
+  openFeedback,
+  closeFeedback,
+  isMixBtn,
+  getTrayItemAt,
+  tickFrames:         n => { for (let i = 0; i < n; i++) update(1 / 60); },
+};
+</script>
+</body>
+</html>
