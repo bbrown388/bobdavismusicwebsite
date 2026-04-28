@@ -18,6 +18,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 8 | Dust Devil | `dust-devil.html` | 2-axis physics tumbleweed / tap-to-gust / canyon gap navigation | 2026-04-27 |
 | 9 | Wanted Poster | `wanted-poster.html` | Memory/deduction — study poster, identify outlaw in saloon crowd | 2026-04-27 |
 | 10 | Gold Rush | `gold-rush.html` | Lantern-lit cave mining / BFS pathfinding / triple resource management | 2026-04-27 |
+| 11 | Boot Hill Bluff | `boot-hill-bluff.html` | Turn-based bluffing duel / AI tell system / narrative choices / chip betting | 2026-04-28 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -38,6 +39,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Tin Star Showdown](retrospectives/05-tin-star-showdown.md) â€” session lessons, action items for Game 08
 - [Retrospective: Dust Devil](retrospectives/06-dust-devil.md) â€” session lessons, action items for Game 09
 - [Retrospective: Gold Rush](retrospectives/08-gold-rush.md) — session lessons, action items for Game 11
+- [Retrospective: Boot Hill Bluff](retrospectives/09-boot-hill-bluff.md) — session lessons, action items for Game 12
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
