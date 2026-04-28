@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-04-28T10:30:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 12: Stampede - first-person buffalo stampede, 3-lane dodge, signal herd mechanic, dynamic hoofbeat audio, 23 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 13: Snake Oil",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 13: Snake Oil - fast-talking frontier merchant, match ingredients to ailments, sliding inventory tray"
+  },
   "gamesBuilt": 12,
   "lastGameTitle": "Stampede",
   "lastGameFile": "stampede.html",
