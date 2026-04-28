@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Stampede</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(8,3,1,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">&#9734;</span><span data-v="2">&#9734;</span><span data-v="3">&#9734;</span><span data-v="4">&#9734;</span><span data-v="5">&#9734;</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Snake Oil">Upcoming: Snake Oil (Game 13)</option>
+      <option value="Midnight Rodeo">Upcoming: Midnight Rodeo (Game 14)</option>
+      <option value="Stampede" selected>Existing: Stampede</option>
+      <option value="Boot Hill Bluff">Existing: Boot Hill Bluff</option>
+      <option value="Gold Rush">Existing: Gold Rush</option>
+      <option value="Wanted Poster">Existing: Wanted Poster</option>
+      <option value="Dust Devil">Existing: Dust Devil</option>
+      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+      <option value="Cattle Drive">Existing: Cattle Drive</option>
+      <option value="Outlaw Run">Existing: Outlaw Run</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0400;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const SLUG = 'stampede';
+
+// -- Perspective -------------------------------------------------------
+const VP_X = 180, VP_Y = 260;
+const FOCAL = 300, CAM_H = 38, LANE_SEP = 62;
+const Z_SPAWN = 900, Z_HIT = 75, Z_GONE = 50;
+
+// -- Game constants ----------------------------------------------------
+const LIVES_START   = 3;
+const SIG_MAX       = 3;
+const SIG_CD_MAX    = 500;  // frames
+const DODGE_FRAMES  = 14;
+const INVULN_FRAMES = 90;
+const SPEED_START   = 250;  // world units / sec
+const SPEED_MAX     = 700;
+const SCORE_SCALE   = 0.1;  // yards per world unit
+
+// -- Canvas ------------------------------------------------------------
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+  wrap.style.width    = canvas.style.width;
+  wrap.style.height   = canvas.style.height;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// -- Audio -------------------------------------------------------------
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+let hoofOsc = null, hoofGain = null;
+
+function ensureAC() { if (AC.state === 'suspended') AC.resume(); }
+
+function startHoofLoop() {
+  if (hoofOsc) return;
+  const osc = AC.createOscillator();
+  const filt = AC.createBiquadFilter();
+  const g = AC.createGain();
+  filt.type = 'bandpass'; filt.frequency.value = 85; filt.Q.value = 1.2;
+  osc.type = 'sawtooth'; osc.frequency.value = 42;
+  g.gain.value = 0;
+  osc.connect(filt); filt.connect(g); g.connect(AC.destination);
+  osc.start();
+  hoofOsc = osc; hoofGain = g;
+}
+
+function stopHoofLoop() {
+  if (!hoofOsc) return;
+  hoofGain.gain.setTargetAtTime(0, AC.currentTime, 0.12);
+  const o = hoofOsc; hoofOsc = null;
+  setTimeout(() => { try { o.stop(); } catch(e) {} }, 500);
+}
+
+function setHoofVol(v) {
+  if (!hoofGain) return;
+  const target = Math.min(v, 0.38);
+  hoofGain.gain.setTargetAtTime(target, AC.currentTime, 0.07);
+  if (hoofOsc) hoofOsc.frequency.value = 42 + target * 45;
+}
+
+function playDodge() {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.connect(g); g.connect(AC.destination);
+  o.type = 'sine';
+  o.frequency.setValueAtTime(380, AC.currentTime);
+  o.frequency.exponentialRampToValueAtTime(190, AC.currentTime + 0.12);
+  g.gain.setValueAtTime(0.15, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.14);
+  o.start(); o.stop(AC.currentTime + 0.15);
+}
+
+function playHit() {
+  [[90, 0.38, 0.28], [140, 0.3, 0.22]].forEach(([f, v, d]) => {
+    const t = AC.currentTime;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = 'sawtooth'; o.frequency.value = f;
+    g.gain.setValueAtTime(v, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + d);
+    o.start(t); o.stop(t + d + 0.05);
+  });
+}
+
+function playSignal() {
+  [330, 440, 550, 660].forEach((f, i) => {
+    const t = AC.currentTime + i * 0.1;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = 'triangle'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.start(t); o.stop(t + 0.28);
+  });
+}
+
+function playDie() {
+  [440, 330, 220, 147].forEach((f, i) => {
+    const t = AC.currentTime + i * 0.22;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.type = 'sawtooth'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.28, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.start(t); o.stop(t + 0.35);
+  });
+}
+
+// -- Particles ---------------------------------------------------------
+let particles = [];
+
+function addParticles(x, y, count, color) {
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 / count) * i + Math.random() * 0.6;
+    const spd = 1.5 + Math.random() * 3;
+    particles.push({
+      x, y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 0.5,
+      life: 40 + Math.random() * 25, maxLife: 65,
+      r: 2.5 + Math.random() * 2.5, color
+    });
+  }
+}
+
+// -- State -------------------------------------------------------------
+let gameState = 'title';
+let lives, distance, speed, frameCount;
+let playerLane, playerLaneT;
+let invuln, dodgeAnim, dodgeDir;
+let sigUses, sigCooldown, sigAnim;
+let buffalos;  // [{z, lane, scattered, scatterT, scatterVX}]
+let spawnTimer, spawnInterval;
+let shakeFrames;
+let best = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+
+function startGame() {
+  gameState    = 'playing';
+  lives        = LIVES_START;
+  distance     = 0;
+  speed        = SPEED_START;
+  frameCount   = 0;
+  playerLane   = 1;
+  playerLaneT  = 1;
+  invuln       = 0;
+  dodgeAnim    = 0;
+  dodgeDir     = 0;
+  sigUses      = SIG_MAX;
+  sigCooldown  = 0;
+  sigAnim      = 0;
+  buffalos     = [];
+  particles    = [];
+  shakeFrames  = 0;
+  spawnTimer   = 90;
+  spawnInterval = 130;
+  startHoofLoop();
+}
+
+function endGame() {
+  if (gameState !== 'playing') return;
+  gameState = 'dead';
+  const yards = Math.floor(distance * SCORE_SCALE);
+  if (yards > best) { best = yards; localStorage.setItem(SLUG + '_best', best); }
+  stopHoofLoop();
+  playDie();
+}
+
+// -- Spawn -------------------------------------------------------------
+function spawnWave() {
+  const yards = Math.floor(distance * SCORE_SCALE);
+  const maxInWave = Math.min(3, 1 + Math.floor(yards / 200));
+  const count = 1 + Math.floor(Math.random() * maxInWave);
+  const lanes = [0, 1, 2];
+  for (let i = 2; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lanes[i], lanes[j]] = [lanes[j], lanes[i]];
+  }
+  for (let i = 0; i < count; i++) {
+    buffalos.push({ z: Z_SPAWN + i * 110, lane: lanes[i], scattered: false, scatterT: 0, scatterVX: 0 });
+  }
+}
+
+// -- Signal ------------------------------------------------------------
+function useSignal() {
+  if (sigUses <= 0 || sigCooldown > 0 || gameState !== 'playing') return;
+  ensureAC();
+  sigUses--;
+  sigCooldown = SIG_CD_MAX;
+  sigAnim = 42;
+  buffalos.forEach(b => {
+    if (!b.scattered && b.z < 750) {
+      b.scattered = true;
+      b.scatterT  = 72;
+      b.scatterVX = b.lane < playerLane ? -0.09 : b.lane > playerLane ? 0.09 : (Math.random() < 0.5 ? -0.09 : 0.09);
+    }
+  });
+  addParticles(95 + playerLaneT * 85, H - 36, 14, '#FFD700');
+  playSignal();
+}
+
+// -- Dodge -------------------------------------------------------------
+function dodgeLeft() {
+  if (playerLane <= 0 || gameState !== 'playing') return;
+  ensureAC();
+  playerLane--;
+  dodgeAnim = DODGE_FRAMES;
+  dodgeDir  = -1;
+  playDodge();
+}
+
+function dodgeRight() {
+  if (playerLane >= 2 || gameState !== 'playing') return;
+  ensureAC();
+  playerLane++;
+  dodgeAnim = DODGE_FRAMES;
+  dodgeDir  = 1;
+  playDodge();
+}
+
+// -- Update ------------------------------------------------------------
+function update(dt) {
+  playerLaneT += (playerLane - playerLaneT) * 0.28;
+
+  if (gameState !== 'playing') {
+    // Animate title buffalos
+    buffalos.forEach(b => { b.z -= 55 * dt; if (b.z < Z_GONE) b.z = Z_SPAWN + Math.random() * 100; });
+    return;
+  }
+
+  frameCount++;
+  distance += speed * dt;
+  speed = Math.min(SPEED_MAX, SPEED_START + frameCount * 0.05);
+
+  // Spawn
+  spawnTimer--;
+  if (spawnTimer <= 0) {
+    spawnWave();
+    const yards = Math.floor(distance * SCORE_SCALE);
+    spawnInterval = Math.max(62, 130 - Math.floor(yards / 60) * 3);
+    spawnTimer = spawnInterval + Math.random() * 20;
+  }
+
+  // Move
+  buffalos.forEach(b => {
+    b.z -= speed * dt;
+    if (b.scattered && b.scatterT > 0) {
+      b.scatterT--;
+      const accel = 1 + (72 - b.scatterT) * 0.025;
+      b.lane += b.scatterVX * accel;
+    }
+  });
+
+  // Collision
+  if (invuln <= 0) {
+    for (const b of buffalos) {
+      if (!b.scattered && b.z <= Z_HIT && b.z > Z_GONE && b.lane === playerLane) {
+        b.scattered = true; b.scatterT = 0;
+        lives--;
+        invuln = INVULN_FRAMES;
+        shakeFrames = 22;
+        const py = VP_Y + CAM_H * (FOCAL / Math.max(b.z, 1));
+        addParticles(VP_X + (b.lane - 1) * LANE_SEP * (FOCAL / Math.max(b.z, 1)), py, 10, '#E74C3C');
+        playHit();
+        if (lives <= 0) { endGame(); return; }
+      }
+    }
+  }
+
+  // Prune
+  buffalos = buffalos.filter(b => {
+    if (b.scattered && b.scatterT <= 0 && (b.lane < -1.2 || b.lane > 3.2)) return false;
+    if (!b.scattered && b.z < Z_GONE) return false;
+    return true;
+  });
+
+  // Timers
+  if (invuln > 0) invuln--;
+  if (sigCooldown > 0) sigCooldown--;
+  if (dodgeAnim > 0) dodgeAnim--;
+  if (sigAnim > 0) sigAnim--;
+  if (shakeFrames > 0) shakeFrames--;
+
+  // Particles
+  particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.11; p.life--; });
+  particles = particles.filter(p => p.life > 0);
+
+  // Hoofbeat volume
+  const nearZ = buffalos.filter(b => !b.scattered).reduce((m, b) => Math.min(m, b.z), Z_SPAWN);
+  const vol = Math.max(0, 1 - (nearZ - Z_HIT) / (Z_SPAWN - Z_HIT));
+  setHoofVol(vol * 0.38);
+}
+
+// -- Projection --------------------------------------------------------
+function proj(lane, z) {
+  const s = FOCAL / Math.max(z, 1);
+  return { x: VP_X + (lane - 1) * LANE_SEP * s, y: VP_Y + CAM_H * s, s };
+}
+
+// -- Draw helpers ------------------------------------------------------
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+}
+
+function drawSky(phase) {
+  const g = ctx.createLinearGradient(0, 0, 0, VP_Y);
+  g.addColorStop(0, '#080318');
+  g.addColorStop(0.55, '#14082a');
+  g.addColorStop(1, '#7a2e08');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, VP_Y);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.72)';
+  for (let i = 0; i < 38; i++) {
+    ctx.beginPath();
+    ctx.arc((i * 91 + 19) % W, (i * 127 + 31) % (VP_Y - 28), i % 4 === 0 ? 1.5 : 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Horizon dust cloud (intensifies as herd approaches)
+  const nearZ = buffalos.filter(b => !b.scattered).reduce((m, b) => Math.min(m, b.z), Z_SPAWN);
+  const dustI = Math.max(0, 1 - (nearZ - 150) / (Z_SPAWN - 150));
+  if (dustI > 0.02) {
+    const dg = ctx.createLinearGradient(0, VP_Y - 32, 0, VP_Y + 6);
+    dg.addColorStop(0, 'rgba(0,0,0,0)');
+    dg.addColorStop(0.45, `rgba(160,65,15,${dustI * 0.28})`);
+    dg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = dg; ctx.fillRect(0, VP_Y - 32, W, 38);
+  }
+
+  // Distant hill silhouettes
+  ctx.fillStyle = '#130310';
+  ctx.beginPath();
+  ctx.moveTo(0, VP_Y);
+  const hx = [0, 25, 65, 105, 145, 180, 215, 255, 295, 330, 360];
+  const hy = [0, -16, -10, -24, -8, -18, -12, -22, -7, -14, 0];
+  hx.forEach((x, i) => ctx.lineTo(x, VP_Y + hy[i]));
+  ctx.lineTo(W, VP_Y); ctx.closePath(); ctx.fill();
+}
+
+function drawGround() {
+  const g = ctx.createLinearGradient(0, VP_Y, 0, H);
+  g.addColorStop(0, '#221000');
+  g.addColorStop(0.45, '#381808');
+  g.addColorStop(1, '#4a2308');
+  ctx.fillStyle = g; ctx.fillRect(0, VP_Y, W, H - VP_Y);
+
+  // Animated speed bands (converging perspective lines moving toward player)
+  const phase = (gameState === 'playing' ? frameCount * 0.009 : 0) % 1;
+  for (let i = 0; i < 9; i++) {
+    const t = ((i / 9) + phase) % 1;
+    if (t < 0.03) continue;
+    const y  = VP_Y + (H - VP_Y) * t;
+    const hw = (y - VP_Y) / (H - VP_Y) * W * 0.5;
+    ctx.strokeStyle = `rgba(72,36,6,${t * 0.38})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(VP_X - hw, y); ctx.lineTo(VP_X + hw, y);
+    ctx.stroke();
+  }
+
+  // Lane divider lines (4 converging from VP to bottom)
+  const divBX = [55, 138, 222, 305];
+  ctx.setLineDash([7, 9]);
+  ctx.lineWidth = 1;
+  divBX.forEach(bx => {
+    ctx.strokeStyle = 'rgba(200,145,55,0.22)';
+    ctx.beginPath(); ctx.moveTo(VP_X, VP_Y); ctx.lineTo(bx, H); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // Horizon glow line
+  const hg = ctx.createLinearGradient(0, VP_Y - 2, 0, VP_Y + 5);
+  hg.addColorStop(0, 'rgba(0,0,0,0)');
+  hg.addColorStop(0.5, 'rgba(240,130,30,0.55)');
+  hg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = hg; ctx.fillRect(0, VP_Y - 2, W, 7);
+}
+
+function drawBuffalo(sx, sy, s) {
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  const BW = 50 * s, BH = 44 * s;
+  const flashing = invuln > 0 && invuln % 6 < 3;
+  const dark = flashing ? '#602020' : '#100202';
+  ctx.fillStyle = dark;
+
+  // Main body (front-on view, wide rectangle)
+  roundRect(-BW * 0.5, -BH * 0.88, BW, BH * 0.67, BW * 0.12);
+  ctx.fill();
+
+  // Shoulder hump
+  ctx.beginPath();
+  ctx.ellipse(-BW * 0.1, -BH * 0.87 - BH * 0.22, BW * 0.26, BH * 0.23, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Neck/throat
+  roundRect(-BW * 0.19, -BH * 0.84, BW * 0.38, BH * 0.3, BW * 0.08);
+  ctx.fill();
+
+  // Head (large, forward-facing oval)
+  ctx.beginPath();
+  ctx.ellipse(0, -BH * 0.66, BW * 0.31, BH * 0.29, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Chin beard tuft
+  ctx.beginPath();
+  ctx.ellipse(0, -BH * 0.28, BW * 0.13, BH * 0.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horns (curved outward)
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(1.5, 2.8 * s);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-BW * 0.23, -BH * 0.8);
+  ctx.quadraticCurveTo(-BW * 0.44, -BH * 1.07, -BW * 0.34, -BH * 1.25);
+  ctx.moveTo(BW * 0.23, -BH * 0.8);
+  ctx.quadraticCurveTo(BW * 0.44, -BH * 1.07, BW * 0.34, -BH * 1.25);
+  ctx.stroke();
+
+  // Eyes and nostrils (only when large enough to see)
+  if (BH > 12) {
+    // Eyes - red and menacing
+    ctx.fillStyle = '#CC0A0A';
+    ctx.beginPath(); ctx.arc(-BW * 0.13, -BH * 0.7, BW * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(BW * 0.13, -BH * 0.7, BW * 0.045, 0, Math.PI * 2); ctx.fill();
+    // Nostrils
+    ctx.fillStyle = '#0a0000';
+    ctx.beginPath(); ctx.arc(-BW * 0.1, -BH * 0.54, BW * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(BW * 0.1, -BH * 0.54, BW * 0.055, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Front legs (3 visible head-on)
+  ctx.fillStyle = dark;
+  [-BW * 0.3, 0, BW * 0.3].forEach(lx => {
+    roundRect(lx - BW * 0.095, -BH * 0.21, BW * 0.19, BH * 0.44, BW * 0.04);
+    ctx.fill();
+    // Hooves
+    ctx.fillStyle = '#080000';
+    roundRect(lx - BW * 0.12, -BH * 0.21 + BH * 0.34, BW * 0.24, BH * 0.1, BW * 0.03);
+    ctx.fill();
+    ctx.fillStyle = dark;
+  });
+
+  // Ground shadow ellipse
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(0, BH * 0.025, BW * 0.48, BH * 0.075, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * (p.life / p.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawPlayerShadow() {
+  const sx = 95 + playerLaneT * 85;
+  const sy = H - 34;
+
+  // Boot shadows
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.ellipse(sx - 8, sy, 10, 5, -0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(sx + 8, sy, 10, 5, 0.18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hat brim shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(sx, sy - 10, 20, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSignalAnim() {
+  if (sigAnim <= 0) return;
+  const t = 1 - sigAnim / 42;
+  const sx = 95 + playerLaneT * 85;
+  [1.0, 0.6].forEach(scale => {
+    const r = t * 195 * scale;
+    const a = (1 - t) * 0.65 * scale;
+    ctx.strokeStyle = `rgba(255,210,50,${a})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(sx, H - 34, r, 0, Math.PI * 2); ctx.stroke();
+  });
+}
+
+function drawDodgeEffect() {
+  if (dodgeAnim <= 0) return;
+  const t = dodgeAnim / DODGE_FRAMES;
+  const side = dodgeDir < 0 ? 0 : W - W * 0.28;
+  const g = ctx.createLinearGradient(side, 0, side + W * 0.28, 0);
+  if (dodgeDir < 0) {
+    g.addColorStop(0, `rgba(255,200,60,${t * 0.18})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+  } else {
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `rgba(255,200,60,${t * 0.18})`);
+  }
+  ctx.fillStyle = g; ctx.fillRect(0, VP_Y, W, H - VP_Y);
+}
+
+function drawHUD() {
+  // Lives (top left)
+  for (let i = 0; i < LIVES_START; i++) {
+    const alive = i < lives;
+    ctx.fillStyle = alive ? 'rgba(220,40,30,0.15)' : 'rgba(0,0,0,0.3)';
+    roundRect(12 + i * 28, 10, 22, 22, 5); ctx.fill();
+    ctx.fillStyle = alive ? '#E74C3C' : '#3a1510';
+    ctx.beginPath(); ctx.arc(23 + i * 28, 21, 9, 0, Math.PI * 2); ctx.fill();
+    if (alive) {
+      ctx.fillStyle = '#FF7070';
+      ctx.beginPath(); ctx.arc(19 + i * 28, 17, 4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Distance (top center)
+  const yards = Math.floor(distance * SCORE_SCALE);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(W / 2 - 52, 9, 104, 24, 6); ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(yards.toLocaleString() + ' yd', W / 2, 21);
+
+  // Signal uses (top right)
+  for (let i = 0; i < SIG_MAX; i++) {
+    const xi = W - 16 - i * 24;
+    const avail = i < sigUses;
+    ctx.fillStyle = avail ? 'rgba(255,200,50,0.15)' : 'rgba(0,0,0,0.3)';
+    roundRect(xi - 10, 10, 20, 20, 4); ctx.fill();
+    ctx.fillStyle = avail ? '#FFD700' : '#3a2a10';
+    ctx.beginPath();
+    ctx.moveTo(xi - 5, 22); ctx.lineTo(xi + 5, 22); ctx.lineTo(xi, 13);
+    ctx.closePath(); ctx.fill();
+  }
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+
+  // Signal button (bottom center)
+  if (sigUses > 0) {
+    const cdFrac = sigCooldown / SIG_CD_MAX;
+    const ready  = cdFrac === 0;
+    ctx.globalAlpha = ready ? 1 : 0.48;
+    ctx.fillStyle = 'rgba(45,22,4,0.92)';
+    roundRect(110, H - 58, 140, 44, 10); ctx.fill();
+    ctx.strokeStyle = ready ? '#C8A04A' : '#6a5020';
+    ctx.lineWidth = 1.5;
+    roundRect(110, H - 58, 140, 44, 10); ctx.stroke();
+    ctx.fillStyle = ready ? '#FFD700' : '#A08040';
+    ctx.font = 'bold 13px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(ready ? 'SIGNAL HERD' : 'RELOADING...', W / 2, H - 36);
+    if (!ready) {
+      ctx.fillStyle = '#C8A04A';
+      ctx.fillRect(116, H - 18, 128 * (1 - cdFrac), 3);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+
+  // Red flash on hit
+  if (invuln > INVULN_FRAMES - 20) {
+    const a = 0.38 * (invuln - (INVULN_FRAMES - 20)) / 20;
+    ctx.fillStyle = `rgba(220,25,15,${a})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// -- Title screen ------------------------------------------------------
+function drawTitle() {
+  drawSky();
+  drawGround();
+
+  // Approaching title buffalos
+  [...buffalos].sort((a, b) => b.z - a.z).forEach(b => {
+    const p = proj(b.lane, b.z);
+    if (p.y > VP_Y && p.y < H) drawBuffalo(p.x, p.y, p.s);
+  });
+
+  // Overlay
+  const ov = ctx.createLinearGradient(0, 0, 0, H);
+  ov.addColorStop(0, 'rgba(5,1,0,0.62)');
+  ov.addColorStop(0.5, 'rgba(5,1,0,0.4)');
+  ov.addColorStop(1, 'rgba(5,1,0,0.72)');
+  ctx.fillStyle = ov; ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  // Title
+  ctx.shadowColor = '#C84010'; ctx.shadowBlur = 28;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 62px Georgia, serif';
+  ctx.fillText('STAMPEDE', W / 2, 218);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'italic 15px Georgia, serif';
+  ctx.fillText('The herd is coming. Stay alive.', W / 2, 270);
+
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(52, 294); ctx.lineTo(W - 52, 294); ctx.stroke();
+
+  if (best > 0) {
+    ctx.fillStyle = '#A09070'; ctx.font = '13px Georgia, serif';
+    ctx.fillText('Best: ' + best.toLocaleString() + ' yd', W / 2, 316);
+  }
+
+  ctx.fillStyle = '#E8DCC8'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('Tap left/right to dodge', W / 2, 358);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia, serif';
+  ctx.fillText('Tap SIGNAL HERD to scatter the herd', W / 2, 382);
+
+  const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 480);
+  ctx.fillStyle = `rgba(255,215,90,${pulse})`;
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText('Tap to Ride', W / 2, 548);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.shadowBlur = 0;
+}
+
+// -- Game over screen --------------------------------------------------
+function drawDead() {
+  ctx.fillStyle = 'rgba(6,2,0,0.84)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#E74C3C'; ctx.shadowBlur = 22;
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 44px Georgia, serif';
+  ctx.fillText('TRAMPLED', W / 2, 210);
+  ctx.shadowBlur = 0;
+
+  const yards = Math.floor(distance * SCORE_SCALE);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '18px Georgia, serif';
+  ctx.fillText('Survived ' + yards.toLocaleString() + ' yards', W / 2, 268);
+  ctx.fillStyle = '#A09070'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('Best: ' + best.toLocaleString() + ' yd', W / 2, 300);
+
+  if (yards >= best && yards > 0) {
+    const pulse = 0.78 + 0.22 * Math.sin(Date.now() / 270);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 17px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 332);
+    ctx.globalAlpha = 1;
+  }
+
+  // Play Again
+  ctx.fillStyle = '#FFD700';
+  roundRect(W / 2 - 88, 382, 176, 48, 10); ctx.fill();
+  ctx.fillStyle = '#0d0400'; ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('Play Again', W / 2, 406);
+
+  // Rate
+  ctx.fillStyle = '#A09070'; ctx.font = '13px Georgia, serif';
+  ctx.fillText('Rate this game', W / 2, 458);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.shadowBlur = 0;
+}
+
+// -- Game loop ---------------------------------------------------------
+let lastTS = 0;
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTS) / 1000, 0.05);
+    lastTS = ts;
+
+    ctx.save();
+    if (shakeFrames > 0) {
+      const amt = shakeFrames * 1.1;
+      ctx.translate(Math.random() * amt - amt / 2, Math.random() * amt - amt / 2);
+    }
+    ctx.clearRect(-15, -15, W + 30, H + 30);
+
+    update(dt);
+
+    if (gameState === 'title') {
+      drawTitle();
+    } else {
+      drawSky();
+      drawGround();
+
+      [...buffalos].sort((a, b) => b.z - a.z).forEach(b => {
+        const p = proj(b.lane, b.z);
+        if (p.y > VP_Y - 10 && p.y < H + 120 && p.s > 0) {
+          ctx.save();
+          if (b.scattered) ctx.globalAlpha = Math.max(0.12, b.scatterT / 72);
+          drawBuffalo(p.x, p.y, p.s);
+          ctx.globalAlpha = 1;
+          ctx.restore();
+        }
+      });
+
+      drawParticles();
+      drawPlayerShadow();
+      drawDodgeEffect();
+      if (sigAnim > 0) drawSignalAnim();
+      drawHUD();
+
+      if (gameState === 'dead') drawDead();
+    }
+
+    ctx.restore();
+  } catch (e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(ts => { lastTS = ts; requestAnimationFrame(loop); });
+
+// -- Input -------------------------------------------------------------
+function isSignalBtn(cx, cy) {
+  return sigUses > 0 && cx >= 110 && cx <= 250 && cy >= H - 58 && cy <= H - 14;
+}
+
+function isPlayAgainBtn(cx, cy) {
+  return cx >= W / 2 - 88 && cx <= W / 2 + 88 && cy >= 382 && cy <= 430;
+}
+
+function isRateBtn(cx, cy) {
+  return cx >= 60 && cx <= W - 60 && cy >= 442 && cy <= 472;
+}
+
+canvas.addEventListener('touchstart', onInput, { passive: false });
+canvas.addEventListener('mousedown', onInput);
+
+function onInput(e) {
+  e.preventDefault();
+  ensureAC();
+  const rect = canvas.getBoundingClientRect();
+  const sc = W / rect.width;
+  const pt = e.touches ? e.touches[0] : e;
+  const cx = (pt.clientX - rect.left) * sc;
+  const cy = (pt.clientY - rect.top) * sc;
+
+  if (gameState === 'title') { startGame(); return; }
+
+  if (gameState === 'dead') {
+    if (isRateBtn(cx, cy)) { openFeedback(); return; }
+    if (isPlayAgainBtn(cx, cy) || cy < H * 0.7) {
+      gameState = 'title';
+      buffalos = [
+        { z: 900, lane: 0, scattered: false, scatterT: 0, scatterVX: 0 },
+        { z: 750, lane: 2, scattered: false, scatterT: 0, scatterVX: 0 },
+        { z: 820, lane: 1, scattered: false, scatterT: 0, scatterVX: 0 }
+      ];
+    }
+    return;
+  }
+
+  if (gameState === 'playing') {
+    if (isSignalBtn(cx, cy)) { useSignal(); return; }
+    if (cx < W / 2) dodgeLeft(); else dodgeRight();
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); dodgeLeft(); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); dodgeRight(); }
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (gameState === 'title') startGame();
+    else if (gameState === 'playing') useSignal();
+    else if (gameState === 'dead') { gameState = 'title'; }
+  }
+});
+
+// Initialize title buffalos
+buffalos = [
+  { z: 900, lane: 0, scattered: false, scatterT: 0, scatterVX: 0 },
+  { z: 750, lane: 2, scattered: false, scatterT: 0, scatterVX: 0 },
+  { z: 820, lane: 1, scattered: false, scatterT: 0, scatterVX: 0 }
+];
+
+// -- Feedback overlay --------------------------------------------------
+let fbRating = 0;
+const fbOv     = document.getElementById('fb-ov');
+const fbStars  = document.getElementById('fb-stars');
+const fbSubmit = document.getElementById('fb-submit');
+const fbCancel = document.getElementById('fb-cancel');
+const fbStatus = document.getElementById('fb-status');
+const fbText   = document.getElementById('fb-text');
+
+fbStars.querySelectorAll('span').forEach(s => {
+  s.addEventListener('click', () => {
+    fbRating = parseInt(s.dataset.v);
+    fbStars.querySelectorAll('span').forEach((x, i) => { x.textContent = i < fbRating ? '★' : '☆'; });
+  });
+});
+
+fbSubmit.addEventListener('click', async () => {
+  if (!fbRating) { fbStatus.textContent = 'Please select a rating.'; return; }
+  fbSubmit.disabled = true; fbStatus.textContent = 'Sending...';
+  const target = document.getElementById('fb-target').value;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: target, rating: fbRating, message: fbText.value, source: 'in-app' })
+    });
+    fbStatus.textContent = 'Thanks!';
+    setTimeout(closeFeedback, 1200);
+  } catch {
+    fbStatus.textContent = 'Saved locally. Thanks!';
+    setTimeout(closeFeedback, 1200);
+  }
+});
+
+fbCancel.addEventListener('click', closeFeedback);
+
+function openFeedback() {
+  fbOv.style.display = 'flex'; fbRating = 0;
+  fbStars.querySelectorAll('span').forEach(x => { x.textContent = '☆'; });
+  fbStatus.textContent = ''; fbText.value = ''; fbSubmit.disabled = false;
+}
+function closeFeedback() { fbOv.style.display = 'none'; }
+
+// -- Test hooks --------------------------------------------------------
+window.__test = {
+  getState:      () => gameState,
+  getLives:      () => lives,
+  getDistance:   () => distance,
+  getPlayerLane: () => playerLane,
+  getSigUses:    () => sigUses,
+  getSigCooldown:() => sigCooldown,
+  getSpeed:      () => speed,
+  getYards:      () => Math.floor((distance || 0) * SCORE_SCALE),
+  getBest:       () => best,
+  getBuffalos:   () => (buffalos || []).map(b => ({ z: b.z, lane: b.lane, scattered: b.scattered })),
+  startGame,
+  endGame,
+  dodgeLeft,
+  dodgeRight,
+  useSignal,
+  addBuffalo:    (z, lane) => buffalos.push({ z, lane, scattered: false, scatterT: 0, scatterVX: 0 }),
+  clearBuffalos: () => { buffalos = []; },
+  setInvuln:     v => { invuln = v; },
+  setLives:      v => { lives = v; },
+  setDistance:   v => { distance = v; },
+  openFeedback,
+  closeFeedback,
+  isSignalBtn,
+};
+</script>
+</body>
+</html>
