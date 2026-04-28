@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-04-28T08:00:03Z",
+  "lastRunAt": "2026-04-28T10:30:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 12 Stampede tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 12: Stampede - tests passing, committing"
-  },
-  "gamesBuilt": 11,
-  "lastGameTitle": "Boot Hill Bluff",
-  "lastGameFile": "boot-hill-bluff.html",
+  "lastRunSummary": "Built Game 12: Stampede - first-person buffalo stampede, 3-lane dodge, signal herd mechanic, dynamic hoofbeat audio, 23 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 12,
+  "lastGameTitle": "Stampede",
+  "lastGameFile": "stampede.html",
   "gameQueue": [
-    {
-      "num": 12,
-      "title": "Stampede",
-      "concept": "First-person perspective: you are a lone cowboy in the path of a buffalo stampede. Dodge left/right, leap over downed cattle, and signal the herd to split before they trample you.",
-      "raisesBarOn": "First first-person perspective in the series, environmental scale and speed, split-second spatial judgment",
-      "status": "planned"
-    },
     {
       "num": 13,
       "title": "Snake Oil",
@@ -29,6 +19,13 @@
       "title": "Midnight Rodeo",
       "concept": "Bareback bull-riding survival: tilt your balance left/right to match the bull's spin direction while a crowd-energy meter determines your score multiplier. Timed survival with escalating spin patterns.",
       "raisesBarOn": "First balance/gyro-style mechanic, first crowd-energy system, most physically intuitive input in the series",
+      "status": "planned"
+    },
+    {
+      "num": 15,
+      "title": "Prairie Fire",
+      "concept": "Wildfire simulation strategy: a wind-driven fire spreads on a cellular grid toward your homestead. Place firebreaks and water buckets with limited resources, watch the wind shift, and protect your land as the blaze accelerates.",
+      "raisesBarOn": "First cellular automaton simulation in the series, first strategy/placement game, first game with environmental destruction and wind physics",
       "status": "planned"
     }
   ],
@@ -88,6 +85,14 @@
       "result": "success",
       "summary": "Built Game 11: Boot Hill Bluff - turn-based bluffing duel with AI tell system, narrative choices, chip betting. 18 tests pass.",
       "commitHash": "fdb9c13"
+    },
+    {
+      "runAt": "2026-04-28T10:30:00Z",
+      "action": "new_game",
+      "game": "Stampede",
+      "result": "success",
+      "summary": "Built Game 12: Stampede - first-person buffalo stampede, 3-lane dodge, signal herd mechanic. 23 tests pass.",
+      "commitHash": "f771f30"
     }
   ]
 }
