@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Boot Hill Bluff</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(8,5,2,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">&#9734;</span><span data-v="2">&#9734;</span><span data-v="3">&#9734;</span><span data-v="4">&#9734;</span><span data-v="5">&#9734;</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Stampede">Upcoming: Stampede (Game 12)</option>
+      <option value="Snake Oil">Upcoming: Snake Oil (Game 13)</option>
+      <option value="Boot Hill Bluff" selected>Existing: Boot Hill Bluff</option>
+      <option value="Gold Rush">Existing: Gold Rush</option>
+      <option value="Wanted Poster">Existing: Wanted Poster</option>
+      <option value="Dust Devil">Existing: Dust Devil</option>
+      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+      <option value="Cattle Drive">Existing: Cattle Drive</option>
+      <option value="Outlaw Run">Existing: Outlaw Run</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a06;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0608;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const SLUG = 'boot_hill_bluff';
+
+// Game constants
+const ROUNDS_TOTAL  = 5;
+const CHIPS_START   = 100;
+const ANTE          = 10;
+const AI_BET_LO     = 10;
+const AI_BET_HI     = 30;
+// Narrative choice breaks after round 2 and round 4
+const NARRATIVE_ROUNDS = [2, 4];
+// Card deck: 1-10, face value determines hand strength
+const DECK_SIZE = 10;
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ─────────────────────────────────────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playNote(freq, type, dur, vol, delay=0) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = type; o.frequency.value = freq;
+  const t = audioCtx.currentTime + delay;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.start(t); o.stop(t + dur + 0.01);
+}
+
+function sfxDeal()    { playNote(523, 'triangle', 0.08, 0.3); playNote(659, 'triangle', 0.08, 0.3, 0.08); }
+function sfxChip()    { playNote(880, 'square', 0.05, 0.15); }
+function sfxFold()    { playNote(220, 'sawtooth', 0.25, 0.2); }
+function sfxReveal()  { [523,659,784,1047].forEach((f,i) => playNote(f,'triangle',0.1,0.25,i*0.07)); }
+function sfxWinHand() { [392,494,587,784].forEach((f,i) => playNote(f,'sine',0.15,0.3,i*0.06)); }
+function sfxLoseHand(){ [392,330,262].forEach((f,i) => playNote(f,'sawtooth',0.18,0.2,i*0.07)); }
+function sfxWinGame() { [523,659,784,1047,1319].forEach((f,i) => playNote(f,'triangle',0.2,0.35,i*0.08)); }
+function sfxLoseGame(){ [392,330,262,196].forEach((f,i) => playNote(f,'sawtooth',0.22,0.25,i*0.09)); }
+function sfxNarrative(){ playNote(330,'triangle',0.3,0.2); playNote(440,'triangle',0.3,0.2,0.18); }
+
+// Ambient saloon loop: low drone + sparse chord hits
+let ambientNode = null;
+function startAmbient() {
+  if (ambientNode) return;
+  const PROG = [130.81, 146.83, 164.81, 155.56]; // C2, D2, E2, Eb2
+  let idx = 0;
+  function tick() {
+    const f = PROG[idx % PROG.length];
+    playNote(f, 'sine', 1.8, 0.04);
+    playNote(f * 2, 'triangle', 0.6, 0.03);
+    idx++;
+    ambientNode = setTimeout(tick, 2200);
+  }
+  tick();
+}
+function stopAmbient() { clearTimeout(ambientNode); ambientNode = null; }
+
+// ── State ─────────────────────────────────────────────────
+// Phases within 'playing': deal|ai_think|player_turn|showdown|result|narrative
+let state       = 'title';
+let phase       = 'deal';
+let round       = 0;
+let playerChips = CHIPS_START;
+let aiChips     = CHIPS_START;
+let pot         = 0;
+let playerCard  = 0;
+let aiCard      = 0;
+let aiBet       = 0;
+let aiIsBluffing = false;
+let tellType    = 0;  // 0-3: hat_tip, finger_drum, whiskey_sip, collar_adjust
+let playerAction = ''; // 'call','raise','fold'
+let showdownResult = ''; // 'win','lose','tie','fold'
+let phaseTimer  = 0;
+let popups      = [];
+let particles   = [];
+let narrativeChoices = [];
+let narrativeChosen  = false;
+let narrativeEffect  = null; // applied to next round
+let lastNarrativeText = '';
+let raiseAmount = 20;
+let bestScore   = parseInt(localStorage.getItem(SLUG + '_best') || '0', 10);
+let finalScore  = 0;
+let feedbackSent = false;
+
+// AI outlaw personality — bluff frequency varies
+const AI_PROFILES = [
+  { name: 'Rattlesnake Roy',  bluffFreq: 0.35, color: '#8B2020' },
+  { name: 'Dead-Eye Dutch',   bluffFreq: 0.55, color: '#1a3a5c' },
+];
+let aiProfile = AI_PROFILES[0];
+
+// Tell descriptions shown to player
+const TELLS = [
+  { name: 'tips his hat',       hint: 'Confident... or playing you?' },
+  { name: 'drums his fingers',  hint: 'Nervous energy in those hands.' },
+  { name: 'sips his whiskey',   hint: 'Stalling for time.' },
+  { name: 'tugs his collar',    hint: 'Uncomfortable under pressure.' },
+];
+
+function rnd(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
+
+function startGame() {
+  state        = 'playing';
+  phase        = 'deal';
+  round        = 0;
+  playerChips  = CHIPS_START;
+  aiChips      = CHIPS_START;
+  pot          = 0;
+  popups       = [];
+  particles    = [];
+  narrativeEffect = null;
+  feedbackSent = false;
+  aiProfile    = AI_PROFILES[Math.random() < 0.5 ? 0 : 1];
+  startAmbient();
+  startRound();
+}
+
+function startRound() {
+  round++;
+  phase       = 'deal';
+  phaseTimer  = 0;
+  pot         = 0;
+  playerCard  = rnd(1, DECK_SIZE);
+  aiCard      = rnd(1, DECK_SIZE);
+  aiBet       = 0;
+  playerAction = '';
+  showdownResult = '';
+  narrativeChosen = false;
+
+  // Deduct antes
+  playerChips -= ANTE;
+  aiChips     -= ANTE;
+  pot          = ANTE * 2;
+  if (playerChips < 0) playerChips = 0;
+  if (aiChips < 0) aiChips = 0;
+
+  // AI decides to bluff or play honest
+  // Bluff = weak card but acts strong (tell = confident), or strong card but acts weak (sucker play)
+  const cardStrength = aiCard / DECK_SIZE; // 0..1
+  const roll = Math.random();
+  if (roll < aiProfile.bluffFreq) {
+    aiIsBluffing = true;
+    // Bluff: weak card with strong tell, or strong card with weak tell
+    if (cardStrength < 0.5) {
+      tellType = Math.random() < 0.5 ? 0 : 2; // confident tells
+    } else {
+      tellType = Math.random() < 0.5 ? 1 : 3; // nervous tells despite strong hand
+    }
+  } else {
+    aiIsBluffing = false;
+    // Honest: tell matches strength
+    if (cardStrength >= 0.6) {
+      tellType = Math.random() < 0.5 ? 0 : 2;
+    } else {
+      tellType = Math.random() < 0.5 ? 1 : 3;
+    }
+  }
+
+  // Apply narrative effect from previous choice
+  if (narrativeEffect === 'reveal') {
+    // Player saw AI card — don't change it but flag it
+    narrativeEffect = 'revealed'; // mark as applied
+  }
+
+  // AI places opening bet based on real card strength (not the tell)
+  aiBet = Math.round((cardStrength * (AI_BET_HI - AI_BET_LO) + AI_BET_LO) / 5) * 5;
+  if (aiBet < AI_BET_LO) aiBet = AI_BET_LO;
+  if (aiBet > AI_BET_HI) aiBet = AI_BET_HI;
+  if (aiChips < aiBet) aiBet = aiChips;
+  if (aiBet <= 0) aiBet = 0;
+
+  sfxDeal();
+}
+
+function playerDecide(action) {
+  if (phase !== 'player_turn') return;
+  playerAction = action;
+  sfxChip();
+
+  if (action === 'fold') {
+    // AI wins the pot
+    aiChips += pot;
+    pot = 0;
+    showdownResult = 'fold';
+    sfxFold();
+    addPopup('Folded', W/2, H/2, '#E74C3C');
+    phase = 'result';
+    phaseTimer = 0;
+  } else if (action === 'call') {
+    // Player matches AI bet
+    const callAmt = Math.min(aiBet, playerChips);
+    playerChips -= callAmt;
+    pot += callAmt;
+    doShowdown();
+  } else if (action === 'raise') {
+    // Player raises by raiseAmount, AI calls or folds
+    const callAmt = Math.min(aiBet, playerChips);
+    playerChips -= callAmt;
+    pot += callAmt;
+    const raiseAmt = Math.min(raiseAmount, playerChips);
+    playerChips -= raiseAmt;
+    pot += raiseAmt;
+    // AI responds: if strong card, always calls; if weak, folds ~40%
+    const aiCardStr = aiCard / DECK_SIZE;
+    const aiFolds = aiCardStr < 0.4 && Math.random() < 0.45;
+    if (aiFolds) {
+      playerChips += pot;
+      pot = 0;
+      showdownResult = 'win';
+      addPopup('They folded!', W/2, H/2, '#FFD700');
+      sfxWinHand();
+    } else {
+      // AI calls the raise
+      const aiCallAmt = Math.min(raiseAmt, aiChips);
+      aiChips -= aiCallAmt;
+      pot += aiCallAmt;
+      doShowdown();
+      return;
+    }
+    phase = 'result';
+    phaseTimer = 0;
+  }
+  checkGameOver();
+}
+
+function doShowdown() {
+  sfxReveal();
+  phase = 'showdown';
+  phaseTimer = 0;
+  if (playerCard > aiCard) {
+    playerChips += pot;
+    showdownResult = 'win';
+    sfxWinHand();
+    addPopup('+' + pot, W/2, H/2, '#FFD700');
+    spawnChipParticles(W/2, H*0.65, pot, '#FFD700');
+  } else if (aiCard > playerCard) {
+    aiChips += pot;
+    showdownResult = 'lose';
+    sfxLoseHand();
+    addPopup('-' + pot, W/2, H/2, '#E74C3C');
+  } else {
+    // Tie: split the pot
+    playerChips += Math.floor(pot / 2);
+    aiChips     += Math.ceil(pot / 2);
+    showdownResult = 'tie';
+    addPopup('Split pot', W/2, H/2, '#FF9F43');
+  }
+  pot = 0;
+  phase = 'result';
+  phaseTimer = 0;
+  checkGameOver();
+}
+
+function checkGameOver() {
+  if (playerChips <= 0 || aiChips <= 0) {
+    endGame();
+  }
+}
+
+function endGame() {
+  stopAmbient();
+  finalScore = playerChips - CHIPS_START; // profit/loss vs start
+  if (playerChips > bestScore) {
+    bestScore = playerChips;
+    localStorage.setItem(SLUG + '_best', bestScore);
+  }
+  if (playerChips > CHIPS_START) sfxWinGame(); else sfxLoseGame();
+  state = 'gameover';
+  sendFeedback();
+}
+
+function advanceRound() {
+  // After result phase, check if narrative choice needed
+  if (NARRATIVE_ROUNDS.includes(round) && !narrativeChosen) {
+    buildNarrativeChoices();
+    phase = 'narrative';
+    sfxNarrative();
+    return;
+  }
+  if (round >= ROUNDS_TOTAL || playerChips <= 0 || aiChips <= 0) {
+    endGame();
+  } else {
+    startRound();
+  }
+}
+
+function buildNarrativeChoices() {
+  narrativeChoices = [
+    {
+      text: 'Buy a round',
+      subtext: 'Spend 15 chips. They owe you one — their next tell will be honest.',
+      cost: 15,
+      effect: 'honest_tell',
+    },
+    {
+      text: 'Stare \'em down',
+      subtext: 'Free. Force an extra tell — see two tells next hand.',
+      cost: 0,
+      effect: 'extra_tell',
+    },
+    {
+      text: 'Check the mirror',
+      subtext: 'Free. 50/50 chance to glimpse their card.',
+      cost: 0,
+      effect: 'reveal',
+    },
+  ];
+}
+
+function chooseNarrative(idx) {
+  if (phase !== 'narrative') return;
+  const choice = narrativeChoices[idx];
+  if (choice.cost > 0 && playerChips < choice.cost) {
+    addPopup('Not enough chips', W/2, H*0.5, '#E74C3C');
+    return;
+  }
+  playerChips -= choice.cost;
+  narrativeEffect = choice.effect;
+  narrativeChosen = true;
+  lastNarrativeText = choice.text;
+  sfxChip();
+
+  // Reveal effect: 50/50
+  if (choice.effect === 'reveal' && Math.random() < 0.5) {
+    narrativeEffect = null; // no luck this time
+    addPopup('No luck...', W/2, H*0.5, '#A09070');
+  } else if (choice.effect === 'reveal') {
+    addPopup('Got a peek!', W/2, H*0.5, '#FFD700');
+  }
+
+  // Move to next round
+  if (round >= ROUNDS_TOTAL || playerChips <= 0 || aiChips <= 0) {
+    endGame();
+  } else {
+    startRound();
+  }
+}
+
+// ── Popups & Particles ───────────────────────────────────
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, color, life: 1.0 });
+}
+
+function spawnChipParticles(x, y, amount, color) {
+  const count = Math.min(8, Math.floor(amount / 5));
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i / count) - Math.PI/2;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * rnd(30, 70),
+      vy: Math.sin(angle) * rnd(30, 70),
+      life: 1.0,
+      color,
+    });
+  }
+}
+
+// ── Draw helpers ─────────────────────────────────────────
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+
+function drawPill(x, y, w, h, bg, border, text, textColor='#FFD700', fontSize=15) {
+  ctx.save();
+  roundRect(x, y, w, h, h/2);
+  ctx.fillStyle = bg; ctx.fill();
+  if (border) { ctx.strokeStyle = border; ctx.lineWidth = 1.5; ctx.stroke(); }
+  ctx.fillStyle = textColor; ctx.font = `bold ${fontSize}px Georgia, serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + w/2, y + h/2);
+  ctx.restore();
+}
+
+function drawCard(x, y, value, faceUp, highlight=false) {
+  ctx.save();
+  const cw = 56, ch = 78, cr = 7;
+  roundRect(x - cw/2, y - ch/2, cw, ch, cr);
+  if (faceUp) {
+    ctx.fillStyle = '#F5EDD8';
+  } else {
+    const grad = ctx.createLinearGradient(x-cw/2, y-ch/2, x+cw/2, y+ch/2);
+    grad.addColorStop(0, '#2a1500'); grad.addColorStop(1, '#1a0d08');
+    ctx.fillStyle = grad;
+  }
+  ctx.fill();
+  if (highlight) { ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2.5; }
+  else { ctx.strokeStyle = '#8B7355'; ctx.lineWidth = 1.5; }
+  ctx.stroke();
+
+  if (faceUp) {
+    // Card value
+    ctx.fillStyle = value > 7 ? '#8B2020' : '#1a1a2e';
+    ctx.font = 'bold 26px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(value, x, y);
+    // Small corner numbers
+    ctx.font = 'bold 11px Georgia, serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(value, x - cw/2 + 5, y - ch/2 + 4);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    ctx.fillText(value, x + cw/2 - 5, y + ch/2 - 4);
+  } else {
+    // Card back pattern
+    ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1;
+    for (let i = -3; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + i*8 - cw/2, y - ch/2);
+      ctx.lineTo(x + i*8 + cw/2, y + ch/2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Draw AI outlaw silhouette (seated at table, top portion of canvas)
+function drawAI(x, y, telling) {
+  ctx.save();
+  const col = aiProfile.color;
+  // Body
+  ctx.fillStyle = '#1a0520';
+  // Torso
+  ctx.beginPath();
+  ctx.ellipse(x, y + 28, 28, 36, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.arc(x, y - 20, 22, 0, Math.PI*2); ctx.fill();
+  // Hat
+  ctx.fillStyle = '#0d0608';
+  ctx.fillRect(x - 26, y - 42, 52, 8); // brim
+  ctx.fillRect(x - 16, y - 72, 32, 34); // crown
+  // Hat band
+  ctx.fillStyle = col;
+  ctx.fillRect(x - 16, y - 44, 32, 5);
+  // Eyes
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.arc(x - 7, y - 22, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 7, y - 22, 3, 0, Math.PI*2); ctx.fill();
+  // Mustache
+  ctx.fillStyle = '#4a3020';
+  ctx.beginPath();
+  ctx.ellipse(x - 6, y - 10, 7, 3, -0.2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x + 6, y - 10, 7, 3, 0.2, 0, Math.PI*2); ctx.fill();
+  // Arms on table
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(x - 42, y + 44, 18, 14);
+  ctx.fillRect(x + 24, y + 44, 18, 14);
+
+  // Tell animation
+  if (telling) {
+    const t = (Date.now() / 300) % 1;
+    if (tellType === 0) {
+      // Hat tip: hand moves to hat brim
+      const hx = x + 18 + Math.sin(t * Math.PI) * 8;
+      const hy = y - 38 - Math.sin(t * Math.PI) * 10;
+      ctx.fillStyle = '#1a0520';
+      ctx.beginPath(); ctx.arc(hx, hy, 7, 0, Math.PI*2); ctx.fill();
+    } else if (tellType === 1) {
+      // Finger drum: hand bounces on table
+      const bounce = Math.abs(Math.sin(t * Math.PI * 3)) * 8;
+      ctx.fillStyle = '#1a0520';
+      ctx.beginPath(); ctx.arc(x + 30, y + 50 - bounce, 6, 0, Math.PI*2); ctx.fill();
+    } else if (tellType === 2) {
+      // Whiskey sip: cup raised
+      const lift = Math.sin(t * Math.PI) * 18;
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(x - 16, y + 44 - lift, 10, 14);
+      ctx.fillStyle = '#C8A04A';
+      ctx.fillRect(x - 15, y + 44 - lift, 8, 5);
+    } else if (tellType === 3) {
+      // Collar tug: hand at neck, side to side
+      const swing = Math.sin(t * Math.PI * 2) * 6;
+      ctx.fillStyle = '#1a0520';
+      ctx.beginPath(); ctx.arc(x + swing, y - 4, 7, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawPlayer(x, y) {
+  ctx.save();
+  // Simplified player hand/arm reaching for chips
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI*2); ctx.fill();
+  // Hat brim (viewer POV, just the top of a hat seen from below)
+  ctx.fillStyle = '#0d0608';
+  ctx.beginPath(); ctx.ellipse(x, y - 12, 28, 8, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath(); ctx.ellipse(x, y - 12, 28, 8, 0, 0, Math.PI); ctx.fill();
+  ctx.restore();
+}
+
+function drawTable() {
+  ctx.save();
+  // Saloon background
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#0d0608');
+  bgGrad.addColorStop(0.5, '#1a0a06');
+  bgGrad.addColorStop(1, '#0d0608');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Wall boards (horizontal lines)
+  ctx.strokeStyle = '#2a1500'; ctx.lineWidth = 1;
+  for (let y2 = 60; y2 < 320; y2 += 28) {
+    ctx.beginPath(); ctx.moveTo(0, y2); ctx.lineTo(W, y2); ctx.stroke();
+  }
+
+  // Lantern glow top-center
+  const lg = ctx.createRadialGradient(W/2, 80, 0, W/2, 80, 180);
+  lg.addColorStop(0, 'rgba(255,220,100,0.12)');
+  lg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = lg; ctx.fillRect(0, 0, W, 320);
+
+  // Poker table — felt oval
+  const tx = W/2, ty = H*0.5, trx = 155, try_ = 60;
+  const feltGrad = ctx.createRadialGradient(tx, ty, 10, tx, ty, trx);
+  feltGrad.addColorStop(0, '#1a4a22');
+  feltGrad.addColorStop(1, '#0d2a12');
+  ctx.fillStyle = feltGrad;
+  ctx.beginPath();
+  ctx.ellipse(tx, ty, trx, try_, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // Table edge shadow
+  ctx.strokeStyle = '#4a3008'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(tx, ty+4, trx, try_, 0, 0, Math.PI*2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Player chips pill (bottom-left)
+  drawPill(10, H - 44, 110, 32, '#1a0a06', '#C8A04A', 'You: ' + playerChips, '#FFD700', 13);
+  // AI chips pill (top-left)
+  drawPill(10, 12, 110, 32, '#1a0a06', '#C8A04A', aiProfile.name.split(' ')[0] + ': ' + aiChips, '#FFE066', 12);
+  // Round indicator (top-right)
+  drawPill(W - 90, 12, 80, 32, '#1a0a06', '#8B7355', 'Hand ' + round + '/' + ROUNDS_TOTAL, '#E8DCC8', 12);
+  // Pot display (center table)
+  if (pot > 0) {
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 14px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Pot: ' + pot, W/2, H*0.5);
+  }
+  ctx.restore();
+}
+
+function drawTell() {
+  ctx.save();
+  const tell = TELLS[tellType];
+  // Tell label below AI
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  roundRect(W/2 - 130, 285, 260, 44, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#FFE066'; ctx.font = 'italic 13px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('"He ' + tell.name + '"', W/2, 299);
+  ctx.fillStyle = '#A09070'; ctx.font = '11px sans-serif';
+  ctx.fillText(tell.hint, W/2, 317);
+  ctx.restore();
+}
+
+function drawActionButtons() {
+  if (phase !== 'player_turn') return;
+  ctx.save();
+  const bw = 90, bh = 38, by = H - 90;
+  // FOLD
+  roundRect(15, by, bw, bh, 8);
+  ctx.fillStyle = '#3a1010'; ctx.fill();
+  ctx.strokeStyle = '#E74C3C'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 15px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('FOLD', 15 + bw/2, by + bh/2);
+
+  // CALL
+  const callCost = Math.min(aiBet, playerChips);
+  roundRect(W/2 - bw/2, by, bw, bh, 8);
+  ctx.fillStyle = '#0d2a12'; ctx.fill();
+  ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 15px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('CALL ' + callCost, W/2, by + bh/2);
+
+  // RAISE
+  const canRaise = playerChips >= aiBet + raiseAmount;
+  roundRect(W - 15 - bw, by, bw, bh, 8);
+  ctx.fillStyle = canRaise ? '#1a2a0d' : '#1a1a1a'; ctx.fill();
+  ctx.strokeStyle = canRaise ? '#FF9F43' : '#555'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = canRaise ? '#FF9F43' : '#555'; ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('RAISE +' + raiseAmount, W - 15 - bw/2, by + bh/2);
+
+  ctx.restore();
+}
+
+function drawNarrative() {
+  ctx.save();
+  // Dark overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.88)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Decorative divider
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(30, 140); ctx.lineTo(W-30, 140); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(30, H-140); ctx.lineTo(W-30, H-140); ctx.stroke();
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 20px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Between Hands', W/2, 110);
+  ctx.fillStyle = '#A09070'; ctx.font = 'italic 13px Georgia, serif';
+  ctx.fillText('What do you do?', W/2, 135);
+
+  narrativeChoices.forEach((ch, i) => {
+    const by = 165 + i * 110;
+    const canAfford = ch.cost === 0 || playerChips >= ch.cost;
+    roundRect(20, by, W - 40, 95, 10);
+    ctx.fillStyle = canAfford ? '#1a0a06' : '#0d0608'; ctx.fill();
+    ctx.strokeStyle = canAfford ? '#C8A04A' : '#3a2a1a'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    ctx.fillStyle = canAfford ? '#FFD700' : '#555';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(ch.text + (ch.cost > 0 ? ' (-' + ch.cost + ')' : ''), W/2, by + 12);
+
+    ctx.fillStyle = canAfford ? '#C8A04A' : '#555';
+    ctx.font = '12px sans-serif';
+    // word-wrap subtext
+    const words = ch.subtext.split(' ');
+    let line = '', lines = [], maxW = W - 70;
+    ctx.font = '11px sans-serif';
+    for (const w of words) {
+      const test = line + (line ? ' ' : '') + w;
+      if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+      else line = test;
+    }
+    if (line) lines.push(line);
+    lines.forEach((l, li) => {
+      ctx.fillText(l, W/2, by + 36 + li * 16);
+    });
+  });
+
+  ctx.restore();
+}
+
+function drawShowdownReveal() {
+  ctx.save();
+  // Reveal both cards in center
+  const t = Math.min(1, phaseTimer / 0.5);
+  const scale = 0.7 + t * 0.3;
+  ctx.translate(W/2, H*0.5 - 10);
+  ctx.scale(scale, scale);
+  // Player card left, AI card right
+  drawCard(-48, 0, playerCard, true, showdownResult === 'win');
+  drawCard(48, 0, aiCard, true, showdownResult === 'lose');
+  ctx.restore();
+
+  // Result label
+  if (phaseTimer > 0.4) {
+    ctx.save();
+    const resultText = showdownResult === 'win' ? 'YOU WIN!' :
+                       showdownResult === 'lose' ? 'THEY WIN' :
+                       showdownResult === 'tie'  ? 'SPLIT' : '';
+    const resultColor = showdownResult === 'win' ? '#FFD700' :
+                        showdownResult === 'lose' ? '#E74C3C' : '#FF9F43';
+    ctx.fillStyle = resultColor;
+    ctx.font = 'bold 28px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = resultColor; ctx.shadowBlur = 18;
+    ctx.fillText(resultText, W/2, H*0.5 + 70);
+    ctx.restore();
+  }
+}
+
+function drawTitle() {
+  ctx.save();
+  // Background
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#050208'); grad.addColorStop(1, '#1a0a06');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.6)';
+  for (let i = 0; i < 40; i++) {
+    const sx = ((i * 97 + 23) % W);
+    const sy = ((i * 137 + 41) % 220);
+    const sr = (i % 3 === 0) ? 1.5 : 0.8;
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Lantern glow
+  const lg = ctx.createRadialGradient(W/2, 200, 0, W/2, 200, 220);
+  lg.addColorStop(0, 'rgba(255,200,80,0.18)');
+  lg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 42px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#C8A04A'; ctx.shadowBlur = 20;
+  ctx.fillText('BOOT HILL', W/2, 210);
+  ctx.fillText('BLUFF', W/2, 262);
+  ctx.shadowBlur = 0;
+
+  // Subtitle
+  ctx.fillStyle = '#A09070'; ctx.font = 'italic 15px Georgia, serif';
+  ctx.fillText('Read the tell. Win the pot.', W/2, 308);
+
+  // Divider
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(60, 330); ctx.lineTo(W-60, 330); ctx.stroke();
+
+  // Best score
+  if (bestScore > 0) {
+    ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore + ' chips', W/2, 352);
+  }
+
+  // Card fan decoration
+  [-20, -8, 0, 8, 20].forEach((angle, i) => {
+    ctx.save();
+    ctx.translate(W/2 + (i - 2) * 22, 430);
+    ctx.rotate(angle * Math.PI / 180);
+    drawCard(0, 0, i + 6, i === 2, false);
+    ctx.restore();
+  });
+
+  // Tap to play
+  const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 500);
+  ctx.fillStyle = `rgba(255,224,102,${pulse})`;
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Tap to Play', W/2, 555);
+
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  const won = playerChips > aiChips;
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#050208'); grad.addColorStop(1, won ? '#0d2a12' : '#1a0608');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = won ? '#FFD700' : '#E74C3C';
+  ctx.font = 'bold 36px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = won ? '#FFD700' : '#E74C3C'; ctx.shadowBlur = 20;
+  ctx.fillText(won ? 'YOU WIN' : 'BUSTED', W/2, 200);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = '18px Georgia, serif';
+  ctx.fillText(won ? aiProfile.name + ' folds.' : 'Out of chips.', W/2, 248);
+
+  // Chip count
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 28px Georgia, serif';
+  ctx.fillText(playerChips + ' chips', W/2, 320);
+
+  const profit = playerChips - CHIPS_START;
+  ctx.fillStyle = profit >= 0 ? '#4CAF50' : '#E74C3C';
+  ctx.font = '16px Georgia, serif';
+  ctx.fillText((profit >= 0 ? '+' : '') + profit + ' from start', W/2, 358);
+
+  if (playerChips >= bestScore && playerChips > CHIPS_START) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 16px Georgia, serif';
+    const pulse = 0.8 + 0.2 * Math.sin(Date.now() / 300);
+    ctx.globalAlpha = pulse;
+    ctx.fillText('NEW RECORD!', W/2, 390);
+    ctx.globalAlpha = 1;
+  }
+
+  // Play Again
+  roundRect(W/2 - 90, 440, 180, 46, 10);
+  ctx.fillStyle = '#FFD700'; ctx.fill();
+  ctx.fillStyle = '#0d0608'; ctx.font = 'bold 17px Georgia, serif';
+  ctx.fillText('Play Again', W/2, 463);
+
+  // Share
+  roundRect(W/2 - 70, 500, 140, 38, 8);
+  ctx.fillStyle = 'rgba(200,160,74,0.15)'; ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('Share', W/2, 519);
+
+  // Rate This Game
+  roundRect(W/2 - 70, 550, 140, 34, 8);
+  ctx.fillStyle = 'rgba(200,160,74,0.1)'; ctx.fill();
+  ctx.strokeStyle = '#8B7355'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#A09070'; ctx.font = '13px Georgia, serif';
+  ctx.fillText('Rate This Game', W/2, 567);
+
+  ctx.restore();
+}
+
+function drawPopups(dt) {
+  ctx.save();
+  popups = popups.filter(p => p.life > 0);
+  popups.forEach(p => {
+    p.life -= dt * 1.1;
+    p.y -= dt * 28;
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawParticles(dt) {
+  ctx.save();
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 120 * dt;
+    p.life -= dt * 1.5;
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── Main render ───────────────────────────────────────────
+function draw(dt) {
+  ctx.clearRect(0, 0, W, H);
+
+  if (state === 'title') { drawTitle(); return; }
+  if (state === 'gameover') { drawGameOver(); return; }
+
+  // Playing state
+  drawTable();
+  drawHUD();
+
+  // AI outlaw (top center)
+  const telling = (phase === 'ai_think' || phase === 'player_turn');
+  drawAI(W/2, 145, telling);
+
+  // Name plate above table
+  ctx.save();
+  ctx.fillStyle = '#A09070'; ctx.font = 'italic 12px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(aiProfile.name, W/2, 222);
+  ctx.restore();
+
+  // Tell description
+  if (phase === 'player_turn') drawTell();
+
+  // Show narrative effect hint if active
+  if (narrativeEffect === 'revealed') {
+    ctx.save();
+    ctx.fillStyle = '#FFE066'; ctx.font = 'bold 12px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('(You peeked: ' + aiCard + ')', W/2, 342);
+    ctx.restore();
+  }
+  if (narrativeEffect === 'extra_tell') {
+    ctx.save();
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'italic 11px Georgia, serif';
+    ctx.textAlign = 'center';
+    const tell2 = TELLS[(tellType + 2) % 4];
+    ctx.fillText('Also: ' + tell2.name, W/2, 356);
+    ctx.restore();
+  }
+  if (narrativeEffect === 'honest_tell') {
+    ctx.save();
+    ctx.fillStyle = '#4CAF50'; ctx.font = 'italic 11px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('(Tell is honest this hand)', W/2, 356);
+    ctx.restore();
+  }
+
+  // Cards in center of table
+  const cardY = H * 0.5 - 10;
+  if (phase === 'showdown' || phase === 'result') {
+    drawShowdownReveal();
+  } else if (phase === 'narrative') {
+    drawNarrative();
+    return;
+  } else {
+    // Player card (face up, left)
+    drawCard(W/2 - 48, cardY, playerCard, true);
+    // AI card (face down, right — unless revealed)
+    drawCard(W/2 + 48, cardY, aiCard, narrativeEffect === 'revealed');
+
+    // AI bet label
+    if (aiBet > 0 && (phase === 'ai_think' || phase === 'player_turn')) {
+      ctx.save();
+      ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 13px Georgia, serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(aiProfile.name.split(' ')[0] + ' bets ' + aiBet, W/2, cardY + 58);
+      ctx.restore();
+    }
+  }
+
+  // Player avatar (bottom center, peeking up)
+  drawPlayer(W/2, H - 28);
+
+  // Action buttons
+  drawActionButtons();
+  drawPopups(dt);
+  drawParticles(dt);
+}
+
+// ── Game loop ─────────────────────────────────────────────
+let lastTime = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.1);
+    lastTime = ts;
+
+    if (state === 'playing') {
+      phaseTimer += dt;
+
+      if (phase === 'deal' && phaseTimer > 0.6) {
+        phase = 'ai_think';
+        phaseTimer = 0;
+      } else if (phase === 'ai_think' && phaseTimer > 1.2) {
+        phase = 'player_turn';
+        phaseTimer = 0;
+      } else if (phase === 'result' && phaseTimer > 2.0) {
+        advanceRound();
+      }
+    }
+
+    draw(dt);
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error('loop error', e);
+    requestAnimationFrame(loop);
+  }
+}
+requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(loop); });
+
+// ── Input ─────────────────────────────────────────────────
+function handleTap(cx, cy) {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  if (state === 'title') {
+    startGame();
+    return;
+  }
+
+  if (state === 'gameover') {
+    const by = 440;
+    if (cx >= W/2 - 90 && cx <= W/2 + 90 && cy >= by && cy <= by + 46) {
+      startGame(); return;
+    }
+    if (cx >= W/2 - 70 && cx <= W/2 + 70 && cy >= 500 && cy <= 538) {
+      shareScore(); return;
+    }
+    if (cx >= W/2 - 70 && cx <= W/2 + 70 && cy >= 550 && cy <= 584) {
+      showFeedback(); return;
+    }
+    return;
+  }
+
+  if (state === 'playing') {
+    if (phase === 'narrative') {
+      // Check which choice was tapped
+      narrativeChoices.forEach((_, i) => {
+        const by = 165 + i * 110;
+        if (cx >= 20 && cx <= W - 20 && cy >= by && cy <= by + 95) {
+          chooseNarrative(i);
+        }
+      });
+      return;
+    }
+    if (phase !== 'player_turn') return;
+    // FOLD button
+    if (cx >= 15 && cx <= 105 && cy >= H - 90 && cy <= H - 52) {
+      playerDecide('fold'); return;
+    }
+    // CALL button
+    if (cx >= W/2 - 45 && cx <= W/2 + 45 && cy >= H - 90 && cy <= H - 52) {
+      playerDecide('call'); return;
+    }
+    // RAISE button
+    const canRaise = playerChips >= aiBet + raiseAmount;
+    if (canRaise && cx >= W - 105 && cx <= W - 15 && cy >= H - 90 && cy <= H - 52) {
+      playerDecide('raise'); return;
+    }
+  }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width, scaleY = H / rect.height;
+  handleTap((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
+});
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') handleTap(W/2, H/2);
+  if (e.code === 'KeyF' && state === 'playing' && phase === 'player_turn') playerDecide('fold');
+  if (e.code === 'KeyC' && state === 'playing' && phase === 'player_turn') playerDecide('call');
+  if (e.code === 'KeyR' && state === 'playing' && phase === 'player_turn') playerDecide('raise');
+  if (e.code === 'Digit1' && state === 'playing' && phase === 'narrative') chooseNarrative(0);
+  if (e.code === 'Digit2' && state === 'playing' && phase === 'narrative') chooseNarrative(1);
+  if (e.code === 'Digit3' && state === 'playing' && phase === 'narrative') chooseNarrative(2);
+});
+
+// ── Share & Feedback ──────────────────────────────────────
+function shareScore() {
+  const profit = playerChips - CHIPS_START;
+  const msg = profit >= 0
+    ? `I won ${profit} chips in Boot Hill Bluff! Can you beat ${aiProfile.name}? 🤠`
+    : `${aiProfile.name} cleaned me out in Boot Hill Bluff. Your turn.`;
+  if (navigator.share) {
+    navigator.share({ title: 'Boot Hill Bluff', text: msg }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(msg).catch(() => {});
+  }
+}
+
+function showFeedback() {
+  const ov = document.getElementById('fb-ov');
+  ov.style.display = 'flex';
+  const rect = wrap.getBoundingClientRect();
+  ov.style.width = rect.width + 'px';
+  ov.style.height = rect.height + 'px';
+}
+
+function sendFeedback() {
+  if (feedbackSent) return;
+  feedbackSent = true;
+  const profit = playerChips - CHIPS_START;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game: 'Boot Hill Bluff', score: playerChips, profit, rounds: round }),
+  }).catch(() => {});
+}
+
+// ── Feedback overlay wiring ───────────────────────────────
+let fbRating = 0;
+document.getElementById('fb-stars').addEventListener('click', e => {
+  const v = e.target.dataset.v;
+  if (!v) return;
+  fbRating = parseInt(v);
+  document.querySelectorAll('#fb-stars span').forEach((s, i) => {
+    s.textContent = i < fbRating ? '★' : '✴';
+  });
+});
+
+document.getElementById('fb-submit').addEventListener('click', async () => {
+  const msg = document.getElementById('fb-text').value.trim();
+  const target = document.getElementById('fb-target').value;
+  const statusEl = document.getElementById('fb-status');
+  if (!fbRating && !msg) { statusEl.textContent = 'Add a rating or message.'; return; }
+  statusEl.textContent = 'Sending...';
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: target, rating: fbRating, message: msg }),
+    });
+    statusEl.textContent = 'Thanks!';
+    setTimeout(() => { document.getElementById('fb-ov').style.display = 'none'; }, 1200);
+  } catch {
+    statusEl.textContent = 'Sent (offline cached).';
+    setTimeout(() => { document.getElementById('fb-ov').style.display = 'none'; }, 1200);
+  }
+});
+
+document.getElementById('fb-cancel').addEventListener('click', () => {
+  document.getElementById('fb-ov').style.display = 'none';
+});
+
+// ── Test hooks ────────────────────────────────────────────
+window.__test = {
+  getState:   () => state,
+  getPhase:   () => phase,
+  getRound:   () => round,
+  getChips:   () => ({ playerChips, aiChips, pot }),
+  getCards:   () => ({ playerCard, aiCard }),
+  getTell:    () => tellType,
+  isBluffing: () => aiIsBluffing,
+  getAIProfile: () => aiProfile,
+  startGame,
+  playerDecide,
+  chooseNarrative,
+  advanceRound,
+  ROUNDS_TOTAL,
+  CHIPS_START,
+  ANTE,
+  AI_PROFILES,
+  TELLS,
+  NARRATIVE_ROUNDS,
+};
+</script>
+</body>
+</html>
