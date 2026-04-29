@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-04-29T08:00:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Completed Game 13: Snake Oil docs + status. Building Game 14: Midnight Rodeo.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 14: Midnight Rodeo",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 14: Midnight Rodeo -- bareback bull-riding survival, tap to counter bull spins, crowd-energy score multiplier"
+  },
   "gamesBuilt": 13,
   "lastGameTitle": "Snake Oil",
   "lastGameFile": "snake-oil.html",
