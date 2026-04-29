@@ -1,22 +1,12 @@
 {
   "lastRunAt": "2026-04-29T08:00:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 14 Midnight Rodeo tests pass (31/31)",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 14: Midnight Rodeo -- tests passing, committing"
-  },
-  "gamesBuilt": 13,
-  "lastGameTitle": "Snake Oil",
-  "lastGameFile": "snake-oil.html",
+  "lastRunSummary": "Built Game 14: Midnight Rodeo -- bareback bull-riding, crowd energy multiplier, 31 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 14,
+  "lastGameTitle": "Midnight Rodeo",
+  "lastGameFile": "midnight-rodeo.html",
   "gameQueue": [
-    {
-      "num": 14,
-      "title": "Midnight Rodeo",
-      "concept": "Bareback bull-riding survival: tap left/right to match the bull's spin direction while a crowd-energy meter determines your score multiplier. Timed survival with escalating spin patterns.",
-      "raisesBarOn": "First balance-input mechanic, first crowd-energy system, most physically intuitive input in the series",
-      "status": "planned"
-    },
     {
       "num": 15,
       "title": "Prairie Fire",
@@ -29,6 +19,13 @@
       "title": "Moonshine Run",
       "concept": "Outlaw distiller evades revenue agents: manage three still gauges (heat, pressure, proof) while revenuer lanterns sweep the darkness. Dim your own light to hide, but lose visibility of your gauges. Stealth + resource management hybrid.",
       "raisesBarOn": "First stealth mechanic in the series, first multi-gauge simultaneous resource management, first game where visibility is both tool and threat",
+      "status": "planned"
+    },
+    {
+      "num": 17,
+      "title": "Rope Trick",
+      "concept": "Precision rope-throwing puzzle: tap-hold-release to lasso rotating targets at different distances. A physics-based rope arc, wind drift, and moving target patterns create a skill ceiling that rewards mastery of distance and timing.",
+      "raisesBarOn": "First physics-arc projectile mechanic, first game with wind-drift environmental variable, highest precision skill ceiling in the series",
       "status": "planned"
     }
   ],
@@ -96,6 +93,14 @@
       "result": "success",
       "summary": "Built Game 13: Snake Oil - frontier medicine wagon, match ingredients to ailments, NPC dialogue, 30 tests pass.",
       "commitHash": "a35efec"
+    },
+    {
+      "runAt": "2026-04-29T08:00:00Z",
+      "action": "new_game",
+      "game": "Midnight Rodeo",
+      "result": "success",
+      "summary": "Built Game 14: Midnight Rodeo - bareback bull-riding, directional tap-match, crowd energy multiplier, 31 tests pass.",
+      "commitHash": "6408129"
     }
   ]
 }

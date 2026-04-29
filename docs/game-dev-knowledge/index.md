@@ -21,6 +21,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 11 | Boot Hill Bluff | `boot-hill-bluff.html` | Turn-based bluffing duel / AI tell system / narrative choices / chip betting | 2026-04-28 |
 | 12 | Stampede | `stampede.html` | First-person perspective / 3-lane buffalo dodge / signal herd mechanic / dynamic hoofbeat audio | 2026-04-28 |
 | 13 | Snake Oil | `snake-oil.html` | Matching/inventory puzzle / NPC dialogue-driven / ingredient-combo lookup / sliding tray + timer pressure | 2026-04-28 |
+| 14 | Midnight Rodeo | `midnight-rodeo.html` | Directional response / bull telegraph + tap-match / crowd-energy multiplier / shrinking window difficulty | 2026-04-29 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -44,6 +45,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Boot Hill Bluff](retrospectives/09-boot-hill-bluff.md) — session lessons, action items for Game 12
 - [Retrospective: Stampede](retrospectives/10-stampede.md) — session lessons, action items for Game 13
 - [Retrospective: Snake Oil](retrospectives/13-snake-oil.md) — session lessons, action items for Game 14
+- [Retrospective: Midnight Rodeo](retrospectives/14-midnight-rodeo.md) — session lessons, action items for Game 15
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
