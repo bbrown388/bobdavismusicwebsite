@@ -1,27 +1,17 @@
 {
-  "lastRunAt": "2026-04-29T08:00:02Z",
+  "lastRunAt": "2026-04-29T08:00:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 13 Snake Oil tests pass (30/30)",
-  "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
-  },
-  "gamesBuilt": 12,
-  "lastGameTitle": "Stampede",
-  "lastGameFile": "stampede.html",
+  "lastRunSummary": "Completed Game 13: Snake Oil docs + status. Building Game 14: Midnight Rodeo.",
+  "currentTask": null,
+  "gamesBuilt": 13,
+  "lastGameTitle": "Snake Oil",
+  "lastGameFile": "snake-oil.html",
   "gameQueue": [
-    {
-      "num": 13,
-      "title": "Snake Oil",
-      "concept": "Fast-talking merchant mini-game: match ingredients to ailments described by townsfolk in real-time. A sliding inventory tray and time pressure create a juggling act between persuasion and supply chain.",
-      "raisesBarOn": "First matching/inventory puzzle, first NPC dialogue-driven mechanic, first game with multiple simultaneous customers",
-      "status": "planned"
-    },
     {
       "num": 14,
       "title": "Midnight Rodeo",
-      "concept": "Bareback bull-riding survival: tilt your balance left/right to match the bull's spin direction while a crowd-energy meter determines your score multiplier. Timed survival with escalating spin patterns.",
-      "raisesBarOn": "First balance/gyro-style mechanic, first crowd-energy system, most physically intuitive input in the series",
+      "concept": "Bareback bull-riding survival: tap left/right to match the bull's spin direction while a crowd-energy meter determines your score multiplier. Timed survival with escalating spin patterns.",
+      "raisesBarOn": "First balance-input mechanic, first crowd-energy system, most physically intuitive input in the series",
       "status": "planned"
     },
     {
@@ -29,6 +19,13 @@
       "title": "Prairie Fire",
       "concept": "Wildfire simulation strategy: a wind-driven fire spreads on a cellular grid toward your homestead. Place firebreaks and water buckets with limited resources, watch the wind shift, and protect your land as the blaze accelerates.",
       "raisesBarOn": "First cellular automaton simulation in the series, first strategy/placement game, first game with environmental destruction and wind physics",
+      "status": "planned"
+    },
+    {
+      "num": 16,
+      "title": "Moonshine Run",
+      "concept": "Outlaw distiller evades revenue agents: manage three still gauges (heat, pressure, proof) while revenuer lanterns sweep the darkness. Dim your own light to hide, but lose visibility of your gauges. Stealth + resource management hybrid.",
+      "raisesBarOn": "First stealth mechanic in the series, first multi-gauge simultaneous resource management, first game where visibility is both tool and threat",
       "status": "planned"
     }
   ],
@@ -70,15 +67,7 @@
       "action": "new_game",
       "game": "Gold Rush",
       "result": "success",
-      "summary": "Built Game 10: Gold Rush — lantern-lit cave mining, BFS pathfinding, triple resource management, 16 tests pass.",
-      "commitHash": "49d5a49"
-    },
-    {
-      "runAt": "2026-04-27T23:10:00Z",
-      "action": "new_game",
-      "game": "Gold Rush",
-      "result": "success",
-      "summary": "Built Game 10: Gold Rush — lantern-lit cave mining, BFS pathfinding, triple resource management, 16 tests pass.",
+      "summary": "Built Game 10: Gold Rush - lantern-lit cave mining, BFS pathfinding, triple resource management, 16 tests pass.",
       "commitHash": "49d5a49"
     },
     {
@@ -96,6 +85,14 @@
       "result": "success",
       "summary": "Built Game 12: Stampede - first-person buffalo stampede, 3-lane dodge, signal herd mechanic. 23 tests pass.",
       "commitHash": "f771f30"
+    },
+    {
+      "runAt": "2026-04-28T11:00:00Z",
+      "action": "new_game",
+      "game": "Snake Oil",
+      "result": "success",
+      "summary": "Built Game 13: Snake Oil - frontier medicine wagon, match ingredients to ailments, NPC dialogue, 30 tests pass.",
+      "commitHash": "a35efec"
     }
   ]
 }
