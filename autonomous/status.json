@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-04-29T08:00:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 14: Midnight Rodeo -- bareback bull-riding, crowd energy multiplier, 31 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 15: Prairie Fire",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 15: Prairie Fire - wildfire cellular automaton strategy"
+  },
   "gamesBuilt": 14,
   "lastGameTitle": "Midnight Rodeo",
   "lastGameFile": "midnight-rodeo.html",
