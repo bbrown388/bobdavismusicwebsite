@@ -3,8 +3,8 @@
   "lastRunResult": "success",
   "lastRunSummary": "Building Game 15: Prairie Fire",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Designing Game 15: Prairie Fire - wildfire cellular automaton strategy"
   },
   "gamesBuilt": 14,
   "lastGameTitle": "Midnight Rodeo",
