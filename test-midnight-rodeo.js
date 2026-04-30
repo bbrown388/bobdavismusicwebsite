@@ -381,24 +381,24 @@ async function suite21() {
   await teardown();
 }
 
-// Suite 22: Tap only registers during telegraph phase
+// Suite 22: Pre-tap during riding is preserved; telegraph tap overrides it
 async function suite22() {
-  console.log('\nSuite 22: Tap ignored outside telegraph phase');
+  console.log('\nSuite 22: Pre-tap during riding preserved; telegraph tap overrides');
   await setup();
   await page.evaluate(() => {
     window.__test.startGame();
-    // Phase is 'riding' — tap should be ignored
+    // Phase is 'riding' — tap registers as pre-tap
     window.__test.tap('left');
-    window.__test.tickFrames(60); // ride phase continues
-    // Now force to telegraphing with LEFT dir, then don't tap
+    window.__test.tickFrames(60); // stay in riding phase
+    // Force telegraphing — tapHandled resets so player can override
     window.__test.forcePhase('telegraphing');
     window.__test.forceBullDir(-1);
-    // Tap 'left' but we already tapped during riding — tapHandled should be false (fresh)
+    // Tap 'left' during telegraph (overrides pre-tap, same direction here)
     window.__test.tap('left');
     window.__test.tickFrames(25); // evaluate
   });
   const mistakes = await page.evaluate(() => window.__test.getMistakes());
-  assert(mistakes === 0, 'tap during riding phase is ignored; correct tap in telegraph succeeds');
+  assert(mistakes === 0, 'pre-tap during riding + correct telegraph tap = no mistake');
   await teardown();
 }
 

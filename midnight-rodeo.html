@@ -334,8 +334,7 @@ function update(dt) {
       bullPhase  = 'telegraphing';
       bullDir    = randomDir();
       phaseTimer = telDur();
-      playerTap  = null;
-      tapHandled = false;
+      tapHandled = false;  // allow override during telegraph; preserve playerTap pre-tap
       if (bullDir !== DIR_STRAIGHT) spawnDust(W / 2 + bullDir * 60, bullDir);
     }
   } else if (bullPhase === 'telegraphing') {
@@ -356,6 +355,8 @@ function update(dt) {
       } else {
         bullPhase  = 'riding';
         phaseTimer = rideDur();
+        playerTap  = null;   // clear pre-tap at start of new cycle
+        tapHandled = false;  // allow pre-tapping during riding
       }
     }
   }
@@ -393,7 +394,6 @@ function handleTap(x, y) {
   if (state === 'title')   { startGame(); return; }
   if (state === 'dead')    { state = 'title'; return; }
   if (state !== 'playing') return;
-  if (bullPhase !== 'telegraphing') return;
   if (tapHandled) return;
   playerTap  = x < W / 2 ? 'left' : 'right';
   tapHandled = true;
@@ -753,6 +753,16 @@ function drawHUD() {
     ctx.fillText('LVL ' + (level + 1), W - 22, 58);
   }
 
+  // Pre-tap indicator during riding phase
+  if (bullPhase === 'riding' && playerTap !== null) {
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#C8A04A';
+    ctx.globalAlpha = 0.75;
+    ctx.fillText(playerTap === 'left' ? '◀ LEANING LEFT' : 'LEANING RIGHT ▶', W / 2, 190);
+    ctx.globalAlpha = 1;
+  }
+
   // Direction cue during telegraph
   if (bullPhase === 'telegraphing') {
     const frac = Math.max(0, phaseTimer / telDur());
@@ -1074,7 +1084,9 @@ window.__test = {
   tickFrames: (n) => { for (let i = 0; i < n; i++) update(1 / 60); },
   forcePhase: (phase) => {
     bullPhase = phase;
-    phaseTimer = 0;  // expires on next tick
+    phaseTimer = 0;
+    if (phase === 'telegraphing') tapHandled = false;          // allow tap during telegraph
+    if (phase === 'riding') { playerTap = null; tapHandled = false; }  // fresh cycle
   },
   forceBullDir: (dir) => { bullDir = dir; },
 };
