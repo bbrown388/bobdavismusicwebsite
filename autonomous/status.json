@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-04-30T08:00:02Z",
+  "lastRunAt": "2026-04-30T09:15:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 15: Prairie Fire",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Designing Game 15: Prairie Fire - wildfire cellular automaton strategy"
-  },
-  "gamesBuilt": 14,
-  "lastGameTitle": "Midnight Rodeo",
-  "lastGameFile": "midnight-rodeo.html",
+  "lastRunSummary": "Built Game 15: Prairie Fire. Also fixed Midnight Rodeo responsiveness bug.",
+  "currentTask": null,
+  "gamesBuilt": 15,
+  "lastGameTitle": "Prairie Fire",
+  "lastGameFile": "prairie-fire.html",
   "gameQueue": [
-    {
-      "num": 15,
-      "title": "Prairie Fire",
-      "concept": "Wildfire simulation strategy: a wind-driven fire spreads on a cellular grid toward your homestead. Place firebreaks and water buckets with limited resources, watch the wind shift, and protect your land as the blaze accelerates.",
-      "raisesBarOn": "First cellular automaton simulation in the series, first strategy/placement game, first game with environmental destruction and wind physics",
-      "status": "planned"
-    },
     {
       "num": 16,
       "title": "Moonshine Run",
@@ -29,6 +19,13 @@
       "title": "Rope Trick",
       "concept": "Precision rope-throwing puzzle: tap-hold-release to lasso rotating targets at different distances. A physics-based rope arc, wind drift, and moving target patterns create a skill ceiling that rewards mastery of distance and timing.",
       "raisesBarOn": "First physics-arc projectile mechanic, first game with wind-drift environmental variable, highest precision skill ceiling in the series",
+      "status": "planned"
+    },
+    {
+      "num": 18,
+      "title": "Dead Man's Hand",
+      "concept": "Texas Hold'em-style poker against 3 AI outlaws with distinct bluffing personalities. Read tells, manage a bounty chip stack, survive a 5-hand showdown. First card game in the series.",
+      "raisesBarOn": "First card game mechanic, first multi-opponent AI with distinct behavioral models, first game with narrative personality-driven opponents",
       "status": "planned"
     }
   ],
@@ -104,6 +101,22 @@
       "result": "success",
       "summary": "Built Game 14: Midnight Rodeo - bareback bull-riding, directional tap-match, crowd energy multiplier, 31 tests pass.",
       "commitHash": "6408129"
+    },
+    {
+      "runAt": "2026-04-30T08:30:00Z",
+      "action": "fix",
+      "game": "Midnight Rodeo",
+      "result": "success",
+      "summary": "Fixed Midnight Rodeo: taps now register at any time during play, not just the 0.7s telegraph window. Pre-tap preserved across phase transitions.",
+      "commitHash": "e6cf348"
+    },
+    {
+      "runAt": "2026-04-30T09:15:00Z",
+      "action": "new_game",
+      "game": "Prairie Fire",
+      "result": "success",
+      "summary": "Built Game 15: Prairie Fire - wildfire cellular automaton, 18x26 grid, wind-direction spread, firebreak+water placement, 35 tests pass.",
+      "commitHash": "230cc44"
     }
   ]
 }
