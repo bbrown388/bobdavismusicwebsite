@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-04-30T09:15:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 15: Prairie Fire. Also fixed Midnight Rodeo responsiveness bug.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 16: Moonshine Run",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 16: Moonshine Run - stealth + resource management, outlaw distiller evades revenuers"
+  },
   "gamesBuilt": 15,
   "lastGameTitle": "Prairie Fire",
   "lastGameFile": "prairie-fire.html",
