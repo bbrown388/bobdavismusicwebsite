@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Prairie Fire</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(5,2,8,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">&#9734;</span><span data-v="2">&#9734;</span><span data-v="3">&#9734;</span><span data-v="4">&#9734;</span><span data-v="5">&#9734;</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Moonshine Run">Upcoming: Moonshine Run (Game 16)</option>
+      <option value="Rope Trick">Upcoming: Rope Trick (Game 17)</option>
+      <option value="Prairie Fire" selected>Existing: Prairie Fire</option>
+      <option value="Midnight Rodeo">Existing: Midnight Rodeo</option>
+      <option value="Snake Oil">Existing: Snake Oil</option>
+      <option value="Stampede">Existing: Stampede</option>
+      <option value="Boot Hill Bluff">Existing: Boot Hill Bluff</option>
+      <option value="Gold Rush">Existing: Gold Rush</option>
+      <option value="Wanted Poster">Existing: Wanted Poster</option>
+      <option value="Dust Devil">Existing: Dust Devil</option>
+      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
+      <option value="Cattle Drive">Existing: Cattle Drive</option>
+      <option value="Outlaw Run">Existing: Outlaw Run</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0400;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const SLUG = 'prairie-fire';
+
+// Grid
+const CELL   = 20;
+const COLS   = 18;
+const ROWS   = 26;
+const GRID_H = ROWS * CELL;  // 520
+
+// Cell states
+const EMPTY     = 0;
+const GRASS     = 1;
+const BURNING   = 2;
+const BURNED    = 3;
+const FIREBREAK = 4;
+const WATER     = 5;
+const HOMESTEAD = 6;
+const STONE     = 7;
+
+// 8-directional neighbor offsets (N, NE, E, SE, S, SW, W, NW)
+// positive DY = downward (toward fire spreading south)
+const DX = [ 0, 1, 1, 1, 0,-1,-1,-1];
+const DY = [-1,-1, 0, 1, 1, 1, 0,-1];
+const DIR_NAMES = ['N','NE','E','SE','S','SW','W','NW'];
+
+// Fire spread
+const FIRE_TICK      = 0.48;  // seconds between spread ticks
+const BURN_TICKS     = 4;     // ticks a cell stays BURNING before BURNED
+const BASE_PROB      = 0.22;
+const WIND_BOOST     = [0.48, 0.32, 0.16, 0.06, -0.08, 0.06, 0.16, 0.32];
+
+// Resources
+const MAX_BREAKS = 14;
+const MAX_WATER  = 4;
+
+// Wind shift timing
+const WIND_MIN = 14;
+const WIND_MAX = 22;
+
+// Homestead position (2x2 block, center-bottom of grid)
+const HS_ROW = ROWS - 4;
+const HS_COL = Math.floor(COLS / 2) - 1;
+
+// Canvas
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+  wrap.style.width  = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- State ---------------------------------------------------------------
+let state;       // 'title' | 'playing' | 'win' | 'lose'
+let grid;        // Uint8Array(COLS * ROWS)
+let burnTimer;   // Uint8Array: ticks remaining for BURNING cells
+let cellPhase;   // Float32Array: flame flicker offset per cell
+let windDir;     // 0-7
+let windStrength;
+let windTimer;
+let nextShift;
+let resources;   // { breaks, water }
+let tool;        // 'firebreak' | 'water'
+let score;
+let fireTimer;
+let gameDone;
+let popups;
+let best;
+
+// ---- Grid helpers --------------------------------------------------------
+function gI(r, c) { return r * COLS + c; }
+function gAt(r, c) {
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return -1;
+  return grid[gI(r, c)];
+}
+function gSet(r, c, v) {
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+  grid[gI(r, c)] = v;
+}
+function isHomestead(r, c) {
+  return r >= HS_ROW && r < HS_ROW + 2 && c >= HS_COL && c < HS_COL + 2;
+}
+function spreadProb(dir) {
+  const diff = Math.abs(dir - windDir);
+  const offset = Math.min(diff, 8 - diff);
+  return Math.max(0.05, BASE_PROB + WIND_BOOST[offset] * windStrength);
+}
+function countCells(v) {
+  let n = 0;
+  for (let i = 0; i < grid.length; i++) if (grid[i] === v) n++;
+  return n;
+}
+function showPopup(text, x, y, color) {
+  popups.push({ text, x, y, life: 1.2, color: color || '#FFD700' });
+}
+
+// ---- Game init -----------------------------------------------------------
+function buildGrid() {
+  grid      = new Uint8Array(COLS * ROWS);
+  burnTimer = new Uint8Array(COLS * ROWS);
+  cellPhase = new Float32Array(COLS * ROWS);
+
+  grid.fill(GRASS);
+  for (let i = 0; i < cellPhase.length; i++) cellPhase[i] = Math.random() * Math.PI * 2;
+
+  // Stone outcrops
+  [[5,3],[5,4],[9,13],[9,14],[7,8],[7,9],[14,2],[14,3],[18,10],[18,11],[12,6],[12,7]]
+    .forEach(([r,c]) => gSet(r, c, STONE));
+
+  // Bare ground patches (natural firebreaks)
+  for (let i = 0; i < 16; i++) {
+    const r = 2 + Math.floor(Math.random() * (ROWS - 8));
+    const c = Math.floor(Math.random() * COLS);
+    if (gAt(r, c) === GRASS) gSet(r, c, EMPTY);
+  }
+
+  // Homestead (2x2)
+  for (let dr = 0; dr < 2; dr++)
+    for (let dc = 0; dc < 2; dc++)
+      gSet(HS_ROW + dr, HS_COL + dc, HOMESTEAD);
+
+  // Ignite top rows
+  for (let c = 0; c < COLS; c++) {
+    if (Math.random() < 0.72 && gAt(0, c) === GRASS) {
+      gSet(0, c, BURNING);
+      burnTimer[gI(0, c)] = BURN_TICKS + Math.floor(Math.random() * 2);
+    }
+  }
+  for (let c = 0; c < COLS; c++) {
+    if (Math.random() < 0.38 && gAt(0, c) === BURNING && gAt(1, c) === GRASS) {
+      gSet(1, c, BURNING);
+      burnTimer[gI(1, c)] = BURN_TICKS + Math.floor(Math.random() * 2);
+    }
+  }
+}
+
+function startGame() {
+  state       = 'playing';
+  buildGrid();
+  windDir     = 4;  // south — fire spreads toward homestead
+  windStrength = 0.65;
+  windTimer   = 0;
+  nextShift   = WIND_MIN + Math.random() * (WIND_MAX - WIND_MIN);
+  resources   = { breaks: MAX_BREAKS, water: MAX_WATER };
+  tool        = 'firebreak';
+  score       = 0;
+  fireTimer   = FIRE_TICK;
+  gameDone    = false;
+  popups      = [];
+  best        = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+}
+
+// ---- Fire spread ---------------------------------------------------------
+function fireTick() {
+  const toIgnite  = [];
+  const toAsh     = [];
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (gAt(r, c) !== BURNING) continue;
+      const i = gI(r, c);
+
+      // Burn down
+      if (burnTimer[i] > 0) {
+        burnTimer[i]--;
+      } else {
+        toAsh.push([r, c]);
+        continue;
+      }
+
+      // Spread to neighbors
+      for (let d = 0; d < 8; d++) {
+        const nr = r + DY[d];
+        const nc = c + DX[d];
+        const nv = gAt(nr, nc);
+        if (nv === GRASS) {
+          if (Math.random() < spreadProb(d)) toIgnite.push([nr, nc]);
+        } else if (nv === HOMESTEAD) {
+          if (Math.random() < spreadProb(d)) { endGame(false); return; }
+        }
+      }
+    }
+  }
+
+  toIgnite.forEach(([r, c]) => {
+    if (gAt(r, c) === GRASS) {
+      gSet(r, c, BURNING);
+      burnTimer[gI(r, c)] = BURN_TICKS + Math.floor(Math.random() * 3);
+    }
+  });
+  toAsh.forEach(([r, c]) => gSet(r, c, BURNED));
+
+  // Water extinguishes neighbors each tick
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (gAt(r, c) !== WATER) continue;
+      for (let d = 0; d < 8; d++) {
+        const nr = r + DY[d], nc = c + DX[d];
+        if (gAt(nr, nc) === BURNING) {
+          gSet(nr, nc, BURNED);
+          burnTimer[gI(nr, nc)] = 0;
+        }
+      }
+    }
+  }
+
+  if (countCells(BURNING) === 0 && !gameDone) endGame(true);
+}
+
+function endGame(won) {
+  if (gameDone) return;
+  gameDone = true;
+
+  let grass = 0;
+  for (let i = 0; i < grid.length; i++) {
+    const v = grid[i];
+    if (v === GRASS || v === FIREBREAK || v === WATER || v === STONE || v === EMPTY) grass++;
+  }
+  score = grass * 8 + (won ? 500 + (resources.breaks + resources.water * 5) * 12 : 0);
+  if (score > best) { best = score; localStorage.setItem(SLUG + '_best', best); }
+
+  state = won ? 'win' : 'lose';
+  stopAudio();
+}
+
+// ---- Wind ----------------------------------------------------------------
+function shiftWind() {
+  const delta = [-1, 1, 1, 2][Math.floor(Math.random() * 4)];
+  windDir = (windDir + delta + 8) % 8;
+  windStrength = 0.5 + Math.random() * 0.5;
+  nextShift = WIND_MIN + Math.random() * (WIND_MAX - WIND_MIN);
+  showPopup('WIND: ' + DIR_NAMES[windDir], W / 2, 80, '#FF9F43');
+  playWindSound();
+}
+
+// ---- Audio ---------------------------------------------------------------
+let audioCtx, crackleGain;
+
+function initAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    const bpf = audioCtx.createBiquadFilter();
+    bpf.type = 'bandpass'; bpf.frequency.value = 700; bpf.Q.value = 0.5;
+    crackleGain = audioCtx.createGain();
+    crackleGain.gain.value = 0;
+    src.connect(bpf); bpf.connect(crackleGain); crackleGain.connect(audioCtx.destination);
+    src.start();
+  } catch (e) {}
+}
+
+function updateFireAudio() {
+  if (!crackleGain) return;
+  const target = Math.min(0.22, countCells(BURNING) * 0.005);
+  crackleGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.6);
+}
+
+function playTone(f, dur, vol, type) {
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type || 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+
+function playPlaceSound() { playTone(200, 0.07, 0.10, 'square'); }
+function playWindSound()   { playTone(150, 0.5, 0.08, 'sine'); playTone(195, 0.4, 0.05, 'sine'); }
+function playWinSound()    { [440,550,660].forEach((f,i) => setTimeout(() => playTone(f,0.3,0.12,'sine'), i*120)); }
+function playLoseSound()   { playTone(180, 0.5, 0.14, 'sawtooth'); playTone(120, 0.7, 0.09, 'sawtooth'); }
+
+function stopAudio() {
+  if (!crackleGain) return;
+  crackleGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.6);
+}
+
+// ---- Update --------------------------------------------------------------
+function update(dt) {
+  if (state !== 'playing' || gameDone) return;
+
+  fireTimer -= dt;
+  if (fireTimer <= 0) {
+    fireTimer = FIRE_TICK;
+    fireTick();
+    if (gameDone) {
+      if (state === 'win') playWinSound();
+      else playLoseSound();
+      return;
+    }
+    updateFireAudio();
+  }
+
+  windTimer += dt;
+  if (windTimer >= nextShift) { windTimer = 0; shiftWind(); }
+
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.y -= 38 * dt;
+    p.life -= dt;
+    if (p.life <= 0) popups.splice(i, 1);
+  }
+}
+
+// ---- Draw: grid ----------------------------------------------------------
+function drawGrid() {
+  ctx.save();
+  const t = Date.now() / 1000;
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = c * CELL, y = r * CELL;
+      const v = gAt(r, c);
+
+      if (v === EMPTY) {
+        ctx.fillStyle = '#1c1004';
+        ctx.fillRect(x, y, CELL, CELL);
+      } else if (v === GRASS) {
+        ctx.fillStyle = '#3a5618';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = '#4e7022';
+        ctx.fillRect(x + 3, y + 3, 2, 7);
+        ctx.fillRect(x + 9, y + 5, 2, 6);
+        ctx.fillRect(x + 14, y + 2, 2, 8);
+      } else if (v === BURNING) {
+        const ph = cellPhase[gI(r, c)];
+        const fl = 0.65 + 0.35 * Math.sin(t * 9 + ph);
+        ctx.fillStyle = '#120800';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = `rgba(255,${Math.floor(90 * fl)},0,0.95)`;
+        ctx.fillRect(x + 2, y + 5, CELL - 4, CELL - 5);
+        ctx.fillStyle = `rgba(255,200,${Math.floor(60 * fl)},${(fl * 0.9).toFixed(2)})`;
+        ctx.fillRect(x + 5, y + 1, CELL - 10, 7);
+        ctx.globalAlpha = 0.28 * fl;
+        ctx.fillStyle = '#444';
+        ctx.fillRect(x + 3, y, CELL - 6, 5);
+        ctx.globalAlpha = 1;
+      } else if (v === BURNED) {
+        ctx.fillStyle = '#130c03';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = '#1e1408';
+        ctx.fillRect(x + 2, y + 7, CELL - 4, 2);
+        ctx.fillRect(x + 7, y + 2, 2, CELL - 4);
+      } else if (v === FIREBREAK) {
+        ctx.fillStyle = '#7a5910';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = '#9e7820';
+        ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+        ctx.fillStyle = '#6a4a08';
+        ctx.fillRect(x + 3, y + 4, 3, 3);
+        ctx.fillRect(x + 9, y + 8, 3, 3);
+        ctx.fillRect(x + 14, y + 3, 3, 3);
+      } else if (v === WATER) {
+        const wv = 0.5 + 0.5 * Math.sin(t * 2.2 + cellPhase[gI(r, c)]);
+        ctx.fillStyle = '#0a1e38';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = `rgba(24,75,160,${(0.65 + 0.25 * wv).toFixed(2)})`;
+        ctx.fillRect(x + 1, y + 4, CELL - 2, 5);
+        ctx.fillStyle = `rgba(60,130,220,${(0.4 + 0.2 * wv).toFixed(2)})`;
+        ctx.fillRect(x + 3, y + 11, CELL - 6, 3);
+      } else if (v === HOMESTEAD) {
+        ctx.fillStyle = '#1e0e04';
+        ctx.fillRect(x, y, CELL, CELL);
+      } else if (v === STONE) {
+        ctx.fillStyle = '#28241e';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = '#38342c';
+        ctx.beginPath();
+        ctx.ellipse(x + CELL / 2, y + CELL / 2, CELL / 2 - 1, CELL / 2 - 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Subtle grid lines
+  ctx.globalAlpha = 0.05;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 0.5;
+  for (let c = 1; c < COLS; c++) { ctx.beginPath(); ctx.moveTo(c * CELL, 0); ctx.lineTo(c * CELL, GRID_H); ctx.stroke(); }
+  for (let r = 1; r < ROWS; r++) { ctx.beginPath(); ctx.moveTo(0, r * CELL); ctx.lineTo(W, r * CELL); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ---- Draw: homestead overlay ---------------------------------------------
+function drawHomestead() {
+  ctx.save();
+  const x = HS_COL * CELL, y = HS_ROW * CELL;
+  const hw = CELL * 2, hh = CELL * 2;
+
+  // Base
+  ctx.fillStyle = '#4a2808';
+  ctx.fillRect(x, y + hh * 0.38, hw, hh * 0.62);
+  ctx.fillStyle = '#6a3c14';
+  ctx.fillRect(x + 1, y + hh * 0.40, hw - 2, hh * 0.58);
+  // Roof
+  ctx.fillStyle = '#2e1404';
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y + hh * 0.40);
+  ctx.lineTo(x + hw / 2, y + 2);
+  ctx.lineTo(x + hw + 4, y + hh * 0.40);
+  ctx.closePath();
+  ctx.fill();
+  // Chimney
+  ctx.fillStyle = '#1e0c02';
+  ctx.fillRect(x + hw * 0.62, y, 5, hh * 0.40);
+  // Door
+  ctx.fillStyle = '#100600';
+  ctx.fillRect(x + hw / 2 - 4, y + hh * 0.68, 8, hh * 0.32);
+  // Window glow
+  ctx.globalAlpha = 0.55 + 0.15 * Math.sin(Date.now() / 800);
+  ctx.fillStyle = '#FFD700';
+  ctx.fillRect(x + 3, y + hh * 0.48, 6, 6);
+  ctx.globalAlpha = 1;
+  // Label
+  ctx.font = 'bold 7px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('HOME', x + hw / 2, y - 3);
+  ctx.restore();
+}
+
+// ---- Draw: HUD -----------------------------------------------------------
+function drawHUD() {
+  ctx.save();
+  const hy = GRID_H;
+
+  ctx.fillStyle = '#0a0400';
+  ctx.fillRect(0, hy, W, H - hy);
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  const btnY = hy + 10, btnH = 38, btnW = W / 2 - 15;
+
+  // Firebreak button
+  ctx.fillStyle = tool === 'firebreak' ? '#C8A04A' : '#1a1000';
+  ctx.beginPath(); ctx.roundRect(10, btnY, btnW, btnH, 8); ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(10, btnY, btnW, btnH, 8); ctx.stroke();
+  ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = tool === 'firebreak' ? '#0d0400' : '#C8A04A';
+  ctx.fillText('FIREBREAK', 10 + btnW / 2, btnY + 14);
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = tool === 'firebreak' ? '#3a2000' : '#6a4a10';
+  ctx.fillText(resources.breaks + ' remaining', 10 + btnW / 2, btnY + 28);
+
+  // Water button
+  const bx = W / 2 + 5;
+  ctx.fillStyle = tool === 'water' ? '#1e5c9a' : '#080e18';
+  ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 8); ctx.fill();
+  ctx.strokeStyle = '#2a70c0'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 8); ctx.stroke();
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = tool === 'water' ? '#fff' : '#2a70c0';
+  ctx.fillText('WATER', bx + btnW / 2, btnY + 14);
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = tool === 'water' ? '#cce' : '#1a3050';
+  ctx.fillText(resources.water + ' remaining', bx + btnW / 2, btnY + 28);
+
+  // Grass saved meter (center bottom)
+  const grassPct = countCells(GRASS) / (COLS * ROWS);
+  ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#504030';
+  ctx.fillText('GRASS', W / 2, hy + 60);
+  ctx.fillStyle = '#1a1000';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 50, hy + 63, 100, 8, 4); ctx.fill();
+  ctx.fillStyle = '#4e7022';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 50, hy + 63, 100 * grassPct, 8, 4); ctx.fill();
+  ctx.font = '9px sans-serif'; ctx.fillStyle = '#4e7022';
+  ctx.fillText(Math.floor(grassPct * 100) + '%', W / 2, hy + 80);
+
+  // Wind compass (right side)
+  drawWindCompass(W - 38, hy + 20, 20);
+
+  ctx.restore();
+}
+
+function drawWindCompass(cx, cy, r) {
+  ctx.save();
+  ctx.fillStyle = '#120902';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#503820'; ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.5;
+  ctx.stroke(); ctx.globalAlpha = 1;
+
+  ctx.font = '6px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#504030';
+  ctx.fillText('N', cx, cy - r + 7);
+  ctx.fillText('S', cx, cy + r - 1);
+
+  const angle = (windDir / 8) * Math.PI * 2 - Math.PI / 2;
+  const len = r * 0.72;
+  ctx.strokeStyle = '#FF9F43'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len); ctx.stroke();
+  ctx.fillStyle = '#FF9F43';
+  ctx.beginPath(); ctx.arc(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len, 2.5, 0, Math.PI * 2); ctx.fill();
+
+  ctx.font = 'bold 7px sans-serif'; ctx.fillStyle = '#C8A04A';
+  ctx.fillText(DIR_NAMES[windDir], cx, cy + r + 10);
+  ctx.restore();
+}
+
+// ---- Draw: popups --------------------------------------------------------
+function drawPopups() {
+  ctx.save();
+  popups.forEach(p => {
+    ctx.globalAlpha = Math.min(1, p.life);
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ---- Draw: title ---------------------------------------------------------
+function drawTitle() {
+  ctx.save();
+  const t = Date.now() / 1000;
+
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.6);
+  sky.addColorStop(0, '#0a0402');
+  sky.addColorStop(1, '#280f04');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  // Horizon glow
+  const glow = ctx.createLinearGradient(0, H * 0.45, 0, H * 0.7);
+  glow.addColorStop(0, 'rgba(255,70,0,0.60)');
+  glow.addColorStop(0.4, 'rgba(255,30,0,0.18)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, H * 0.45, W, H * 0.25);
+
+  // Fire line
+  for (let fx = 0; fx < W; fx += 6) {
+    const fh = 16 + 10 * Math.sin(fx * 0.22 + t * 3.8);
+    const fl = 0.65 + 0.35 * Math.sin(fx * 0.31 + t * 8.2);
+    ctx.fillStyle = `rgba(255,${Math.floor(70 * fl)},0,${(0.85 * fl).toFixed(2)})`;
+    ctx.fillRect(fx, H * 0.52 - fh, 7, fh);
+  }
+
+  // Prairie
+  ctx.fillStyle = '#100800';
+  ctx.fillRect(0, H * 0.52, W, H * 0.48);
+
+  // Title card
+  ctx.fillStyle = 'rgba(5,2,1,0.82)';
+  ctx.beginPath(); ctx.roundRect(18, 75, W - 36, 230, 14); ctx.fill();
+  ctx.strokeStyle = '#FF9F43'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5;
+  ctx.stroke(); ctx.globalAlpha = 1;
+
+  ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#806040'; ctx.fillText('GAME 15', W / 2, 102);
+
+  ctx.font = 'bold 46px Georgia, serif';
+  ctx.fillStyle = '#FF9F43'; ctx.fillText('PRAIRIE', W / 2, 150);
+  ctx.fillStyle = '#E74C3C'; ctx.fillText('FIRE', W / 2, 197);
+
+  ctx.font = '13px sans-serif'; ctx.fillStyle = '#C8B89A';
+  ctx.fillText('Wildfire is heading for your homestead.', W / 2, 226);
+  ctx.font = '11px sans-serif'; ctx.fillStyle = '#705848';
+  ctx.fillText('Place firebreaks and water. Watch the wind.', W / 2, 246);
+  ctx.fillText('Strategy wins. Panic loses.', W / 2, 262);
+
+  const b = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+  if (b > 0) {
+    ctx.font = '11px sans-serif'; ctx.fillStyle = '#C8A04A';
+    ctx.fillText('BEST: ' + b.toLocaleString(), W / 2, 288);
+  }
+
+  // Homestead silhouette
+  ctx.save(); ctx.globalAlpha = 0.45;
+  ctx.fillStyle = '#1a0a00';
+  ctx.fillRect(W / 2 - 18, H * 0.63, 36, 26);
+  ctx.beginPath();
+  ctx.moveTo(W / 2 - 22, H * 0.63);
+  ctx.lineTo(W / 2, H * 0.61);
+  ctx.lineTo(W / 2 + 22, H * 0.63);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1; ctx.restore();
+
+  const pulse = 0.55 + 0.45 * Math.sin(t * 2.6);
+  ctx.globalAlpha = pulse;
+  ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#FFD700';
+  ctx.fillText('TAP TO START', W / 2, 578);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ---- Draw: playing -------------------------------------------------------
+function drawPlaying() {
+  ctx.save();
+  drawGrid();
+  drawHomestead();
+  drawHUD();
+  drawPopups();
+  ctx.restore();
+}
+
+// ---- Draw: end screen ----------------------------------------------------
+function drawEnd(won) {
+  ctx.save();
+  drawGrid();
+  drawHomestead();
+
+  ctx.fillStyle = 'rgba(5,2,1,0.88)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  if (won) {
+    ctx.font = 'bold 38px Georgia, serif';
+    ctx.fillStyle = '#FFD700'; ctx.fillText('SAVED!', W / 2, 185);
+    ctx.font = '14px sans-serif'; ctx.fillStyle = '#C8B89A';
+    ctx.fillText('The homestead survived.', W / 2, 215);
+  } else {
+    ctx.font = 'bold 38px Georgia, serif';
+    ctx.fillStyle = '#E74C3C'; ctx.fillText('BURNED', W / 2, 185);
+    ctx.fillText('OUT', W / 2, 228);
+    ctx.font = '13px sans-serif'; ctx.fillStyle = '#907060';
+    ctx.fillText('The fire took your homestead.', W / 2, 258);
+  }
+
+  ctx.font = '12px sans-serif'; ctx.fillStyle = '#504030';
+  ctx.fillText('SCORE', W / 2, 285);
+  ctx.font = 'bold 50px sans-serif'; ctx.fillStyle = '#FFD700';
+  ctx.fillText(score.toLocaleString(), W / 2, 338);
+
+  const b = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+  if (score >= b && b > 0) {
+    const pulse = 0.72 + 0.28 * Math.sin(Date.now() / 240);
+    ctx.globalAlpha = pulse;
+    ctx.font = 'bold 15px Georgia, serif'; ctx.fillStyle = '#FF9F43';
+    ctx.fillText('NEW RECORD!', W / 2, 368);
+    ctx.globalAlpha = 1;
+  } else if (b > 0) {
+    ctx.font = '12px sans-serif'; ctx.fillStyle = '#807050';
+    ctx.fillText('BEST: ' + b.toLocaleString(), W / 2, 368);
+  }
+
+  // Buttons
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 88, 395, 176, 44, 10); ctx.fill();
+  ctx.font = 'bold 15px sans-serif'; ctx.fillStyle = '#0d0400';
+  ctx.fillText('PLAY AGAIN', W / 2, 421);
+
+  ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(W / 2 - 88, 450, 82, 34, 8); ctx.stroke();
+  ctx.font = '13px sans-serif'; ctx.fillStyle = '#FFD700';
+  ctx.fillText('Share', W / 2 - 47, 471);
+  ctx.beginPath(); ctx.roundRect(W / 2 + 6, 450, 82, 34, 8); ctx.stroke();
+  ctx.fillText('Feedback', W / 2 + 47, 471);
+
+  ctx.restore();
+}
+
+// ---- Input ---------------------------------------------------------------
+function handleTap(x, y) {
+  if (state === 'title') { startGame(); initAudio(); return; }
+
+  if (state === 'win' || state === 'lose') {
+    if (x >= W/2-88 && x <= W/2+88 && y >= 395 && y <= 439) { startGame(); return; }
+    if (x >= W/2-88 && x <= W/2-6  && y >= 450 && y <= 484) {
+      if (navigator.share) navigator.share({ title: 'Prairie Fire', text: 'I scored ' + score + ' in Prairie Fire! Can you protect the homestead?' });
+      return;
+    }
+    if (x >= W/2+6 && x <= W/2+88 && y >= 450 && y <= 484) {
+      document.getElementById('fb-ov').style.display = 'flex';
+      return;
+    }
+    state = 'title'; return;
+  }
+
+  if (state !== 'playing') return;
+
+  // HUD area
+  if (y >= GRID_H) {
+    const btnY = GRID_H + 10, btnH = 38, btnW = W / 2 - 15;
+    if (y >= btnY && y <= btnY + btnH) {
+      if (x >= 10 && x <= 10 + btnW) { tool = 'firebreak'; return; }
+      if (x >= W / 2 + 5 && x <= W / 2 + 5 + btnW) { tool = 'water'; return; }
+    }
+    return;
+  }
+
+  // Grid cell
+  const c = Math.floor(x / CELL);
+  const r = Math.floor(y / CELL);
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+  const v = gAt(r, c);
+
+  if (tool === 'firebreak' && resources.breaks > 0 && v === GRASS) {
+    gSet(r, c, FIREBREAK);
+    resources.breaks--;
+    playPlaceSound();
+  } else if (tool === 'water' && resources.water > 0 && (v === GRASS || v === BURNING)) {
+    // Extinguish 3x3 around tap if placing on burning, otherwise place water
+    if (v === BURNING) {
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr, nc = c + dc;
+          if (gAt(nr, nc) === BURNING) { gSet(nr, nc, BURNED); burnTimer[gI(nr, nc)] = 0; }
+        }
+    }
+    gSet(r, c, WATER);
+    resources.water--;
+    showPopup('DOUSED!', (c + 0.5) * CELL, r * CELL + CELL / 2, '#2a70c0');
+    playPlaceSound();
+  }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const s = W / rect.width;
+  handleTap((e.clientX - rect.left) * s, (e.clientY - rect.top) * s);
+});
+
+// ---- Loop ----------------------------------------------------------------
+let lastTs = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTs) / 1000, 0.05);
+    lastTs = ts;
+    if (state === 'playing') update(dt);
+    ctx.clearRect(0, 0, W, H);
+    if (state === 'title') drawTitle();
+    if (state === 'playing') drawPlaying();
+    if (state === 'win' || state === 'lose') drawEnd(state === 'win');
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error('loop error:', e);
+    requestAnimationFrame(loop);
+  }
+}
+
+// ---- Init ----------------------------------------------------------------
+state = 'title';
+popups = [];
+best = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+requestAnimationFrame(loop);
+
+// ---- Feedback overlay ----------------------------------------------------
+(function () {
+  const ov = document.getElementById('fb-ov');
+  const stars = document.getElementById('fb-stars');
+  const submit = document.getElementById('fb-submit');
+  const cancel = document.getElementById('fb-cancel');
+  const status = document.getElementById('fb-status');
+  let rating = 0;
+  stars.addEventListener('click', e => {
+    const v = parseInt(e.target.dataset.v);
+    if (!v) return;
+    rating = v;
+    [...stars.children].forEach((s, i) => s.textContent = i < v ? '★' : '☆');
+  });
+  submit.addEventListener('click', () => {
+    const msg = document.getElementById('fb-text').value.trim();
+    const tgt = document.getElementById('fb-target').value;
+    if (!msg && !rating) { status.textContent = 'Add a rating or message.'; return; }
+    status.textContent = 'Sending...';
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', mode: 'no-cors',
+      body: JSON.stringify({ game: tgt || SLUG, rating, message: msg, score }),
+    }).finally(() => {
+      status.textContent = 'Sent! Thanks.';
+      setTimeout(() => { ov.style.display = 'none'; status.textContent = ''; rating = 0;
+        [...stars.children].forEach(s => s.textContent = '☆'); }, 1800);
+    });
+  });
+  cancel.addEventListener('click', () => { ov.style.display = 'none'; });
+})();
+
+// ---- Music slot ----------------------------------------------------------
+const MUSIC_SRC = '';
+if (MUSIC_SRC) {
+  const aud = new Audio(MUSIC_SRC);
+  aud.loop = true;
+  document.addEventListener('pointerdown', () => aud.play().catch(() => {}), { once: true });
+}
+
+// ---- Test helpers --------------------------------------------------------
+window.__test = {
+  getState:    () => state,
+  getWindDir:  () => windDir,
+  getWindStr:  () => windStrength,
+  getResources:() => ({ ...resources }),
+  getTool:     () => tool,
+  getScore:    () => score,
+  gAt,
+  COLS, ROWS, CELL, GRID_H,
+  EMPTY, GRASS, BURNING, BURNED, FIREBREAK, WATER, HOMESTEAD, STONE,
+  HS_ROW, HS_COL,
+  startGame,
+  setTool:    (t) => { tool = t; },
+  setWindDir: (d) => { windDir = d; },
+  setCell:    (r, c, v) => { gSet(r, c, v); if (v === BURNING) burnTimer[gI(r, c)] = BURN_TICKS; },
+  forceFireTick: () => fireTick(),
+  countCells,
+  forceWin:   () => endGame(true),
+  forceLose:  () => endGame(false),
+  placeAt:    (r, c) => {
+    if (!grid) return;
+    const v = gAt(r, c);
+    if (tool === 'firebreak' && resources.breaks > 0 && v === GRASS) {
+      gSet(r, c, FIREBREAK); resources.breaks--;
+    } else if (tool === 'water' && resources.water > 0 && (v === GRASS || v === BURNING)) {
+      gSet(r, c, WATER); resources.water--;
+    }
+  },
+};
+</script>
+</body>
+</html>
