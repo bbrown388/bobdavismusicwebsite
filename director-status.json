@@ -3,8 +3,8 @@
   "lastRunResult": "success",
   "lastRunSummary": "Building Game 16: Moonshine Run",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Building Game 16: Moonshine Run - stealth resource management, outlaw distiller evades revenuers"
   },
   "gamesBuilt": 15,
   "lastGameTitle": "Prairie Fire",
