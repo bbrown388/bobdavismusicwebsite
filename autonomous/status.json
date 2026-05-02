@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-02T03:52:45Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 17: Rope Trick - precision lasso throw, parabolic arc preview, wind drift, 40 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 18: Dead Man's Hand",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 18: Dead Man's Hand - Texas Hold'em poker vs 3 AI outlaws with bluffing tells"
+  },
   "gamesBuilt": 17,
   "lastGameTitle": "Rope Trick",
   "lastGameFile": "rope-trick.html",
