@@ -28,6 +28,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 18 | Dead Man's Hand | `dead-mans-hand.html` | Texas Hold'em card game / full hand evaluator (eval5+best7) / 3 AI opponents with distinct styles / probabilistic bluffing tell system / chip betting | 2026-05-02 |
 | 19 | Canyon Crossfire | `canyon-crossfire.html` | Cover-based shooter / peek-and-fire / 3 outlaws with staggered reload cycles / visible ballistic projectiles / real-time exposure risk | 2026-05-02 |
 | 20 | Trail Boss | `trail-boss.html` | Top-down wagon escort / 3 simultaneous draining resources / 5 biomes with distinct multipliers / ambush+supply+river event system | 2026-05-02 |
+| 21 | Wanted: Dead or Alive | `wanted-dead-or-alive.html` | First-person investigation / 5-location frontier town / witness interviews + evidence / confidence meter / accuse-the-fugitive mechanic | 2026-05-02 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -58,6 +59,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Dead Man's Hand](retrospectives/18-dead-mans-hand.md) — session lessons, action items for Game 19
 - [Retrospective: Canyon Crossfire](retrospectives/19-canyon-crossfire.md) — session lessons, action items for Game 20
 - [Retrospective: Trail Boss](retrospectives/20-trail-boss.md) — session lessons, action items for Game 21
+- [Retrospective: Wanted: Dead or Alive](retrospectives/21-wanted-dead-or-alive.md) — session lessons, action items for Game 22
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions

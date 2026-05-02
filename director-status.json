@@ -1,19 +1,12 @@
 {
-  "lastRunAt": "2026-05-02T04:47:06Z",
+  "lastRunAt": "2026-05-02T10:10:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 20: Trail Boss - top-down wagon escort, 3 resources, 5 biomes, event system, 40 tests pass.",
+  "lastRunSummary": "Built Game 21: Wanted: Dead or Alive - first-person investigation, 5 locations, confidence system, 47 tests pass.",
   "currentTask": null,
-  "gamesBuilt": 20,
-  "lastGameTitle": "Trail Boss",
-  "lastGameFile": "trail-boss.html",
+  "gamesBuilt": 21,
+  "lastGameTitle": "Wanted: Dead or Alive",
+  "lastGameFile": "wanted-dead-or-alive.html",
   "gameQueue": [
-    {
-      "num": 21,
-      "title": "Wanted: Dead or Alive",
-      "concept": "First-person bounty hunting: track a fugitive through a procedurally arranged frontier town using clues (witnesses, footprints, noise events). First stealth-investigation hybrid in the series.",
-      "raisesBarOn": "First investigation mechanic, first procedural environment layout, deepest narrative context in series",
-      "status": "planned"
-    },
     {
       "num": 22,
       "title": "Gallows Road",
@@ -26,6 +19,13 @@
       "title": "Devil's Backbone",
       "concept": "Carry a volatile dynamite load through a mountain pass on a tilting wagon. Tap left/right to counterbalance wind and rough terrain. First balance/tilt physics mechanic in series with escalating tilt amplitude.",
       "raisesBarOn": "First balance physics engine, first tilt-response mechanic, most tactile feedback in series",
+      "status": "planned"
+    },
+    {
+      "num": 24,
+      "title": "Dead Reckoning",
+      "concept": "Navigate a night cattle drive using stars: tap two constellation stars to draw bearing lines, find their intersection on the terrain map, and plot your route to the ranch before clouds close in. First navigation/celestial puzzle mechanic in the series.",
+      "raisesBarOn": "First map-based gameplay, first celestial navigation mechanic, most geometric/spatial reasoning in series",
       "status": "planned"
     }
   ],
@@ -107,7 +107,7 @@
       "action": "fix",
       "game": "Midnight Rodeo",
       "result": "success",
-      "summary": "Fixed Midnight Rodeo: taps now register at any time during play, not just the 0.7s telegraph window. Pre-tap preserved across phase transitions.",
+      "summary": "Fixed Midnight Rodeo: taps now register at any time during play, not just the 0.7s telegraph window.",
       "commitHash": "e6cf348"
     },
     {
@@ -123,40 +123,48 @@
       "action": "new_game",
       "game": "Moonshine Run",
       "result": "success",
-      "summary": "Built Game 16: Moonshine Run - stealth + 3-gauge resource management, revenuer lantern cone detection, HIDE mechanic dims own gauges, 40 tests pass.",
+      "summary": "Built Game 16: Moonshine Run - stealth + 3-gauge resource management, revenuer lantern cone detection, 40 tests pass.",
       "commitHash": "153863c"
     },
     {
+      "runAt": "2026-05-02T03:52:45Z",
       "action": "new_game",
       "game": "Rope Trick",
-      "commitHash": "e0cf5fb",
       "result": "success",
       "summary": "Built Game 17: Rope Trick - oscillating aim cursor, parabolic arc, wind drift, 5 rounds, 40 tests pass.",
-      "runAt": "2026-05-02T03:52:45Z"
+      "commitHash": "e0cf5fb"
     },
     {
+      "runAt": "2026-05-02T09:00:00Z",
       "action": "new_game",
       "game": "Dead Man's Hand",
-      "commitHash": "9afae30",
       "result": "success",
       "summary": "Built Game 18: Dead Man's Hand - Texas Hold'em vs 3 AI outlaws with bluffing tells, full hand evaluator, 44 tests pass.",
-      "runAt": "2026-05-02T09:00:00Z"
+      "commitHash": "9afae30"
     },
     {
+      "runAt": "2026-05-02T09:18:46Z",
       "action": "new_game",
       "game": "Canyon Crossfire",
-      "commitHash": "924bb91",
       "result": "success",
       "summary": "Built Game 19: Canyon Crossfire - cover-based shooter, 3 outlaws with staggered reload cycles, peek/fire/retreat, 36 tests pass.",
-      "runAt": "2026-05-02T09:18:46Z"
+      "commitHash": "924bb91"
     },
     {
+      "runAt": "2026-05-02T04:47:06Z",
       "action": "new_game",
       "game": "Trail Boss",
-      "commitHash": "6deb670",
       "result": "success",
       "summary": "Built Game 20: Trail Boss - top-down wagon escort, 3 draining resources, 5 biomes, ambush/supply/river events, 40 tests pass.",
-      "runAt": "2026-05-02T04:47:06Z"
+      "commitHash": "6deb670"
+    },
+    {
+      "runAt": "2026-05-02T10:10:00.000Z",
+      "action": "new_game",
+      "game": "Wanted: Dead or Alive",
+      "result": "success",
+      "summary": "Built Game 21: Wanted: Dead or Alive - first-person investigation, 5 locations, confidence meter, accuse mechanic, 47 tests pass.",
+      "commitHash": "42565c3"
     }
   ]
 }
