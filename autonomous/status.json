@@ -1,28 +1,32 @@
 {
-  "lastRunAt": "2026-05-02T08:00:34Z",
+  "lastRunAt": "2026-05-02T03:52:45Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 17 tests pass",
-  "currentTask": {
-    "context": "Game 17: Rope Trick - tests passing, committing",
-    "action": "new_game"
-  },
-  "gamesBuilt": 16,
-  "lastGameTitle": "Moonshine Run",
-  "lastGameFile": "moonshine-run.html",
+  "lastRunSummary": "Built Game 17: Rope Trick - precision lasso throw, parabolic arc preview, wind drift, 40 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 17,
+  "lastGameTitle": "Rope Trick",
+  "lastGameFile": "rope-trick.html",
   "gameQueue": [
     {
-      "num": 17,
-      "title": "Rope Trick",
-      "concept": "Precision rope-throwing puzzle: tap-hold-release to lasso rotating targets at different distances. A physics-based rope arc, wind drift, and moving target patterns create a skill ceiling that rewards mastery of distance and timing.",
-      "raisesBarOn": "First physics-arc projectile mechanic, first game with wind-drift environmental variable, highest precision skill ceiling in the series",
-      "status": "planned"
+      "status": "planned",
+      "title": "Dead Man's Hand",
+      "num": 18,
+      "concept": "Texas Hold'em-style poker against 3 AI outlaws with distinct bluffing personalities. Read tells, manage a bounty chip stack, survive a 5-hand showdown. First card game in the series.",
+      "raisesBarOn": "First card game mechanic, first multi-opponent AI with distinct behavioral models, first game with narrative personality-driven opponents"
     },
     {
-      "num": 18,
-      "title": "Dead Man's Hand",
-      "concept": "Texas Hold'em-style poker against 3 AI outlaws with distinct bluffing personalities. Read tells, manage a bounty chip stack, survive a 5-hand showdown. First card game in the series.",
-      "raisesBarOn": "First card game mechanic, first multi-opponent AI with distinct behavioral models, first game with narrative personality-driven opponents",
-      "status": "planned"
+      "status": "planned",
+      "title": "Canyon Crossfire",
+      "num": 19,
+      "concept": "Side-scrolling shootout from behind a boulder: time your peek-and-fire between cover, return fire from 3-5 outlaws with staggered reload patterns. First cover-based shooter in the series.",
+      "raisesBarOn": "First shooter mechanic, first cover system, AI reload-pattern prediction creates genuine tactical tension"
+    },
+    {
+      "status": "planned",
+      "title": "Trail Boss",
+      "num": 20,
+      "concept": "Top-down wagon train escort across 5 biomes: manage water, food, and axle durability. Random events (ambush, storm, river crossing) demand real-time decisions. First management-simulation hybrid.",
+      "raisesBarOn": "First top-down perspective, first multi-resource cross-map management, richest event system in the series"
     }
   ],
   "runLog": [
@@ -121,6 +125,14 @@
       "result": "success",
       "summary": "Built Game 16: Moonshine Run - stealth + 3-gauge resource management, revenuer lantern cone detection, HIDE mechanic dims own gauges, 40 tests pass.",
       "commitHash": "153863c"
+    },
+    {
+      "action": "new_game",
+      "game": "Rope Trick",
+      "commitHash": "e0cf5fb",
+      "result": "success",
+      "summary": "Built Game 17: Rope Trick - oscillating aim cursor, parabolic arc, wind drift, 5 rounds, 40 tests pass.",
+      "runAt": "2026-05-02T03:52:45Z"
     }
   ]
 }
