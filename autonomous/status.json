@@ -1,35 +1,32 @@
 {
-  "lastRunAt": "2026-05-02T03:52:45Z",
+  "lastRunAt": "2026-05-02T09:18:46Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 19 Canyon Crossfire tests pass (36/36)",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 19: Canyon Crossfire -- tests passing, committing"
-  },
-  "gamesBuilt": 18,
-  "lastGameTitle": "Dead Man's Hand",
-  "lastGameFile": "dead-mans-hand.html",
+  "lastRunSummary": "Built Game 19: Canyon Crossfire - cover-based shooter, 3 outlaws with staggered reload cycles, peek/fire/retreat mechanic, 36 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 19,
+  "lastGameTitle": "Canyon Crossfire",
+  "lastGameFile": "canyon-crossfire.html",
   "gameQueue": [
     {
-      "status": "planned",
-      "title": "Canyon Crossfire",
-      "num": 19,
-      "concept": "Side-scrolling shootout from behind a boulder: time your peek-and-fire between cover, return fire from 3-5 outlaws with staggered reload patterns. First cover-based shooter in the series.",
-      "raisesBarOn": "First shooter mechanic, first cover system, AI reload-pattern prediction creates genuine tactical tension"
-    },
-    {
-      "status": "planned",
-      "title": "Trail Boss",
       "num": 20,
+      "title": "Trail Boss",
       "concept": "Top-down wagon train escort across 5 biomes: manage water, food, and axle durability. Random events (ambush, storm, river crossing) demand real-time decisions. First management-simulation hybrid.",
-      "raisesBarOn": "First top-down perspective, first multi-resource cross-map management, richest event system in the series"
+      "raisesBarOn": "First top-down perspective, first multi-resource cross-map management, richest event system in the series",
+      "status": "planned"
     },
     {
-      "status": "planned",
-      "title": "Wanted: Dead or Alive",
       "num": 21,
+      "title": "Wanted: Dead or Alive",
       "concept": "First-person bounty hunting: track a fugitive through a procedurally arranged frontier town using clues (witnesses, footprints, noise events). First stealth-investigation hybrid in the series.",
-      "raisesBarOn": "First investigation mechanic, first procedural environment layout, deepest narrative context in series"
+      "raisesBarOn": "First investigation mechanic, first procedural environment layout, deepest narrative context in series",
+      "status": "planned"
+    },
+    {
+      "num": 22,
+      "title": "Gallows Road",
+      "concept": "Sokoban-style jail escape puzzle: push crates to block guards, collect keys to unlock doors, reach the exit. First pure puzzle mechanic in the series with 5 escalating levels.",
+      "raisesBarOn": "First grid-based puzzle, first multi-level game, deepest strategic planning requirement in series",
+      "status": "planned"
     }
   ],
   "runLog": [
@@ -144,6 +141,14 @@
       "result": "success",
       "summary": "Built Game 18: Dead Man's Hand - Texas Hold'em vs 3 AI outlaws with bluffing tells, full hand evaluator, 44 tests pass.",
       "runAt": "2026-05-02T09:00:00Z"
+    },
+    {
+      "action": "new_game",
+      "game": "Canyon Crossfire",
+      "commitHash": "924bb91",
+      "result": "success",
+      "summary": "Built Game 19: Canyon Crossfire - cover-based shooter, 3 outlaws with staggered reload cycles, peek/fire/retreat, 36 tests pass.",
+      "runAt": "2026-05-02T09:18:46Z"
     }
   ]
 }
