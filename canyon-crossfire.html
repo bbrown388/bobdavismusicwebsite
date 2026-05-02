@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Canyon Crossfire — Bob Davis</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0500; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+const GAME_SLUG = 'canyon_crossfire';
+
+const W = 360, H = 640;
+const MAX_LIVES = 3;
+const OUTLAW_HP = 3;
+const PEEK_DUR = 0.55;
+const FIRE_DUR = 0.28;
+
+const OUTLAW_DEFS = [
+  { name: 'Slim',   x: 246, y: 434, scale: 1.00, watchDur: 2.8, reloadDur: 1.8 },
+  { name: 'Hank',   x: 293, y: 410, scale: 0.74, watchDur: 3.4, reloadDur: 2.4 },
+  { name: 'Dagger', x: 331, y: 390, scale: 0.55, watchDur: 4.0, reloadDur: 3.0 },
+];
+
+const PLAYER_X = 88, PLAYER_Y = 462;
+
+let state = 'title';
+let score = 0, lives = 0;
+let peeked = false, peekTimer = 0;
+let hitFlash = 0;
+let outlaws = [];
+let targetIdx = 0;
+let bullets = [];
+let popups = [];
+let bestScore = parseInt(localStorage.getItem(GAME_SLUG + '_best') || '0');
+let fbVisible = false, fbRating = 0, fbSubmitting = false, fbDone = false;
+
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+c.width = W; c.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  c.style.width = s * W + 'px';
+  c.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Audio
+const AC = window.AudioContext || window.webkitAudioContext;
+let ac;
+function getAC() { if (!ac) ac = new AC(); return ac; }
+
+function playGunshot() {
+  try {
+    const a = getAC();
+    const len = Math.floor(a.sampleRate * 0.09);
+    const buf = a.createBuffer(1, len, a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.max(0, 1 - i / len);
+    const src = a.createBufferSource();
+    src.buffer = buf;
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.45, a.currentTime);
+    g.gain.linearRampToValueAtTime(0, a.currentTime + 0.09);
+    src.connect(g); g.connect(a.destination);
+    src.start();
+  } catch (_) {}
+}
+
+function playImpact() {
+  try {
+    const a = getAC();
+    const osc = a.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, a.currentTime);
+    osc.frequency.linearRampToValueAtTime(80, a.currentTime + 0.12);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.35, a.currentTime);
+    g.gain.linearRampToValueAtTime(0, a.currentTime + 0.15);
+    osc.connect(g); g.connect(a.destination);
+    osc.start(); osc.stop(a.currentTime + 0.15);
+  } catch (_) {}
+}
+
+function playPlayerHit() {
+  try {
+    const a = getAC();
+    const osc = a.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(90, a.currentTime);
+    osc.frequency.linearRampToValueAtTime(40, a.currentTime + 0.22);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.7, a.currentTime);
+    g.gain.linearRampToValueAtTime(0, a.currentTime + 0.28);
+    osc.connect(g); g.connect(a.destination);
+    osc.start(); osc.stop(a.currentTime + 0.28);
+  } catch (_) {}
+}
+
+function playElim() {
+  try {
+    const a = getAC();
+    [350, 440, 528].forEach((f, i) => {
+      const osc = a.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = f;
+      const g = a.createGain();
+      const t0 = a.currentTime + i * 0.06;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.28, t0 + 0.06);
+      g.gain.linearRampToValueAtTime(0, t0 + 0.45);
+      osc.connect(g); g.connect(a.destination);
+      osc.start(t0); osc.stop(t0 + 0.5);
+    });
+  } catch (_) {}
+}
+
+function addPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, age: 0 });
+}
+
+function spawnPlayerBullet(target) {
+  bullets.push({
+    type: 'player',
+    sx: PLAYER_X + 32, sy: PLAYER_Y - 22,
+    tx: target.x, ty: target.y - 28,
+    cx: PLAYER_X + 32, cy: PLAYER_Y - 22,
+    age: 0, dur: 0.22,
+  });
+}
+
+function spawnOutlawBullet(o) {
+  bullets.push({
+    type: 'outlaw',
+    sx: o.x - 8, sy: o.y - 28,
+    tx: PLAYER_X + 20, ty: PLAYER_Y - 22,
+    cx: o.x - 8, cy: o.y - 28,
+    age: 0, dur: 0.30,
+  });
+}
+
+function advanceTarget() {
+  for (let i = 1; i <= outlaws.length; i++) {
+    const ni = (targetIdx + i) % outlaws.length;
+    if (outlaws[ni].state !== 'dead') { targetIdx = ni; return; }
+  }
+}
+
+function hitPlayer() {
+  if (state !== 'playing') return;
+  lives--;
+  hitFlash = 0.32;
+  addPopup(PLAYER_X + 20, PLAYER_Y - 70, 'HIT!', '#E74C3C');
+  playPlayerHit();
+  if (lives <= 0) {
+    state = 'gameover';
+    saveBest();
+  }
+}
+
+function fireShot() {
+  if (state !== 'playing') return;
+  peeked = true;
+  peekTimer = PEEK_DUR;
+
+  const target = outlaws[targetIdx];
+  if (!target || target.state === 'dead') return;
+
+  playGunshot();
+  spawnPlayerBullet(target);
+  target.hp--;
+  score += 50;
+
+  if (target.hp <= 0) {
+    target.state = 'dead';
+    score += 100;
+    addPopup(target.x - 22, target.y - 66, 'ELIMINATED!', '#FF9F43');
+    playElim();
+    advanceTarget();
+  } else {
+    addPopup(target.x - 10, target.y - 54, 'HIT', '#FFE066');
+    playImpact();
+  }
+}
+
+function saveBest() {
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem(GAME_SLUG + '_best', bestScore);
+  }
+}
+
+function startGame() {
+  score = 0; lives = MAX_LIVES;
+  peeked = false; peekTimer = 0; hitFlash = 0;
+  bullets = []; popups = [];
+  targetIdx = 0;
+  outlaws = OUTLAW_DEFS.map((def, i) => ({
+    name: def.name,
+    x: def.x, y: def.y, scale: def.scale,
+    watchDur: def.watchDur, reloadDur: def.reloadDur,
+    hp: OUTLAW_HP,
+    state: 'watching',
+    watchTimer: def.watchDur * (0.25 + 0.35 * i),
+    reloadTimer: 0,
+    fireTimer: 0,
+  }));
+  outlaws[2].state = 'reloading';
+  outlaws[2].reloadTimer = outlaws[2].reloadDur * 0.55;
+  state = 'playing';
+}
+
+let lastT = 0;
+function update(dt) {
+  if (state !== 'playing') return;
+
+  if (peeked) {
+    peekTimer -= dt;
+    if (peekTimer <= 0) peeked = false;
+  }
+
+  if (hitFlash > 0) hitFlash -= dt;
+
+  for (const o of outlaws) {
+    if (o.state === 'dead') continue;
+    if (o.state === 'watching') {
+      o.watchTimer -= dt;
+      if (o.watchTimer <= 0) {
+        o.state = 'firing';
+        o.fireTimer = FIRE_DUR;
+        spawnOutlawBullet(o);
+        if (peeked) hitPlayer();
+      }
+    } else if (o.state === 'firing') {
+      o.fireTimer -= dt;
+      if (o.fireTimer <= 0) {
+        o.state = 'reloading';
+        o.reloadTimer = o.reloadDur;
+      }
+    } else if (o.state === 'reloading') {
+      o.reloadTimer -= dt;
+      if (o.reloadTimer <= 0) {
+        o.state = 'watching';
+        o.watchTimer = o.watchDur + (Math.random() * 0.4 - 0.2);
+      }
+    }
+  }
+
+  for (const b of bullets) {
+    b.age += dt;
+    const t = Math.min(b.age / b.dur, 1);
+    b.cx = b.sx + (b.tx - b.sx) * t;
+    b.cy = b.sy + (b.ty - b.sy) * t;
+  }
+  bullets = bullets.filter(b => b.age < b.dur + 0.08);
+
+  for (const p of popups) p.age += dt;
+  popups = popups.filter(p => p.age < 0.85);
+
+  if (outlaws.length > 0 && outlaws.every(o => o.state === 'dead')) {
+    state = 'cleared';
+    saveBest();
+  }
+}
+
+function roundRect(cx, x, y, w, h, r) {
+  cx.beginPath();
+  cx.moveTo(x + r, y);
+  cx.lineTo(x + w - r, y);
+  cx.quadraticCurveTo(x + w, y, x + w, y + r);
+  cx.lineTo(x + w, y + h - r);
+  cx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  cx.lineTo(x + r, y + h);
+  cx.quadraticCurveTo(x, y + h, x, y + h - r);
+  cx.lineTo(x, y + r);
+  cx.quadraticCurveTo(x, y, x + r, y);
+  cx.closePath();
+}
+
+function drawBackground() {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.42);
+  sky.addColorStop(0, '#08020a');
+  sky.addColorStop(1, '#301408');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H * 0.42);
+
+  const gnd = ctx.createLinearGradient(0, H * 0.42, 0, H);
+  gnd.addColorStop(0, '#3a1e0a');
+  gnd.addColorStop(1, '#180900');
+  ctx.fillStyle = gnd;
+  ctx.fillRect(0, H * 0.42, W, H * 0.58);
+
+  // Right canyon wall
+  ctx.fillStyle = '#28130a';
+  ctx.beginPath();
+  ctx.moveTo(W * 0.52, 0);
+  ctx.lineTo(W, 0);
+  ctx.lineTo(W, H * 0.58);
+  ctx.lineTo(W * 0.68, H * 0.54);
+  ctx.lineTo(W * 0.52, H * 0.44);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#3a1e10';
+  ctx.beginPath();
+  ctx.moveTo(W * 0.58, 0);
+  ctx.lineTo(W * 0.72, 0);
+  ctx.lineTo(W * 0.66, H * 0.32);
+  ctx.lineTo(W * 0.54, H * 0.28);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ground dust line
+  ctx.strokeStyle = '#5a3018';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.52);
+  ctx.lineTo(W, H * 0.52);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawBoulder() {
+  ctx.save();
+  const bgrad = ctx.createRadialGradient(78, H * 0.62 + 30, 8, 78, H * 0.62, 150);
+  bgrad.addColorStop(0, '#221006');
+  bgrad.addColorStop(0.55, '#140804');
+  bgrad.addColorStop(1, '#080402');
+  ctx.fillStyle = bgrad;
+  ctx.beginPath();
+  ctx.ellipse(75, H * 0.68, 125, 110, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#3a1c0a';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.ellipse(75, H * 0.68, 125, 110, -0.1, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlayer() {
+  ctx.save();
+  const px = PLAYER_X, py = PLAYER_Y;
+  const lean = peeked ? 22 : 0;
+  ctx.fillStyle = '#1a0520';
+
+  // Torso
+  ctx.beginPath();
+  ctx.ellipse(px + lean * 0.35, py - 32, 13, 20, -0.18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Head
+  ctx.beginPath();
+  ctx.arc(px + lean * 0.42, py - 56, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hat brim + crown
+  ctx.fillRect(px + lean * 0.42 - 15, py - 68, 30, 6);
+  ctx.fillRect(px + lean * 0.42 - 10, py - 86, 20, 20);
+
+  if (peeked) {
+    ctx.beginPath();
+    ctx.moveTo(px + 14, py - 36);
+    ctx.lineTo(px + 62, py - 32);
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = '#1a0520';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    ctx.fillStyle = '#22083a';
+    ctx.fillRect(px + 56, py - 35, 22, 6);
+
+    if (peekTimer > PEEK_DUR - 0.09) {
+      ctx.fillStyle = '#FFE066';
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(px + 80, py - 32, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawOutlaw(o, isTarget) {
+  if (o.state === 'dead') {
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#1a0520';
+    ctx.beginPath();
+    ctx.ellipse(o.x, o.y - 10, 14 * o.scale, 6 * o.scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.scale(o.scale, o.scale);
+
+  const flicker = o.state === 'firing' ? (Math.floor(Date.now() / 80) % 2 === 0 ? 0.55 : 0.9) : 1;
+  ctx.globalAlpha = flicker;
+  ctx.fillStyle = '#1a0520';
+
+  // Body
+  ctx.beginPath();
+  ctx.ellipse(0, -28, 13, 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Head
+  ctx.beginPath();
+  ctx.arc(0, -55, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hat brim + crown
+  ctx.fillRect(-15, -68, 30, 6);
+  ctx.fillRect(-10, -85, 20, 20);
+
+  // Gun arm
+  ctx.beginPath();
+  ctx.moveTo(-12, -36);
+  ctx.lineTo(-46, -32);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = '#1a0520';
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.fillStyle = '#22083a';
+  ctx.fillRect(-66, -35, 22, 5);
+
+  if (o.state === 'firing') {
+    ctx.fillStyle = '#FFE066';
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.arc(-68, -33, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // Indicators drawn in canvas space (not scaled)
+  ctx.save();
+  const iy = o.y - 96 * o.scale;
+
+  // Outlaw name
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = `${Math.round(10 * o.scale)}px Georgia, serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(o.name, o.x, o.y - 108 * o.scale);
+
+  // HP dots
+  for (let i = 0; i < OUTLAW_HP; i++) {
+    ctx.fillStyle = i < o.hp ? '#E74C3C' : '#2a1212';
+    ctx.beginPath();
+    const dotX = o.x + (-OUTLAW_HP + 1 + i * 2) * 7 * o.scale;
+    ctx.arc(dotX, iy, 4.5 * o.scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Target ring
+  if (isTarget) {
+    ctx.strokeStyle = '#FFE066';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y - 54 * o.scale, 19 * o.scale, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // State bar
+  const bw = 52 * o.scale, bh = 7 * o.scale;
+  const bx = o.x - bw / 2, by = o.y + 10 * o.scale;
+
+  ctx.fillStyle = '#100808';
+  roundRect(ctx, bx - 1, by - 1, bw + 2, bh + 2, 3);
+  ctx.fill();
+
+  if (o.state === 'reloading') {
+    const pct = 1 - o.reloadTimer / o.reloadDur;
+    ctx.fillStyle = '#27AE60';
+    ctx.fillRect(bx, by, bw * pct, bh);
+    ctx.fillStyle = '#2ECC71';
+    ctx.font = `bold ${Math.round(9 * o.scale)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('RELOAD', o.x, by + bh + 11 * o.scale);
+  } else if (o.state === 'watching') {
+    const pct = o.watchTimer / o.watchDur;
+    ctx.fillStyle = pct > 0.35 ? '#C0392B' : '#E74C3C';
+    ctx.fillRect(bx, by, bw * pct, bh);
+    if (pct < 0.22 && Math.floor(Date.now() / 180) % 2 === 0) {
+      ctx.fillStyle = 'rgba(231,76,60,0.35)';
+      ctx.fillRect(bx - 4, by - 4, bw + 8, bh + 8);
+    }
+  } else if (o.state === 'firing') {
+    ctx.fillStyle = '#FF9F43';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = `bold ${Math.round(9 * o.scale)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('FIRE!', o.x, by + bh + 11 * o.scale);
+  }
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 36);
+
+  for (let i = 0; i < MAX_LIVES; i++) {
+    ctx.fillStyle = i < lives ? '#E74C3C' : '#2a1212';
+    ctx.font = '20px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('♥', 12 + i * 28, 36);
+  }
+
+  ctx.fillStyle = peeked ? '#E74C3C' : '#2ECC71';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(peeked ? 'EXPOSED' : 'COVERED', W - 10, 36);
+
+  ctx.restore();
+}
+
+function drawBullets() {
+  ctx.save();
+  for (const b of bullets) {
+    const alpha = Math.max(0, 1 - b.age / b.dur);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = b.type === 'player' ? '#FFE066' : '#E74C3C';
+    ctx.beginPath();
+    ctx.arc(b.cx, b.cy, b.type === 'player' ? 4 : 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  for (const p of popups) {
+    const alpha = Math.max(0, 1 - p.age / 0.85);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y - p.age * 42);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBackground();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 38px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CANYON', W / 2, 196);
+  ctx.fillText('CROSSFIRE', W / 2, 242);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Game 19', W / 2, 272);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#FFD700';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore, W / 2, 302);
+  }
+
+  const pulse = 0.68 + 0.32 * Math.sin(Date.now() / 420);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('Tap to Play', W / 2, 376);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = '#805830';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('Tap to fire from cover', W / 2, 434);
+  ctx.fillText('Watch the RELOAD bars — strike fast', W / 2, 456);
+  ctx.fillText('Three outlaws. Three lives. No mercy.', W / 2, 478);
+
+  ctx.restore();
+}
+
+function drawEndScreen() {
+  ctx.save();
+  drawBackground();
+  drawBoulder();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.78)';
+  ctx.fillRect(0, 0, W, H);
+
+  const win = state === 'cleared';
+  ctx.fillStyle = win ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 40px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(win ? 'CLEARED!' : 'GAME OVER', W / 2, 218);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.fillText(score, W / 2, 278);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Score', W / 2, 302);
+
+  if (score > 0 && score >= bestScore) {
+    const pulse = 0.68 + 0.32 * Math.sin(Date.now() / 310);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 338);
+    ctx.globalAlpha = 1;
+  } else if (bestScore > 0) {
+    ctx.fillStyle = '#805830';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore, W / 2, 338);
+  }
+
+  // Play Again
+  ctx.fillStyle = '#FFE066';
+  roundRect(ctx, W / 2 - 92, 376, 184, 50, 10);
+  ctx.fill();
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('Play Again', W / 2, 408);
+
+  // Share
+  ctx.fillStyle = '#C8A04A';
+  roundRect(ctx, W / 2 - 62, 442, 124, 40, 8);
+  ctx.fill();
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.fillText('Share', W / 2, 467);
+
+  // Feedback tap zone hint
+  ctx.fillStyle = '#4a3010';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('Tap top of screen to leave feedback', W / 2, 516);
+
+  ctx.restore();
+}
+
+function drawFeedback() {
+  if (!fbVisible) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.88)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Rate This Game', W / 2, 185);
+
+  for (let i = 1; i <= 5; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFD700' : '#3a2810';
+    ctx.font = '38px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('★', 36 + i * 58, 248);
+  }
+
+  if (fbDone) {
+    ctx.fillStyle = '#2ECC71';
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.fillText('Thanks for the feedback!', W / 2, 316);
+  } else {
+    const canSubmit = fbRating > 0 && !fbSubmitting;
+    ctx.fillStyle = canSubmit ? '#FFD700' : '#3a2208';
+    roundRect(ctx, W / 2 - 82, 298, 164, 46, 10);
+    ctx.fill();
+    ctx.fillStyle = canSubmit ? '#050208' : '#6a4820';
+    ctx.font = 'bold 17px Georgia, serif';
+    ctx.fillText(fbSubmitting ? 'Sending...' : 'Submit', W / 2, 328);
+  }
+
+  ctx.fillStyle = '#888';
+  ctx.font = '22px sans-serif';
+  ctx.fillText('✕', W - 34, 40);
+
+  ctx.restore();
+}
+
+function draw(ts) {
+  ctx.save();
+  ctx.fillStyle = '#080302';
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === 'title') {
+    drawTitle();
+  } else if (state === 'playing') {
+    drawBackground();
+    drawBoulder();
+    for (let i = outlaws.length - 1; i >= 0; i--) {
+      drawOutlaw(outlaws[i], i === targetIdx);
+    }
+    drawPlayer();
+    drawBullets();
+    drawPopups();
+    drawHUD();
+    if (hitFlash > 0) {
+      ctx.fillStyle = `rgba(231,76,60,${Math.min(hitFlash * 2.2, 0.7)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  } else {
+    drawEndScreen();
+  }
+
+  drawFeedback();
+  ctx.restore();
+}
+
+function getPos(e) {
+  const r = c.getBoundingClientRect();
+  const sc = W / r.width;
+  return { x: (e.clientX - r.left) * sc, y: (e.clientY - r.top) * sc };
+}
+
+function handleTap(e) {
+  const { x, y } = getPos(e);
+
+  if (fbVisible) {
+    if (x > W - 56 && y < 56) { fbVisible = false; return; }
+    if (y > 216 && y < 264) {
+      for (let i = 1; i <= 5; i++) {
+        if (Math.abs(x - (36 + i * 58)) < 26) { fbRating = i; return; }
+      }
+    }
+    if (!fbDone && fbRating > 0 && x > W / 2 - 82 && x < W / 2 + 82 && y > 298 && y < 344) {
+      fbSubmitting = true;
+      fetch(FEEDBACK_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ game: 'Canyon Crossfire', rating: fbRating, score }),
+      }).finally(() => { fbSubmitting = false; fbDone = true; });
+    }
+    return;
+  }
+
+  if (state === 'title') { startGame(); return; }
+
+  if (state === 'cleared' || state === 'gameover') {
+    if (y < 90) { fbVisible = true; fbRating = 0; fbDone = false; return; }
+    if (x > W / 2 - 92 && x < W / 2 + 92 && y > 376 && y < 426) { startGame(); return; }
+    if (x > W / 2 - 62 && x < W / 2 + 62 && y > 442 && y < 482) {
+      try { navigator.share({ title: 'Canyon Crossfire', text: `I scored ${score} in Canyon Crossfire!`, url: location.href }); } catch (_) {}
+      return;
+    }
+    startGame();
+    return;
+  }
+
+  if (state === 'playing') fireShot();
+}
+
+c.addEventListener('pointerdown', handleTap);
+
+window.__test = {
+  getState: () => state,
+  startGame: () => startGame(),
+  getScore: () => score,
+  getLives: () => lives,
+  getOutlaws: () => outlaws.map(o => ({
+    name: o.name, hp: o.hp, state: o.state,
+    watchTimer: o.watchTimer, reloadTimer: o.reloadTimer, fireTimer: o.fireTimer,
+    watchDur: o.watchDur, reloadDur: o.reloadDur,
+  })),
+  getTargetIdx: () => targetIdx,
+  isPeeked: () => peeked,
+  getBullets: () => bullets.map(b => ({ type: b.type, age: b.age })),
+  getPopups: () => popups.map(p => ({ text: p.text, color: p.color })),
+  setOutlawState: (i, st, timer) => {
+    if (!outlaws[i]) return;
+    outlaws[i].state = st;
+    if (st === 'watching' && timer !== undefined) outlaws[i].watchTimer = timer;
+    if (st === 'reloading' && timer !== undefined) outlaws[i].reloadTimer = timer;
+    if (st === 'firing' && timer !== undefined) outlaws[i].fireTimer = timer;
+  },
+  setOutlawHP: (i, hp) => { if (outlaws[i]) outlaws[i].hp = hp; },
+  setTargetIdx: (i) => { targetIdx = i; },
+  fireShot: () => fireShot(),
+  hitPlayer: () => hitPlayer(),
+  tickTime: (dt) => update(dt),
+  PEEK_DUR,
+  FIRE_DUR,
+  MAX_LIVES,
+  OUTLAW_HP,
+};
+
+requestAnimationFrame(ts => { lastT = ts; requestAnimationFrame(loop); });
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastT) / 1000, 0.1);
+    lastT = ts;
+    update(dt);
+    draw(ts);
+  } catch (err) {
+    console.error('[loop error]', err);
+  }
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
