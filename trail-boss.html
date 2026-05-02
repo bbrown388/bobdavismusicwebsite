@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Trail Boss — Bob Davis</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0500; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+const GAME_SLUG = 'trail_boss';
+
+const W = 360, H = 640;
+
+const BIOMES = [
+  { name: 'Plains',    ground: '#C8A04A', trail: '#8B6914', waterMult: 1.0, foodMult: 1.0, axleMult: 1.0 },
+  { name: 'Desert',    ground: '#C86428', trail: '#8B4500', waterMult: 2.0, foodMult: 1.2, axleMult: 1.0 },
+  { name: 'Mountains', ground: '#5a5a6a', trail: '#4a4a55', waterMult: 1.2, foodMult: 2.0, axleMult: 1.6 },
+  { name: 'Forest',    ground: '#2d5a27', trail: '#5a3a00', waterMult: 0.8, foodMult: 0.8, axleMult: 1.0 },
+  { name: 'River',     ground: '#1a3a5a', trail: '#5a3a00', waterMult: 0.6, foodMult: 1.0, axleMult: 2.0 },
+];
+
+const BIOME_DUR     = 1200;
+const PROGRESS_RATE = 55;
+const DRAIN = { water: 0.007, food: 0.0055, axle: 0.004 };
+
+const EVT_AMBUSH = 'ambush';
+const EVT_SUPPLY = 'supply';
+const EVT_RIVER  = 'river';
+
+let state = 'title';
+let score = 0, bonus = 0;
+let progress = 0;
+let biomeIdx = 0;
+let resources = { water: 1, food: 1, axle: 1 };
+let scrollY = 0;
+let activeEvent = null;
+let nextEventIn = 8;
+let popups = [];
+let hitFlash = 0;
+let wagonBobble = 0;
+let deathResource = '';
+let bestScore = parseInt(localStorage.getItem(GAME_SLUG + '_best') || '0');
+let fbVisible = false, fbRating = 0, fbSubmitting = false, fbDone = false;
+
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+c.width = W; c.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  c.style.width  = s * W + 'px';
+  c.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+const AC = window.AudioContext || window.webkitAudioContext;
+let ac;
+function getAC() { if (!ac) ac = new AC(); return ac; }
+
+const CHORD_NOTES = [220, 261.63, 293.66, 329.63, 392.00];
+
+function playNote(freq, dur, vol) {
+  try {
+    const a = getAC();
+    const osc = a.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const g = a.createGain();
+    g.gain.setValueAtTime(vol, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+    osc.connect(g); g.connect(a.destination);
+    osc.start(); osc.stop(a.currentTime + dur);
+  } catch (_) {}
+}
+
+function playChord() {
+  [CHORD_NOTES[0], CHORD_NOTES[2], CHORD_NOTES[4]].forEach((f, i) =>
+    setTimeout(() => playNote(f, 0.5, 0.14), i * 40));
+}
+
+function playSuccess() {
+  [CHORD_NOTES[2], CHORD_NOTES[4], CHORD_NOTES[2] * 2].forEach((f, i) =>
+    setTimeout(() => playNote(f, 0.4, 0.2), i * 70));
+}
+
+function playDanger() {
+  try {
+    const a = getAC();
+    const osc = a.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(180, a.currentTime);
+    osc.frequency.linearRampToValueAtTime(80, a.currentTime + 0.35);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.28, a.currentTime);
+    g.gain.linearRampToValueAtTime(0, a.currentTime + 0.35);
+    osc.connect(g); g.connect(a.destination);
+    osc.start(); osc.stop(a.currentTime + 0.35);
+  } catch (_) {}
+}
+
+function playCreak() {
+  try {
+    const a = getAC();
+    const osc = a.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(340, a.currentTime);
+    osc.frequency.linearRampToValueAtTime(140, a.currentTime + 0.22);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.18, a.currentTime);
+    g.gain.linearRampToValueAtTime(0, a.currentTime + 0.22);
+    osc.connect(g); g.connect(a.destination);
+    osc.start(); osc.stop(a.currentTime + 0.22);
+  } catch (_) {}
+}
+
+function addPopup(txt, color, x, y) {
+  popups.push({ txt, color, x, y, life: 1 });
+}
+
+function startGame() {
+  state = 'playing';
+  score = 0; bonus = 0;
+  progress = 0;
+  biomeIdx = 0;
+  resources = { water: 1, food: 1, axle: 1 };
+  scrollY = 0;
+  activeEvent = null;
+  nextEventIn = 8;
+  popups = [];
+  hitFlash = 0;
+  wagonBobble = 0;
+  deathResource = '';
+  fbVisible = false; fbRating = 0; fbDone = false; fbSubmitting = false;
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────
+
+function roundRect(cx, x, y, w, h, r) {
+  if (w <= 0 || h <= 0) return;
+  const rr = Math.min(r, w / 2, h / 2);
+  cx.beginPath();
+  cx.moveTo(x + rr, y);
+  cx.lineTo(x + w - rr, y);
+  cx.quadraticCurveTo(x + w, y, x + w, y + rr);
+  cx.lineTo(x + w, y + h - rr);
+  cx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+  cx.lineTo(x + rr, y + h);
+  cx.quadraticCurveTo(x, y + h, x, y + h - rr);
+  cx.lineTo(x, y + rr);
+  cx.quadraticCurveTo(x, y, x + rr, y);
+  cx.closePath();
+}
+
+function pseudoRand(seed) {
+  const x = Math.sin(seed + 1) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// ── DRAWING ───────────────────────────────────────────────────────
+
+const WAGON_X  = W / 2;
+const WAGON_Y  = 400;
+const TRAIL_W  = 72;
+
+function drawBackground() {
+  ctx.save();
+  const bm = BIOMES[biomeIdx];
+
+  ctx.fillStyle = bm.ground;
+  ctx.fillRect(0, 0, W, H);
+
+  drawTerrain(bm);
+
+  const tg = ctx.createLinearGradient(W/2 - TRAIL_W/2, 0, W/2 + TRAIL_W/2, 0);
+  tg.addColorStop(0,    bm.trail + '44');
+  tg.addColorStop(0.25, bm.trail);
+  tg.addColorStop(0.75, bm.trail);
+  tg.addColorStop(1,    bm.trail + '44');
+  ctx.fillStyle = tg;
+  ctx.fillRect(W/2 - TRAIL_W/2, 0, TRAIL_W, H);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.lineWidth = 2;
+  const r1 = W/2 - 14, r2 = W/2 + 14;
+  const seg = 55, off = scrollY % seg;
+  for (let y = -seg + off; y < H + seg; y += seg) {
+    ctx.beginPath(); ctx.moveTo(r1, y); ctx.lineTo(r1, y + seg * 0.55); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(r2, y); ctx.lineTo(r2, y + seg * 0.55); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTerrain(bm) {
+  ctx.save();
+  const rowSp = 76;
+  const off   = (scrollY * 0.84) % rowSp;
+  const rows  = Math.ceil(H / rowSp) + 2;
+  for (let row = -1; row < rows; row++) {
+    const y = row * rowSp - off;
+    drawDecor(bm, 38,      y,      row * 7 + 1);
+    drawDecor(bm, 88,      y + 40, row * 7 + 2);
+    drawDecor(bm, W - 38,  y,      row * 7 + 3);
+    drawDecor(bm, W - 88,  y + 40, row * 7 + 4);
+  }
+  ctx.restore();
+}
+
+function drawDecor(bm, x, y, seed) {
+  const r = pseudoRand(seed);
+  ctx.save();
+  ctx.translate(x, y);
+
+  if (bm.name === 'Plains') {
+    ctx.strokeStyle = '#7a5f28';
+    ctx.lineWidth = 1.5;
+    const n = 3 + Math.floor(r * 3);
+    for (let i = 0; i < n; i++) {
+      const ox = (pseudoRand(seed * 11 + i) - 0.5) * 16;
+      const h1 = 8 + pseudoRand(seed * 3 + i) * 9;
+      ctx.beginPath(); ctx.moveTo(ox, 4); ctx.lineTo(ox - 3, 4 - h1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ox, 4); ctx.lineTo(ox + 3, 4 - h1); ctx.stroke();
+    }
+  } else if (bm.name === 'Desert') {
+    ctx.fillStyle = '#3a6b2a';
+    ctx.fillRect(-3, -22, 6, 26);
+    if (r > 0.45) {
+      ctx.fillRect(-10, -15, 7, 3); ctx.fillRect(-12, -20, 3, 8);
+    } else {
+      ctx.fillRect(3, -15, 7, 3); ctx.fillRect(10, -20, 3, 8);
+    }
+  } else if (bm.name === 'Mountains') {
+    const rs = 8 + r * 14;
+    ctx.fillStyle = '#3a3a48';
+    ctx.beginPath(); ctx.ellipse(0, 0, rs, rs * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5a5a70';
+    ctx.beginPath(); ctx.ellipse(-rs * 0.25, -rs * 0.12, rs * 0.45, rs * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (bm.name === 'Forest') {
+    const ts = 10 + r * 12;
+    ctx.fillStyle = '#1a3a15';
+    ctx.beginPath(); ctx.arc(0, -ts, ts * 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0f260f';
+    ctx.fillRect(-2.5, 0, 5, ts * 0.65);
+  } else {
+    if (r > 0.5) {
+      ctx.strokeStyle = '#2a5a8a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(5, -9, 0, -19); ctx.stroke();
+      ctx.fillStyle = '#1a4a7a';
+      ctx.beginPath(); ctx.arc(0, -19, 4, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.strokeStyle = '#3a6a9a'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let wx = -8; wx <= 8; wx += 5) {
+        ctx.moveTo(wx, -4); ctx.quadraticCurveTo(wx + 2.5, -9, wx + 5, -4);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawWagon() {
+  ctx.save();
+  ctx.translate(WAGON_X, WAGON_Y + Math.sin(wagonBobble * 7) * 2);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(0, 19, 28, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#2a1500';
+  [-11, 11].forEach(hx => {
+    ctx.beginPath(); ctx.ellipse(hx, -28, 5.5, 11, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.translate(hx + hx * 0.3, -40);
+    ctx.rotate(hx < 0 ? -0.25 : 0.25);
+    ctx.beginPath(); ctx.ellipse(0, 0, 3, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  });
+
+  ctx.fillStyle = '#3a1f05';
+  ctx.fillRect(-22, -16, 44, 28);
+
+  ctx.fillStyle = '#B89A44';
+  ctx.fillRect(-19, -24, 38, 10);
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath(); ctx.ellipse(0, -24, 20, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#B89A44';
+  ctx.beginPath(); ctx.ellipse(0, -32, 20, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(-20, -32, 40, 9);
+
+  [[-19, -7], [19, -7], [-19, 8], [19, 8]].forEach(([wx, wy]) => {
+    ctx.fillStyle = '#5a3a00';
+    ctx.beginPath(); ctx.arc(wx, wy, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2a1500'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(wx, wy, 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 2) {
+      ctx.beginPath();
+      ctx.moveTo(wx, wy);
+      ctx.lineTo(wx + Math.cos(a) * 6.5, wy + Math.sin(a) * 6.5);
+      ctx.stroke();
+    }
+  });
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+
+  ctx.fillStyle = 'rgba(5, 2, 8, 0.84)';
+  roundRect(ctx, 8, 8, W - 16, 102, 8); ctx.fill();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(String(score + bonus), W / 2, 31);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px Georgia, serif';
+  ctx.fillText(BIOMES[biomeIdx].name + '  —  ' + (biomeIdx + 1) + ' of 5', W / 2, 47);
+
+  const barW = 88, barH = 13, barY = 57;
+  [
+    { x: 18,             key: 'water', label: 'WATER', col: '#4a90d9' },
+    { x: W/2 - barW/2,   key: 'food',  label: 'FOOD',  col: '#F4C842' },
+    { x: W - 18 - barW,  key: 'axle',  label: 'AXLE',  col: '#4bc94b' },
+  ].forEach(({ x, key, label, col }) => {
+    const val = resources[key];
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    roundRect(ctx, x, barY, barW, barH, 4); ctx.fill();
+    if (val > 0) {
+      ctx.fillStyle = val < 0.25 ? '#E74C3C' : col;
+      roundRect(ctx, x, barY, barW * val, barH, 4); ctx.fill();
+    }
+    ctx.fillStyle = val < 0.25 ? '#E74C3C' : '#aaaaaa';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x + barW / 2, barY + barH + 10);
+  });
+
+  const frac = Math.min(progress / (BIOME_DUR * BIOMES.length), 1);
+  const pbY  = 90;
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  roundRect(ctx, 18, pbY, W - 36, 6, 3); ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  roundRect(ctx, 18, pbY, (W - 36) * frac, 6, 3); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawEvent() {
+  if (!activeEvent) return;
+  const ev = activeEvent;
+  ctx.save();
+
+  ctx.fillStyle = 'rgba(5, 2, 8, 0.90)';
+  roundRect(ctx, 14, H - 228, W - 28, 208, 12); ctx.fill();
+
+  const tf = Math.max(0, ev.timer / ev.maxTimer);
+  ctx.fillStyle = tf > 0.4 ? '#FFD700' : '#E74C3C';
+  roundRect(ctx, 14, H - 237, (W - 28) * tf, 7, 4); ctx.fill();
+
+  if (ev.type === EVT_AMBUSH) {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 24px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('AMBUSH!', W / 2, H - 198);
+
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('TAP RAPIDLY to drive them off!', W / 2, H - 174);
+
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillText(ev.tapCount + ' / 7', W / 2, H - 132);
+
+    drawBandit(-1, ev.timer);
+    drawBandit(1, ev.timer);
+
+  } else if (ev.type === EVT_SUPPLY) {
+    ctx.fillStyle = '#4bc94b';
+    ctx.font = 'bold 24px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('SUPPLY CACHE!', W / 2, H - 198);
+
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('TAP to claim supplies', W / 2, H - 174);
+
+    drawCrate(W / 2, H - 138);
+
+  } else {
+    ctx.fillStyle = '#4a90d9';
+    ctx.font = 'bold 22px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('RIVER CROSSING', W / 2, H - 198);
+
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '12px Georgia, serif';
+    ctx.fillText('Choose your path:', W / 2, H - 176);
+
+    const btnY = H - 162;
+    ctx.fillStyle = 'rgba(70,70,18,0.92)';
+    roundRect(ctx, 22, btnY, 142, 52, 8); ctx.fill();
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('FORD', 93, btnY + 22);
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('Faster, risk axle', 93, btnY + 38);
+
+    ctx.fillStyle = 'rgba(70,70,18,0.92)';
+    roundRect(ctx, W - 164, btnY, 142, 52, 8); ctx.fill();
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillText('BRIDGE', W - 93, btnY + 22);
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('Safer, costs food', W - 93, btnY + 38);
+  }
+
+  ctx.restore();
+}
+
+function drawBandit(side, timer) {
+  ctx.save();
+  const bx = side < 0
+    ? 42 + Math.sin(timer * 3.5) * 6
+    : W - 42 + Math.sin(timer * 3.5) * 6;
+  ctx.translate(bx, H - 148);
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.ellipse(0, 0, 12, 18, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(-10, -26, 20, 6);
+  ctx.fillRect(-6, -37, 12, 13);
+  ctx.fillStyle = '#3a3a3a';
+  ctx.fillRect(side < 0 ? 10 : -24, -5, 16, 4);
+  ctx.restore();
+}
+
+function drawCrate(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#7a5a0a';
+  roundRect(ctx, -20, -20, 40, 40, 4); ctx.fill();
+  ctx.strokeStyle = '#5a3a00'; ctx.lineWidth = 2;
+  roundRect(ctx, -20, -20, 40, 40, 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(20, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(0, 20); ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('★', 0, 0);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  popups.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 17px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.txt, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHitFlash() {
+  if (hitFlash <= 0) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(231,76,60,' + Math.min(hitFlash * 0.5, 0.5) + ')';
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#050208');
+  g.addColorStop(0.55, '#1a0d35');
+  g.addColorStop(1, '#2a1500');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  for (let i = 0; i < 45; i++) {
+    ctx.fillStyle = 'rgba(255,240,200,' + (0.3 + pseudoRand(i * 7) * 0.6) + ')';
+    ctx.beginPath();
+    ctx.arc(pseudoRand(i*3)*W, pseudoRand(i*3+1)*H*0.55, pseudoRand(i*3+2)*2+0.5, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#7a5514';
+  ctx.fillRect(W/2 - 34, H * 0.35, 68, H * 0.65);
+
+  ctx.save();
+  ctx.translate(W/2, H * 0.57);
+  ctx.fillStyle = '#1a0d35';
+  ctx.fillRect(-24, -14, 48, 28);
+  ctx.fillStyle = '#B89A44';
+  ctx.fillRect(-20, -23, 40, 11);
+  ctx.beginPath(); ctx.ellipse(0, -23, 21, 5, 0, 0, Math.PI*2); ctx.fill();
+  [[-19,-7],[19,-7],[-19,8],[19,8]].forEach(([wx,wy]) => {
+    ctx.fillStyle = '#1a0d35';
+    ctx.beginPath(); ctx.arc(wx, wy, 7, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 50px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 18;
+  ctx.fillText('TRAIL BOSS', W/2, H * 0.19);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Guide the wagon across 5 biomes', W/2, H * 0.28);
+  ctx.fillText('Keep water, food & axle from running out', W/2, H * 0.32);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Best: ' + bestScore, W/2, H * 0.37);
+  }
+
+  ctx.fillStyle = '#FFD700';
+  roundRect(ctx, W/2 - 82, H * 0.82, 164, 50, 10); ctx.fill();
+  ctx.fillStyle = '#0a0500';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText('PLAY', W/2, H * 0.82 + 33);
+
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  const won = state === 'win';
+  ctx.fillStyle = 'rgba(5,2,8,0.86)'; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = won ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 34px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(won ? 'MADE IT!' : 'TRAIL GONE COLD', W/2, H * 0.24);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  if (won) {
+    ctx.fillText('All 5 biomes crossed!', W/2, H * 0.32);
+  } else {
+    ctx.fillText(deathResource + ' ran out in ' + BIOMES[biomeIdx].name, W/2, H * 0.32);
+    ctx.fillText('Reached biome ' + (biomeIdx + 1) + ' of 5', W/2, H * 0.37);
+  }
+
+  const fs = score + bonus;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px sans-serif';
+  ctx.fillText(String(fs), W/2, H * 0.48);
+
+  if (fs > 0 && fs > bestScore) {
+    bestScore = fs;
+    localStorage.setItem(GAME_SLUG + '_best', bestScore);
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W/2, H * 0.55);
+  } else if (bestScore > 0) {
+    ctx.fillStyle = '#6a5a2a';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Best: ' + bestScore, W/2, H * 0.55);
+  }
+
+  ctx.fillStyle = '#FFD700';
+  roundRect(ctx, W/2 - 90, H * 0.68, 180, 50, 10); ctx.fill();
+  ctx.fillStyle = '#0a0500';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('RIDE AGAIN', W/2, H * 0.68 + 33);
+
+  ctx.restore();
+}
+
+function drawFeedback() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.94)'; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 24px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('How was the ride?', W/2, H * 0.3);
+
+  const stY = H * 0.44, stSz = 30;
+  const stX = W/2 - 2.5 * stSz;
+  for (let i = 1; i <= 5; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFD700' : '#3a3a2a';
+    ctx.font = stSz + 'px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('★', stX + (i-1)*stSz, stY + stSz/2);
+  }
+
+  if (fbDone) {
+    ctx.fillStyle = '#4bc94b';
+    ctx.font = '18px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Much obliged!', W/2, H * 0.62);
+  } else {
+    ctx.fillStyle = '#FFD700';
+    roundRect(ctx, W/2-80, H*0.58, 160, 50, 10); ctx.fill();
+    ctx.fillStyle = '#0a0500';
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(fbSubmitting ? '...' : 'SUBMIT', W/2, H*0.58+33);
+  }
+  ctx.fillStyle = '#6a5a2a';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('tap to close', W/2, H * 0.76);
+  ctx.restore();
+}
+
+// ── UPDATE ────────────────────────────────────────────────────────
+
+function spawnEvent() {
+  const roll = Math.random();
+  let type;
+  if (roll < 0.38) type = EVT_AMBUSH;
+  else if (roll < 0.62) type = EVT_SUPPLY;
+  else type = EVT_RIVER;
+
+  const dur = type === EVT_AMBUSH ? 3.5 : (type === EVT_SUPPLY ? 3.0 : 4.0);
+  activeEvent = { type, timer: dur, maxTimer: dur, tapCount: 0, resolved: false };
+
+  if (type === EVT_AMBUSH) playDanger();
+  else if (type === EVT_SUPPLY) playChord();
+  else playNote(CHORD_NOTES[1], 0.4, 0.18);
+}
+
+function resolveEvent(success, choice) {
+  if (!activeEvent || activeEvent.resolved) return;
+  activeEvent.resolved = true;
+
+  if (activeEvent.type === EVT_AMBUSH) {
+    if (success) {
+      addPopup('DRIVEN OFF!', '#FFE066', W/2, H - 250);
+      bonus += 50;
+      playSuccess();
+    } else {
+      resources.food = Math.max(0, resources.food - 0.25);
+      addPopup('LOOTED! -25% FOOD', '#E74C3C', W/2, H - 250);
+      hitFlash = 1;
+      playDanger();
+    }
+  } else if (activeEvent.type === EVT_SUPPLY) {
+    const sorted = Object.entries(resources).sort((a, b) => a[1] - b[1]);
+    const key = sorted[0][0];
+    resources[key] = Math.min(1, resources[key] + 0.25);
+    const labels = { water: 'WATER', food: 'FOOD', axle: 'AXLE' };
+    addPopup('+25% ' + labels[key], '#4bc94b', W/2, H - 250);
+    bonus += 30;
+    playSuccess();
+  } else {
+    if (choice === 'left') {
+      resources.axle = Math.max(0, resources.axle - 0.20);
+      addPopup('FORDED! -20% AXLE', '#FF9F43', W/2, H - 250);
+    } else {
+      resources.food = Math.max(0, resources.food - 0.15);
+      addPopup('BRIDGE! -15% FOOD', '#FF9F43', W/2, H - 250);
+    }
+    bonus += 40;
+    playCreak();
+  }
+
+  activeEvent = null;
+  nextEventIn = 8 + Math.random() * 5;
+}
+
+function update(dt) {
+  if (state !== 'playing') return;
+
+  scrollY    += PROGRESS_RATE * dt * 0.55;
+  wagonBobble += dt;
+
+  if (!activeEvent) {
+    progress += PROGRESS_RATE * dt;
+    score     = Math.floor(progress);
+  }
+
+  const newBiome = Math.min(Math.floor(progress / BIOME_DUR), BIOMES.length - 1);
+  if (newBiome !== biomeIdx) {
+    biomeIdx = newBiome;
+    bonus += 200;
+    addPopup('★ ' + BIOMES[biomeIdx].name + '!', '#FFE066', W/2, H/2 - 20);
+    playChord();
+  }
+
+  if (progress >= BIOME_DUR * BIOMES.length) {
+    state = 'win';
+    bonus += 500;
+    playSuccess();
+    return;
+  }
+
+  if (!activeEvent) {
+    const bm = BIOMES[biomeIdx];
+    resources.water -= DRAIN.water * bm.waterMult * dt;
+    resources.food  -= DRAIN.food  * bm.foodMult  * dt;
+    resources.axle  -= DRAIN.axle  * bm.axleMult  * dt;
+    resources.water  = Math.max(0, resources.water);
+    resources.food   = Math.max(0, resources.food);
+    resources.axle   = Math.max(0, resources.axle);
+  }
+
+  if (resources.water <= 0) { deathResource = 'Water'; state = 'lose'; playDanger(); return; }
+  if (resources.food  <= 0) { deathResource = 'Food';  state = 'lose'; playDanger(); return; }
+  if (resources.axle  <= 0) { deathResource = 'Axle';  state = 'lose'; playDanger(); return; }
+
+  if (activeEvent) {
+    activeEvent.timer -= dt;
+    if (activeEvent.timer <= 0 && !activeEvent.resolved) {
+      if (activeEvent.type === EVT_AMBUSH) {
+        resolveEvent(false, null);
+      } else if (activeEvent.type === EVT_SUPPLY) {
+        activeEvent = null;
+        nextEventIn = 8 + Math.random() * 5;
+      } else {
+        resolveEvent(true, 'left');
+      }
+    }
+  } else {
+    nextEventIn -= dt;
+    if (nextEventIn <= 0) spawnEvent();
+  }
+
+  popups.forEach(p => { p.life -= dt * 1.3; p.y -= 28 * dt; });
+  popups = popups.filter(p => p.life > 0);
+  if (hitFlash > 0) hitFlash -= dt * 3;
+}
+
+// ── INPUT ─────────────────────────────────────────────────────────
+
+function handleTap(x, y) {
+  getAC();
+  if (state === 'title') { startGame(); return; }
+  if (fbVisible) { handleFbTap(x, y); return; }
+  if (state === 'win' || state === 'lose') { startGame(); return; }
+  if (state !== 'playing' || !activeEvent) return;
+
+  if (activeEvent.type === EVT_AMBUSH) {
+    activeEvent.tapCount++;
+    playNote(CHORD_NOTES[activeEvent.tapCount % CHORD_NOTES.length], 0.1, 0.18);
+    if (activeEvent.tapCount >= 7) resolveEvent(true, null);
+  } else if (activeEvent.type === EVT_SUPPLY) {
+    resolveEvent(true, null);
+  } else {
+    resolveEvent(true, x < W / 2 ? 'left' : 'right');
+  }
+}
+
+c.addEventListener('pointerdown', e => {
+  const rect = c.getBoundingClientRect();
+  handleTap(
+    (e.clientX - rect.left) * (W / rect.width),
+    (e.clientY - rect.top)  * (H / rect.height)
+  );
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') handleTap(W/2, H/2);
+  if (e.code === 'ArrowLeft'  && activeEvent && activeEvent.type === EVT_RIVER) handleTap(W/4,   H/2);
+  if (e.code === 'ArrowRight' && activeEvent && activeEvent.type === EVT_RIVER) handleTap(W*3/4, H/2);
+});
+
+function handleFbTap(x, y) {
+  if (fbDone) { fbVisible = false; return; }
+  if (fbSubmitting) return;
+  const stY = H * 0.44, stSz = 30;
+  const stX = W/2 - 2.5 * stSz;
+  if (y > stY - stSz && y < stY + stSz) {
+    for (let i = 1; i <= 5; i++) {
+      if (x >= stX + (i-1)*stSz && x < stX + i*stSz) { fbRating = i; return; }
+    }
+  }
+  if (y > H*0.58 && y < H*0.58+50 && x > W/2-80 && x < W/2+80 && fbRating > 0) {
+    submitFeedback();
+  }
+  if (y > H*0.72 && y < H*0.72+40 && x > W/2-60 && x < W/2+60) {
+    fbVisible = false;
+  }
+}
+
+function submitFeedback() {
+  fbSubmitting = true;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game: 'Trail Boss', rating: fbRating, score: score + bonus }),
+  }).finally(() => { fbDone = true; fbSubmitting = false; });
+}
+
+// ── MAIN LOOP ─────────────────────────────────────────────────────
+
+let last = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - last) / 1000, 0.05);
+    last = ts;
+    ctx.clearRect(0, 0, W, H);
+
+    if (state === 'title') {
+      drawTitle();
+    } else if (state === 'playing') {
+      update(dt);
+      drawBackground();
+      drawWagon();
+      drawHUD();
+      if (activeEvent) drawEvent();
+      drawPopups();
+      drawHitFlash();
+    } else {
+      drawBackground();
+      drawWagon();
+      drawHUD();
+      drawGameOver();
+      if (!fbVisible) { fbVisible = true; fbRating = 0; fbDone = false; fbSubmitting = false; }
+      drawFeedback();
+    }
+
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error(e);
+    requestAnimationFrame(loop);
+  }
+}
+
+requestAnimationFrame(loop);
+
+// ── TEST INTERFACE ────────────────────────────────────────────────
+
+window.__test = {
+  getState:       () => state,
+  getScore:       () => score + bonus,
+  getProgress:    () => progress,
+  getBiomeIdx:    () => biomeIdx,
+  getResources:   () => ({ ...resources }),
+  getActiveEvent: () => activeEvent ? { ...activeEvent } : null,
+  getPopups:      () => popups.map(p => ({ ...p })),
+  getNextEventIn: () => nextEventIn,
+  getDeathResource: () => deathResource,
+  BIOMES, BIOME_DUR, PROGRESS_RATE, DRAIN,
+  EVT_AMBUSH, EVT_SUPPLY, EVT_RIVER,
+  startGame,
+  spawnEvent,
+  resolveEvent,
+  handleTap,
+  tickTime: dt => update(dt),
+  setProgress:    p  => { progress = p; score = Math.floor(p); },
+  setResources:   r  => { resources = { ...r }; },
+  setActiveEvent: ev => { activeEvent = ev; },
+  setNextEventIn: n  => { nextEventIn = n; },
+  setBiome:       idx => { biomeIdx = idx; },
+};
+</script>
+</body>
+</html>
