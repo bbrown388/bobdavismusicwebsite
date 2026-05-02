@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-02T09:18:46Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 19: Canyon Crossfire - cover-based shooter, 3 outlaws with staggered reload cycles, peek/fire/retreat mechanic, 36 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 20: Trail Boss",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 20: Trail Boss - top-down wagon escort with 3 resources + 5 biomes"
+  },
   "gamesBuilt": 19,
   "lastGameTitle": "Canyon Crossfire",
   "lastGameFile": "canyon-crossfire.html",
