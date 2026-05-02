@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-02T08:00:34Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 16: Moonshine Run - stealth + 3-gauge resource management, revenuer cone detection, 40 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 17: Rope Trick",
+  "currentTask": {
+    "context": "Designing Game 17: Rope Trick - precision lasso throw, physics arc, wind drift",
+    "action": "new_game"
+  },
   "gamesBuilt": 16,
   "lastGameTitle": "Moonshine Run",
   "lastGameFile": "moonshine-run.html",
