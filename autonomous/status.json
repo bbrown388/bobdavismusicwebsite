@@ -1,22 +1,12 @@
 {
   "lastRunAt": "2026-05-02T03:52:45Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 18: Dead Man's Hand",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Designing Game 18: Dead Man's Hand - Texas Hold'em poker vs 3 AI outlaws with bluffing tells"
-  },
-  "gamesBuilt": 17,
-  "lastGameTitle": "Rope Trick",
-  "lastGameFile": "rope-trick.html",
+  "lastRunSummary": "Built Game 18: Dead Man's Hand - Texas Hold'em vs 3 AI outlaws with bluffing tells, 44 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 18,
+  "lastGameTitle": "Dead Man's Hand",
+  "lastGameFile": "dead-mans-hand.html",
   "gameQueue": [
-    {
-      "status": "planned",
-      "title": "Dead Man's Hand",
-      "num": 18,
-      "concept": "Texas Hold'em-style poker against 3 AI outlaws with distinct bluffing personalities. Read tells, manage a bounty chip stack, survive a 5-hand showdown. First card game in the series.",
-      "raisesBarOn": "First card game mechanic, first multi-opponent AI with distinct behavioral models, first game with narrative personality-driven opponents"
-    },
     {
       "status": "planned",
       "title": "Canyon Crossfire",
@@ -30,6 +20,13 @@
       "num": 20,
       "concept": "Top-down wagon train escort across 5 biomes: manage water, food, and axle durability. Random events (ambush, storm, river crossing) demand real-time decisions. First management-simulation hybrid.",
       "raisesBarOn": "First top-down perspective, first multi-resource cross-map management, richest event system in the series"
+    },
+    {
+      "status": "planned",
+      "title": "Wanted: Dead or Alive",
+      "num": 21,
+      "concept": "First-person bounty hunting: track a fugitive through a procedurally arranged frontier town using clues (witnesses, footprints, noise events). First stealth-investigation hybrid in the series.",
+      "raisesBarOn": "First investigation mechanic, first procedural environment layout, deepest narrative context in series"
     }
   ],
   "runLog": [
@@ -136,6 +133,14 @@
       "result": "success",
       "summary": "Built Game 17: Rope Trick - oscillating aim cursor, parabolic arc, wind drift, 5 rounds, 40 tests pass.",
       "runAt": "2026-05-02T03:52:45Z"
+    },
+    {
+      "action": "new_game",
+      "game": "Dead Man's Hand",
+      "commitHash": "9afae30",
+      "result": "success",
+      "summary": "Built Game 18: Dead Man's Hand - Texas Hold'em vs 3 AI outlaws with bluffing tells, full hand evaluator, 44 tests pass.",
+      "runAt": "2026-05-02T09:00:00Z"
     }
   ]
 }
