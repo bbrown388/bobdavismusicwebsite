@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dead Man's Hand</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+#fb-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.88);
+              display: none; flex-direction: column; align-items: center;
+              justify-content: center; color: #FFE066; font-family: Georgia,serif;
+              padding: 24px; z-index: 10; }
+#fb-overlay h2 { margin-bottom: 10px; font-size: 18px; }
+#fb-overlay select, #fb-overlay textarea {
+  width: 100%; margin: 5px 0; background: #1a0d35; color: #FFE066;
+  border: 1px solid #FFE066; padding: 6px; border-radius: 4px; font-size: 13px; }
+#fb-overlay input[type=range] { width: 100%; margin: 4px 0; }
+#fb-overlay button { margin: 5px 4px; padding: 8px 16px; border: none;
+                     border-radius: 4px; cursor: pointer; font-size: 13px; }
+#fb-send { background: #FFE066; color: #1a0d35; font-weight: bold; }
+#fb-close { background: #555; color: #fff; }
+#fb-status { font-size: 11px; margin-top: 5px; color: #C8A04A; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="fb-overlay">
+  <h2>Rate Dead Man's Hand</h2>
+  <select id="fb-target">
+    <option value="general">General / next game</option>
+    <option value="Dead Man's Hand">Dead Man's Hand (this game)</option>
+    <option value="Canyon Crossfire">Upcoming: Canyon Crossfire (Game 19)</option>
+    <option value="Trail Boss">Upcoming: Trail Boss (Game 20)</option>
+  </select>
+  <label style="width:100%;color:#FFE066;font-size:12px;margin-top:4px">Rating: <span id="fb-rating-val">3</span>/5</label>
+  <input type="range" id="fb-rating" min="1" max="5" value="3">
+  <textarea id="fb-msg" rows="3" placeholder="Your feedback..."></textarea>
+  <div><button id="fb-send">Send</button><button id="fb-close">Close</button></div>
+  <div id="fb-status"></div>
+</div>
+<script>
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// === Constants ===
+const STARTING_CHIPS = 500;
+const SMALL_BLIND = 10;
+const BIG_BLIND = 20;
+const RAISE_AMT = 40;
+const MAX_HANDS = 5;
+const SUIT_SYMS = ['♠', '♥', '♦', '♣'];
+const RANK_LBL = ['','','2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const HAND_NAMES = ['','High Card','Pair','Two Pair','Three of a Kind',
+                    'Straight','Flush','Full House','Four of a Kind','Straight Flush'];
+const AI_DEFS = [
+  { id:0, name:'Snake Pete',   style:'tight',   bluffRate:0.20, tellStr:0.80, color:'#5a2a0a' },
+  { id:1, name:'Diamondback',  style:'loose',   bluffRate:0.60, tellStr:0.65, color:'#1a4a1a' },
+  { id:2, name:'Preacher',     style:'calling', bluffRate:0.35, tellStr:0.75, color:'#2a1a5a' },
+];
+
+// === Canvas setup ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = (W * s) + 'px'; canvas.style.height = (H * s) + 'px';
+  wrap.style.width = (W * s) + 'px'; wrap.style.height = (H * s) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// === Card system ===
+function newDeck() {
+  const d = [];
+  for (let s = 0; s < 4; s++) for (let r = 2; r <= 14; r++) d.push({ rank: r, suit: s });
+  return d;
+}
+function shuffle(d) {
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+// === Hand evaluator ===
+function eval5(cards) {
+  const rnks = cards.map(c => c.rank).sort((a, b) => b - a);
+  const suits = cards.map(c => c.suit);
+  const rc = {};
+  rnks.forEach(r => rc[r] = (rc[r] || 0) + 1);
+  const cnts = Object.values(rc).sort((a, b) => b - a);
+  const ur = Object.keys(rc).map(Number).sort((a, b) => b - a);
+  const isF = suits.every(s => s === suits[0]);
+  const isS = (ur.length === 5 && rnks[0] - rnks[4] === 4) ||
+              (rnks[0] === 14 && rnks[1] === 5 && rnks[2] === 4 && rnks[3] === 3 && rnks[4] === 2);
+  const hiS = (isS && rnks[0] === 14 && rnks[1] === 5) ? 5 : rnks[0];
+  if (isF && isS) return [9, hiS];
+  if (cnts[0] === 4) {
+    const q = ur.find(r => rc[r] === 4), k = ur.find(r => rc[r] !== 4);
+    return [8, q, k];
+  }
+  if (cnts[0] === 3 && cnts[1] === 2) {
+    const t = ur.find(r => rc[r] === 3), p = ur.find(r => rc[r] === 2);
+    return [7, t, p];
+  }
+  if (isF) return [6, ...rnks];
+  if (isS) return [5, hiS];
+  if (cnts[0] === 3) { const t = ur.find(r => rc[r] === 3); return [4, t, ...ur.filter(r => rc[r] !== 3)]; }
+  if (cnts[0] === 2 && cnts[1] === 2) {
+    const ps = ur.filter(r => rc[r] === 2).sort((a, b) => b - a);
+    return [3, ...ps, ur.find(r => rc[r] === 1)];
+  }
+  if (cnts[0] === 2) { const p = ur.find(r => rc[r] === 2); return [2, p, ...ur.filter(r => rc[r] !== 2)]; }
+  return [1, ...rnks];
+}
+function cmpScore(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+function best7(cards) {
+  const n = cards.length;
+  if (n <= 0) return [1, 2, 2, 2, 2, 2];
+  if (n <= 5) {
+    const pad = [...cards, ...Array(5 - n).fill({ rank: 2, suit: 0 })];
+    return eval5(pad.slice(0, 5));
+  }
+  let best = null;
+  if (n === 6) {
+    for (let i = 0; i < 6; i++) {
+      const s = eval5(cards.filter((_, k) => k !== i));
+      if (!best || cmpScore(s, best) > 0) best = s;
+    }
+    return best;
+  }
+  for (let i = 0; i < 7; i++) for (let j = i + 1; j < 7; j++) {
+    const s = eval5(cards.filter((_, k) => k !== i && k !== j));
+    if (!best || cmpScore(s, best) > 0) best = s;
+  }
+  return best;
+}
+function scoreLabel(s) { return HAND_NAMES[s[0]] || ''; }
+
+// === Hand strength ===
+function preFlopStrength(hole) {
+  const [a, b] = hole;
+  if (a.rank === b.rank) return Math.min(0.95, 0.55 + a.rank / 120);
+  const hi = Math.max(a.rank, b.rank), lo = Math.min(a.rank, b.rank);
+  let s = 0.10 + hi / 70 + lo / 140;
+  if (a.suit === b.suit) s += 0.05;
+  if (hi - lo === 1) s += 0.04;
+  return Math.min(0.90, s);
+}
+function evalStrength(score) {
+  const r = score[0];
+  return r >= 9 ? 1.0 : r >= 8 ? 0.95 : r >= 7 ? 0.90 : r >= 6 ? 0.82
+       : r >= 5 ? 0.72 : r >= 4 ? 0.60 : r >= 3 ? 0.45 : r >= 2 ? 0.30 : 0.12;
+}
+
+// === State ===
+let phase = 'title', roundName, handNum;
+let pot = 0, currentBet = 0, raiseCount = 0;
+let deck = [], community = [];
+let player, ais = [];
+let aiQ = [], aiTimer = 0;
+let waitTimer = 0, resultTimer = 0, resultMsg = '';
+let popups = [], lastScore = 0;
+let globalT = 0;
+
+// === AI ===
+function makeAI(def) {
+  return { def, chips: STARTING_CHIPS, hole: [], bet: 0, folded: false,
+           busted: false, action: '', tell: 'neutral', tellT: 0 };
+}
+
+function aiDecide(ai, callAmt) {
+  const allCards = [...ai.hole, ...community];
+  let str = allCards.length < 5 ? preFlopStrength(ai.hole) : evalStrength(best7(allCards));
+  const isBluff = Math.random() < ai.def.bluffRate;
+  if (isBluff) str = Math.min(0.95, str + 0.28 + Math.random() * 0.18);
+  const correct = Math.random() < ai.def.tellStr;
+  if (isBluff) ai.tell = correct ? 'nervous' : 'confident';
+  else ai.tell = correct ? (str > 0.45 ? 'confident' : 'neutral') : (Math.random() < 0.5 ? 'nervous' : 'neutral');
+  ai.tellT = 0;
+  const style = ai.def.style;
+  if (style === 'tight') {
+    if (str < 0.28) return 'fold';
+    if (str < 0.55) return callAmt > 0 ? (callAmt <= RAISE_AMT ? 'call' : 'fold') : 'check';
+    if (str > 0.65 && raiseCount < 2) return 'raise';
+    return callAmt > 0 ? 'call' : 'check';
+  }
+  if (style === 'loose') {
+    if (str < 0.14) return 'fold';
+    if (str > 0.42 && raiseCount < 2) return 'raise';
+    return callAmt > 0 ? 'call' : 'check';
+  }
+  // calling station
+  if (str < 0.08) return 'fold';
+  if (str > 0.80 && raiseCount < 2) return 'raise';
+  return callAmt > 0 ? 'call' : 'check';
+}
+
+// === Popups ===
+function addPopup(txt, x, y, color) {
+  popups.push({ txt, x, y, vy: -55, alpha: 1.0, color: color || '#FFE066' });
+}
+function updatePopups(dt) {
+  popups = popups.filter(p => p.alpha > 0);
+  popups.forEach(p => { p.y += p.vy * dt; p.alpha -= dt * 1.1; });
+}
+
+// === Game flow ===
+function startGame() {
+  handNum = 0;
+  player = { chips: STARTING_CHIPS, hole: [], bet: 0, folded: false };
+  ais = AI_DEFS.map(makeAI);
+  popups = []; lastScore = 0;
+  newHand();
+}
+
+function newHand() {
+  handNum++;
+  pot = 0; raiseCount = 0;
+  deck = shuffle(newDeck());
+  community = []; popups = [];
+  roundName = 'pre_flop';
+  player.hole = []; player.bet = 0; player.folded = false;
+  const active = ais.filter(ai => !ai.busted);
+  active.forEach(ai => { ai.hole = []; ai.bet = 0; ai.folded = false; ai.action = ''; ai.tell = 'neutral'; ai.tellT = 0; });
+  player.hole = [deck.pop(), deck.pop()];
+  active.forEach(ai => { ai.hole = [deck.pop(), deck.pop()]; });
+  // Blinds: player = SB, first active AI = BB
+  const sb = Math.min(SMALL_BLIND, player.chips);
+  player.chips -= sb; player.bet = sb;
+  if (active.length > 0) {
+    const bb = Math.min(BIG_BLIND, active[0].chips);
+    active[0].chips -= bb; active[0].bet = bb;
+    pot = sb + bb; currentBet = bb;
+  } else {
+    pot = sb; currentBet = 0;
+  }
+  phase = 'player_act';
+}
+
+function advanceBettingRound() {
+  raiseCount = 0;
+  currentBet = 0;
+  player.bet = 0;
+  ais.forEach(ai => { ai.bet = 0; });
+  if (roundName === 'pre_flop') {
+    community.push(deck.pop(), deck.pop(), deck.pop());
+    roundName = 'flop';
+  } else if (roundName === 'flop') {
+    community.push(deck.pop()); roundName = 'turn';
+  } else if (roundName === 'turn') {
+    community.push(deck.pop()); roundName = 'river';
+  } else {
+    phase = 'showdown'; waitTimer = 1.8; return;
+  }
+  phase = 'player_act';
+}
+
+function resolveShowdown() {
+  const contestants = [];
+  if (!player.folded)
+    contestants.push({ isPlayer: true, cards: [...player.hole, ...community] });
+  ais.forEach((ai, i) => {
+    if (!ai.folded && !ai.busted)
+      contestants.push({ isAI: true, ai, idx: i, cards: [...ai.hole, ...community] });
+  });
+  if (contestants.length === 0) { resultMsg = 'No contest'; phase = 'hand_result'; resultTimer = 2.0; return; }
+  if (contestants.length === 1) { awardPot(contestants[0]); return; }
+  contestants.forEach(c => { c.score = best7(c.cards); });
+  contestants.sort((a, b) => cmpScore(b.score, a.score));
+  awardPot(contestants[0]);
+}
+
+function awardPot(winner) {
+  const amt = pot;
+  if (winner.isPlayer) {
+    player.chips += amt;
+    const lbl = community.length >= 5 ? scoreLabel(best7([...player.hole, ...community])) : '';
+    resultMsg = 'YOU WIN $' + amt + (lbl ? '\n' + lbl : '');
+    playWin();
+    addPopup('+$' + amt, W / 2, H / 2 - 70, '#FFE066');
+  } else {
+    winner.ai.chips += amt;
+    const lbl = community.length >= 5 ? scoreLabel(best7([...winner.ai.hole, ...community])) : '';
+    resultMsg = winner.ai.def.name + ' wins $' + amt + (lbl ? '\n' + lbl : '');
+    playLose();
+    addPopup('-$' + Math.min(player.bet + (player.chips < 0 ? -player.chips : 0), amt), W / 2, H / 2 - 70, '#E74C3C');
+  }
+  pot = 0;
+  phase = 'hand_result'; resultTimer = 2.4;
+}
+
+function playerAct(action) {
+  if (phase !== 'player_act') return;
+  const callAmt = Math.max(0, currentBet - player.bet);
+  if (action === 'fold') {
+    player.folded = true;
+    const stillIn = ais.filter(ai => !ai.folded && !ai.busted);
+    if (stillIn.length === 0) { resultMsg = 'All fold'; phase = 'hand_result'; resultTimer = 2.0; return; }
+    if (stillIn.length === 1) {
+      stillIn[0].chips += pot; pot = 0;
+      resultMsg = stillIn[0].def.name + ' wins\n(all folded)';
+      playLose(); phase = 'hand_result'; resultTimer = 2.4; return;
+    }
+    // Multiple AIs left - go to showdown
+    phase = 'showdown'; waitTimer = 1.8; return;
+  }
+  if (action === 'call') {
+    const pay = Math.min(callAmt, player.chips);
+    player.chips -= pay; player.bet += pay; pot += pay;
+    if (callAmt === 0) playChip();
+    else { playChip(); }
+  }
+  if (action === 'raise') {
+    const newBet = currentBet + RAISE_AMT;
+    const pay = Math.min(newBet - player.bet, player.chips);
+    player.chips -= pay; player.bet += pay; pot += pay;
+    currentBet = player.bet;
+    raiseCount++;
+    playRaise();
+  }
+  aiQ = ais.map((_, i) => i).filter(i => !ais[i].folded && !ais[i].busted);
+  aiTimer = 0.45;
+  phase = 'ai_act';
+}
+
+function processAI() {
+  if (aiQ.length === 0) {
+    const allActive = [player, ...ais.filter(ai => !ai.busted)].filter(p => !p.folded);
+    if (allActive.length <= 1) {
+      if (allActive.length === 1 && allActive[0] === player) {
+        player.chips += pot; pot = 0;
+        resultMsg = 'All opponents folded!\nYOU WIN'; playWin();
+        phase = 'hand_result'; resultTimer = 2.4;
+      } else if (allActive.length === 1) {
+        const w = allActive[0];
+        w.chips += pot; pot = 0;
+        resultMsg = w.def.name + ' wins\n(all folded)'; playLose();
+        phase = 'hand_result'; resultTimer = 2.4;
+      } else {
+        resultMsg = 'No players'; phase = 'hand_result'; resultTimer = 2.0;
+      }
+      return;
+    }
+    advanceBettingRound();
+    return;
+  }
+  const idx = aiQ.shift();
+  const ai = ais[idx];
+  const callAmt = Math.max(0, currentBet - ai.bet);
+  const action = aiDecide(ai, callAmt);
+  if (action === 'fold') {
+    ai.folded = true; ai.action = 'FOLD';
+  } else if (action === 'raise') {
+    const newBet = currentBet + RAISE_AMT;
+    const pay = Math.min(newBet - ai.bet, ai.chips);
+    ai.chips -= pay; ai.bet += pay; pot += pay;
+    currentBet = ai.bet; ai.action = 'RAISE'; raiseCount++;
+    playRaise();
+  } else {
+    const pay = Math.min(callAmt, ai.chips);
+    ai.chips -= pay; ai.bet += pay; pot += pay;
+    ai.action = callAmt === 0 ? 'CHECK' : 'CALL';
+    playChip();
+  }
+  aiTimer = 0.65;
+}
+
+function checkBest() {
+  const best = parseInt(localStorage.getItem('dead_mans_hand_best')) || 0;
+  if (lastScore > best) localStorage.setItem('dead_mans_hand_best', String(lastScore));
+}
+
+// === Rendering helpers ===
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+function pill(x, y, w, h, r, fill) {
+  roundRect(x, y, w, h, r);
+  ctx.fillStyle = fill; ctx.fill();
+}
+
+function drawCard(x, y, w, h, card, faceDown) {
+  ctx.save();
+  roundRect(x, y, w, h, 3);
+  if (faceDown || !card) {
+    ctx.fillStyle = '#1a0d35'; ctx.fill();
+    ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1; ctx.stroke();
+    roundRect(x + 2, y + 2, w - 4, h - 4, 2);
+    ctx.fillStyle = '#2a1a50'; ctx.fill();
+  } else {
+    ctx.fillStyle = '#F5F0E0'; ctx.fill();
+    ctx.strokeStyle = '#8B7355'; ctx.lineWidth = 1; ctx.stroke();
+    const red = card.suit === 1 || card.suit === 2;
+    ctx.fillStyle = red ? '#c0392b' : '#1a2a4a';
+    const rl = RANK_LBL[card.rank];
+    const sym = SUIT_SYMS[card.suit];
+    const fs = Math.max(7, Math.floor(w * 0.30));
+    ctx.font = `bold ${fs}px Georgia`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(rl, x + 2, y + 1);
+    ctx.font = `${Math.max(6, Math.floor(w * 0.26))}px sans-serif`;
+    ctx.fillText(sym, x + 2, y + fs + 2);
+    // Center suit
+    ctx.font = `${Math.max(10, Math.floor(w * 0.40))}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(sym, x + w / 2, y + h / 2);
+  }
+  ctx.restore();
+}
+
+function drawPortrait(x, y, r, color, style) {
+  ctx.save();
+  ctx.fillStyle = color;
+  // Body
+  ctx.beginPath();
+  ctx.moveTo(x - r * 0.5, y + r * 0.9);
+  ctx.quadraticCurveTo(x - r * 0.7, y + r * 0.2, x - r * 0.35, y - r * 0.05);
+  ctx.lineTo(x + r * 0.35, y - r * 0.05);
+  ctx.quadraticCurveTo(x + r * 0.7, y + r * 0.2, x + r * 0.5, y + r * 0.9);
+  ctx.closePath(); ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.arc(x, y - r * 0.38, r * 0.48, 0, Math.PI * 2); ctx.fill();
+  // Hat brim
+  ctx.beginPath(); ctx.rect(x - r * 0.7, y - r * 0.74, r * 1.4, r * 0.18); ctx.fill();
+  // Hat crown (taller for preacher, narrower for snake)
+  const crownW = style === 'calling' ? 0.45 : style === 'tight' ? 0.30 : 0.40;
+  const crownH = style === 'calling' ? 0.68 : 0.58;
+  ctx.beginPath(); ctx.rect(x - r * crownW, y - r * (0.74 + crownH), r * crownW * 2, r * crownH); ctx.fill();
+  // Bandana (loose style)
+  if (style === 'loose') {
+    ctx.fillStyle = '#8a2a1a';
+    ctx.beginPath(); ctx.ellipse(x, y - r * 0.02, r * 0.4, r * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // Preacher collar
+  if (style === 'calling') {
+    ctx.fillStyle = '#d8d0c0';
+    ctx.beginPath(); ctx.rect(x - r * 0.18, y - r * 0.1, r * 0.36, r * 0.22); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTell(cx, y, tell, t) {
+  ctx.save();
+  if (tell === 'nervous') {
+    const pulse = 0.6 + 0.4 * Math.sin(t * 7);
+    ctx.globalAlpha = 0.85 + 0.15 * pulse;
+    // Jitter offset
+    const jx = (Math.random() - 0.5) * 2;
+    ctx.beginPath(); ctx.arc(cx - 16 + jx, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#E74C3C'; ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#ff8888';
+    ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('NERVOUS', cx - 10, y);
+  } else if (tell === 'confident') {
+    ctx.beginPath(); ctx.arc(cx - 16, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#27ae60'; ctx.fill();
+    ctx.fillStyle = '#5dca8a';
+    ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('STEADY', cx - 10, y);
+  }
+  ctx.restore();
+}
+
+// === Draw screens ===
+function drawBg() {
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208'); bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBg();
+  // Felt table oval
+  ctx.beginPath(); ctx.ellipse(W / 2, H * 0.53, W * 0.48, 180, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#143320'; ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 3; ctx.stroke();
+  // Title
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 40px Georgia';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 18;
+  ctx.fillText("DEAD MAN'S", W / 2, 128);
+  ctx.fillText('HAND', W / 2, 174);
+  ctx.shadowBlur = 0;
+  // Show the Dead Man's Hand cards (A♠ A♣ 8♠ 8♣ + mystery)
+  const cards = [{rank:14,suit:0},{rank:14,suit:3},{rank:8,suit:0},{rank:8,suit:3}];
+  const cw = 48, ch = 68;
+  const startX = W / 2 - (5 * (cw + 6)) / 2 + 3;
+  cards.forEach((c, i) => drawCard(startX + i * (cw + 6), 198, cw, ch, c, false));
+  drawCard(startX + 4 * (cw + 6), 198, cw, ch, null, true);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText("Wild Bill's final hand", W / 2, 284);
+  ctx.fillStyle = '#FFE066'; ctx.font = '12px sans-serif';
+  ctx.fillText('SNAKE PETE  •  DIAMONDBACK  •  PREACHER JACK', W / 2, 310);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '12px Georgia';
+  ctx.fillText('3 Outlaws • ' + MAX_HANDS + ' Hands • One Stack', W / 2, 334);
+  const best = parseInt(localStorage.getItem('dead_mans_hand_best')) || 0;
+  if (best > 0) {
+    ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia';
+    ctx.fillText('Best: $' + best, W / 2, 360);
+  }
+  const pulse = 0.55 + 0.45 * Math.abs(Math.sin(globalT * 1.5));
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 18px Georgia';
+  ctx.fillText('TAP TO DEAL', W / 2, H - 56);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawGame() {
+  ctx.save();
+  drawBg();
+  // Felt oval
+  ctx.beginPath(); ctx.ellipse(W / 2, 280, W * 0.49, 195, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#143320'; ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2; ctx.stroke();
+
+  // === AI columns (y: 8-142) ===
+  const colW = W / 3;
+  ais.forEach((ai, i) => {
+    const cx = colW * i + colW / 2;
+    ctx.save();
+    if (ai.busted) ctx.globalAlpha = 0.28;
+    else if (ai.folded) ctx.globalAlpha = 0.45;
+    drawPortrait(cx, 26, 16, ai.def.color, ai.def.style);
+    ctx.fillStyle = '#FFE066'; ctx.font = 'bold 9px Georgia';
+    ctx.textAlign = 'center';
+    ctx.fillText(ai.def.name, cx, 50);
+    ctx.fillStyle = ai.busted ? '#E74C3C' : '#C8A04A';
+    ctx.font = '9px sans-serif';
+    ctx.fillText(ai.busted ? 'BUSTED' : '$' + ai.chips, cx, 62);
+    // Cards
+    const cw = 30, ch = 42, cy = 68;
+    const cx1 = cx - cw - 2, cx2 = cx + 2;
+    const reveal = phase === 'showdown' || phase === 'hand_result';
+    if (!ai.busted) {
+      drawCard(cx1, cy, cw, ch, ai.hole[0], !reveal);
+      drawCard(cx2, cy, cw, ch, ai.hole[1], !reveal);
+    }
+    // Action label
+    if (ai.action) {
+      const ac = ai.action;
+      ctx.fillStyle = ac === 'FOLD' ? '#E74C3C' : ac === 'RAISE' ? '#FF9F43' : '#5dca8a';
+      ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(ac, cx, 116);
+    }
+    // Tell
+    if (ai.tell !== 'neutral' && !ai.busted) drawTell(cx, 130, ai.tell, ai.tellT);
+    ctx.restore();
+  });
+
+  // === Round + pot bar ===
+  const rndMap = { pre_flop: 'PRE-FLOP', flop: 'FLOP', turn: 'TURN', river: 'RIVER' };
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 11px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText(rndMap[roundName] || '', W / 2, 152);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '10px sans-serif';
+  ctx.fillText('POT: $' + pot, W / 2, 164);
+
+  // === Community cards (y: 170-236) ===
+  const cw = 42, ch = 60, gap = 5;
+  const totalW = 5 * cw + 4 * gap;
+  const startX = (W - totalW) / 2;
+  for (let k = 0; k < 5; k++) {
+    if (k < community.length) {
+      drawCard(startX + k * (cw + gap), 172, cw, ch, community[k], false);
+    } else {
+      ctx.save();
+      roundRect(startX + k * (cw + gap), 172, cw, ch, 3);
+      ctx.strokeStyle = 'rgba(200,160,74,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // === Player hand label ===
+  ctx.fillStyle = '#C8A04A'; ctx.font = '10px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText('YOUR HAND', W / 2, 248);
+  if (!player.folded && community.length >= 3 && player.hole.length === 2) {
+    const sc = best7([...player.hole, ...community]);
+    ctx.fillStyle = '#FFE066'; ctx.font = 'bold 11px Georgia';
+    ctx.fillText(scoreLabel(sc), W / 2, 262);
+  }
+
+  // === Player cards (large, y: 268-360) ===
+  const pcw = 62, pch = 88;
+  drawCard(W / 2 - pcw - 4, 268, pcw, pch, player.hole[0], false);
+  drawCard(W / 2 + 4, 268, pcw, pch, player.hole[1], false);
+
+  // Player chips
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('$' + player.chips, W / 2, 370);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '9px sans-serif';
+  ctx.fillText('Hand ' + handNum + ' of ' + MAX_HANDS + '  •  Blinds ' + SMALL_BLIND + '/' + BIG_BLIND, W / 2, 382);
+
+  // === Buttons / status ===
+  if (phase === 'player_act') {
+    drawButtons();
+  } else if (phase === 'ai_act') {
+    ctx.fillStyle = '#8a7a5a'; ctx.font = 'italic 12px Georgia'; ctx.textAlign = 'center';
+    const dots = '.'.repeat(1 + Math.floor(globalT * 3) % 3);
+    ctx.fillText('Opponents deciding' + dots, W / 2, 438);
+  } else if (phase === 'showdown') {
+    ctx.fillStyle = '#FFE066'; ctx.font = 'bold 18px Georgia'; ctx.textAlign = 'center';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8;
+    ctx.fillText('SHOWDOWN', W / 2, 438);
+    ctx.shadowBlur = 0;
+  }
+
+  // Popups
+  popups.forEach(p => {
+    ctx.save(); ctx.globalAlpha = Math.max(0, p.alpha);
+    ctx.fillStyle = p.color; ctx.font = 'bold 22px Georgia'; ctx.textAlign = 'center';
+    ctx.fillText(p.txt, p.x, p.y); ctx.restore();
+  });
+  ctx.restore();
+}
+
+function drawButtons() {
+  const callAmt = Math.max(0, currentBet - player.bet);
+  const bw = 100, bh = 44, by = 400;
+  const canRaise = player.chips >= callAmt + RAISE_AMT && raiseCount < 2;
+  // FOLD
+  pill(22, by, bw, bh, 8, '#4a1010');
+  ctx.fillStyle = '#ff7070'; ctx.font = 'bold 14px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText('FOLD', 72, by + 27);
+  // CHECK / CALL
+  const callLabel = callAmt <= 0 ? 'CHECK' : 'CALL $' + callAmt;
+  pill(132, by, bw, bh, 8, '#0f3a1a');
+  ctx.fillStyle = '#5dca8a'; ctx.font = 'bold 13px Georgia';
+  ctx.fillText(callLabel, 182, by + 27);
+  // BET / RAISE
+  const betLabel = callAmt <= 0 ? 'BET $' + RAISE_AMT : 'RAISE $' + (currentBet + RAISE_AMT);
+  pill(238, by, bw, bh, 8, canRaise ? '#3a2a06' : '#1e1e1e');
+  ctx.fillStyle = canRaise ? '#FFE066' : '#555555'; ctx.font = 'bold 12px Georgia';
+  ctx.fillText(betLabel, 288, by + 27);
+}
+
+function drawHandResult() {
+  drawGame();
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.60)'; ctx.fillRect(0, 0, W, H);
+  const lines = resultMsg.split('\n');
+  const isWin = resultMsg.startsWith('YOU WIN') || resultMsg.startsWith('All opponents');
+  ctx.fillStyle = isWin ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 26px Georgia'; ctx.textAlign = 'center';
+  ctx.shadowColor = isWin ? '#FFD700' : '#ff0000'; ctx.shadowBlur = 10;
+  lines.forEach((l, i) => ctx.fillText(l, W / 2, H / 2 - 18 + i * 34));
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A'; ctx.font = '12px Georgia';
+  ctx.fillText(handNum < MAX_HANDS ? 'Next hand...' : 'Final hand...', W / 2, H / 2 + 70);
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  drawBg();
+  ctx.beginPath(); ctx.ellipse(W / 2, H * 0.45, W * 0.48, 200, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#143320'; ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2; ctx.stroke();
+  const won = lastScore > STARTING_CHIPS;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 34px Georgia'; ctx.textAlign = 'center';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+  ctx.fillText(won ? 'CASHED OUT' : 'BUSTED', W / 2, 140);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A'; ctx.font = '16px Georgia';
+  ctx.fillText(won ? 'You cleaned them out.' : 'They took it all.', W / 2, 172);
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 22px Georgia';
+  ctx.fillText('Final: $' + lastScore, W / 2, 210);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia';
+  ais.forEach((ai, i) => ctx.fillText(ai.def.name + ': $' + ai.chips, W / 2, 242 + i * 24));
+  const best = parseInt(localStorage.getItem('dead_mans_hand_best')) || 0;
+  if (lastScore > best && lastScore > 0) {
+    const pulse = 0.7 + 0.3 * Math.abs(Math.sin(globalT * 3));
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FFE066'; ctx.font = 'bold 15px Georgia';
+    ctx.fillText('NEW RECORD!', W / 2, 320);
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctx.fillStyle = '#8a7a5a'; ctx.font = '12px Georgia';
+    ctx.fillText('Best: $' + best, W / 2, 320);
+  }
+  // Play Again
+  pill(W / 2 - 90, 340, 180, 46, 10, '#3a2a06');
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 17px Georgia'; ctx.textAlign = 'center';
+  ctx.fillText('PLAY AGAIN', W / 2, 368);
+  // Feedback
+  pill(W / 2 - 80, 400, 160, 36, 8, '#1a0d35');
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 12px Georgia';
+  ctx.fillText('SEND FEEDBACK', W / 2, 423);
+  ctx.restore();
+}
+
+// === Update ===
+function update(dt) {
+  globalT += dt;
+  updatePopups(dt);
+  ais.forEach(ai => { ai.tellT += dt; });
+  if (phase === 'ai_act') {
+    aiTimer -= dt;
+    if (aiTimer <= 0) processAI();
+  }
+  if (phase === 'showdown') {
+    waitTimer -= dt;
+    if (waitTimer <= 0) resolveShowdown();
+  }
+  if (phase === 'hand_result') {
+    resultTimer -= dt;
+    if (resultTimer <= 0) {
+      ais.forEach(ai => { if (ai.chips <= 0) ai.busted = true; });
+      const activeAIs = ais.filter(ai => !ai.busted);
+      if (player.chips <= 0) {
+        lastScore = 0; phase = 'game_over'; checkBest(); return;
+      }
+      if (activeAIs.length === 0) {
+        lastScore = player.chips; phase = 'game_over'; checkBest(); return;
+      }
+      if (handNum >= MAX_HANDS) {
+        lastScore = player.chips; phase = 'game_over'; checkBest(); return;
+      }
+      newHand();
+    }
+  }
+}
+
+function draw() {
+  if (phase === 'title') { drawTitle(); return; }
+  if (phase === 'game_over') { drawGameOver(); return; }
+  if (phase === 'hand_result') { drawHandResult(); return; }
+  drawGame();
+}
+
+// === Input ===
+function onTap(x, y) {
+  if (phase === 'title') { startGame(); return; }
+  if (phase === 'game_over') {
+    if (y >= 340 && y <= 386) { phase = 'title'; return; }
+    if (y >= 400 && y <= 436) { showFeedback(); return; }
+    return;
+  }
+  if (phase === 'player_act') {
+    const by = 400;
+    if (x >= 22 && x <= 122 && y >= by && y <= by + 44) { playerAct('fold'); return; }
+    if (x >= 132 && x <= 232 && y >= by && y <= by + 44) { playerAct('call'); return; }
+    const callAmt = Math.max(0, currentBet - player.bet);
+    const canRaise = player.chips >= callAmt + RAISE_AMT && raiseCount < 2;
+    if (canRaise && x >= 238 && x <= 338 && y >= by && y <= by + 44) { playerAct('raise'); return; }
+  }
+}
+
+canvas.addEventListener('click', e => {
+  const r = canvas.getBoundingClientRect();
+  onTap((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+});
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const r = canvas.getBoundingClientRect();
+  onTap((t.clientX - r.left) * (W / r.width), (t.clientY - r.top) * (H / r.height));
+}, { passive: false });
+
+// === Audio ===
+let _AC;
+function getAC() {
+  if (!_AC) _AC = new (window.AudioContext || window.webkitAudioContext)();
+  return _AC;
+}
+function tone(freq, type, dur, vol, t0) {
+  try {
+    const ac = getAC(); const t = t0 || ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol || 0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.start(t); o.stop(t + dur + 0.01);
+  } catch (e) { /* ignore */ }
+}
+function playChip() {
+  try {
+    const ac = getAC(); const t = ac.currentTime;
+    const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.06), ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * 0.012));
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
+    const g = ac.createGain(); g.gain.value = 0.14;
+    src.connect(hp); hp.connect(g); g.connect(ac.destination); src.start(t);
+  } catch (e) { /* ignore */ }
+}
+function playRaise() { tone(523, 'square', 0.08, 0.08); }
+function playWin() {
+  const ac = getAC(), t = ac.currentTime;
+  [330, 392, 494, 659].forEach((f, i) => tone(f, 'triangle', 0.18, 0.12, t + i * 0.10));
+}
+function playLose() {
+  const ac = getAC(), t = ac.currentTime;
+  [330, 294, 247].forEach((f, i) => tone(f, 'sawtooth', 0.20, 0.09, t + i * 0.13));
+}
+
+// === Feedback overlay ===
+function showFeedback() { document.getElementById('fb-overlay').style.display = 'flex'; }
+document.getElementById('fb-rating').addEventListener('input', e => {
+  document.getElementById('fb-rating-val').textContent = e.target.value;
+});
+document.getElementById('fb-send').addEventListener('click', () => {
+  const game = document.getElementById('fb-target').value;
+  const rating = +document.getElementById('fb-rating').value;
+  const message = document.getElementById('fb-msg').value.trim();
+  if (!message) { document.getElementById('fb-status').textContent = 'Please enter feedback.'; return; }
+  document.getElementById('fb-status').textContent = 'Sending...';
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game, rating, message })
+  }).then(() => {
+    document.getElementById('fb-status').textContent = 'Sent! Thank you.';
+    setTimeout(() => { document.getElementById('fb-overlay').style.display = 'none'; }, 1500);
+  }).catch(() => { document.getElementById('fb-status').textContent = 'Error sending. Try again.'; });
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').style.display = 'none';
+});
+
+// === Main loop ===
+phase = 'title';
+let lastTs = 0;
+function loop(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.1);
+  lastTs = ts;
+  try { update(dt); draw(); } catch (e) { console.error('[loop]', e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// === Test API ===
+window.__test = {
+  W, H,
+  STARTING_CHIPS, SMALL_BLIND, BIG_BLIND, RAISE_AMT, MAX_HANDS,
+  AI_DEFS,
+  HAND_NAMES,
+  getState:       () => phase === 'title' ? 'title' : phase === 'game_over' ? 'game_over' : 'playing',
+  getPhase:       () => phase,
+  getRoundName:   () => roundName,
+  getHandNum:     () => handNum,
+  getPot:         () => pot,
+  getCurrentBet:  () => currentBet,
+  getRaiseCount:  () => raiseCount,
+  getCommunity:   () => community,
+  getPlayer:      () => player,
+  getAIs:         () => ais,
+  getLastScore:   () => lastScore,
+  startGame,
+  newHand,
+  playerAct,
+  eval5,
+  best7,
+  cmpScore,
+  scoreLabel,
+  preFlopStrength,
+  evalStrength,
+  aiDecideForAI:  (idx, callAmt) => aiDecide(ais[idx], callAmt),
+  setPhase:       (p) => { phase = p; },
+  setRoundName:   (r) => { roundName = r; },
+  setCommunity:   (cards) => { community = cards; },
+  setCurrentBet:  (v) => { currentBet = v; },
+  setPlayerHole:  (cards) => { if (player) player.hole = cards; },
+  setPlayerChips: (v) => { if (player) player.chips = v; },
+  setAIHole:      (idx, cards) => { if (ais && ais[idx]) ais[idx].hole = cards; },
+  setAIChips:     (idx, v) => { if (ais && ais[idx]) ais[idx].chips = v; },
+  flushAIs: () => {
+    let guard = 0;
+    while (phase === 'ai_act' && guard++ < 25) {
+      aiTimer = 0; processAI();
+    }
+  },
+  flushShowdown: () => { if (phase === 'showdown') { waitTimer = 0; resolveShowdown(); } },
+  getPixel: (x, y) => {
+    const d = ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+    return { r: d[0], g: d[1], b: d[2], a: d[3] };
+  },
+  showFeedback,
+};
+</script>
+</body>
+</html>
