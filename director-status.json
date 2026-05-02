@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-02T09:18:46Z",
+  "lastRunAt": "2026-05-02T04:47:06Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 20 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 20: Trail Boss -- tests passing, committing"
-  },
-  "gamesBuilt": 19,
-  "lastGameTitle": "Canyon Crossfire",
-  "lastGameFile": "canyon-crossfire.html",
+  "lastRunSummary": "Built Game 20: Trail Boss - top-down wagon escort, 3 resources, 5 biomes, event system, 40 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 20,
+  "lastGameTitle": "Trail Boss",
+  "lastGameFile": "trail-boss.html",
   "gameQueue": [
-    {
-      "num": 20,
-      "title": "Trail Boss",
-      "concept": "Top-down wagon train escort across 5 biomes: manage water, food, and axle durability. Random events (ambush, storm, river crossing) demand real-time decisions. First management-simulation hybrid.",
-      "raisesBarOn": "First top-down perspective, first multi-resource cross-map management, richest event system in the series",
-      "status": "planned"
-    },
     {
       "num": 21,
       "title": "Wanted: Dead or Alive",
@@ -29,6 +19,13 @@
       "title": "Gallows Road",
       "concept": "Sokoban-style jail escape puzzle: push crates to block guards, collect keys to unlock doors, reach the exit. First pure puzzle mechanic in the series with 5 escalating levels.",
       "raisesBarOn": "First grid-based puzzle, first multi-level game, deepest strategic planning requirement in series",
+      "status": "planned"
+    },
+    {
+      "num": 23,
+      "title": "Devil's Backbone",
+      "concept": "Carry a volatile dynamite load through a mountain pass on a tilting wagon. Tap left/right to counterbalance wind and rough terrain. First balance/tilt physics mechanic in series with escalating tilt amplitude.",
+      "raisesBarOn": "First balance physics engine, first tilt-response mechanic, most tactile feedback in series",
       "status": "planned"
     }
   ],
@@ -152,6 +149,14 @@
       "result": "success",
       "summary": "Built Game 19: Canyon Crossfire - cover-based shooter, 3 outlaws with staggered reload cycles, peek/fire/retreat, 36 tests pass.",
       "runAt": "2026-05-02T09:18:46Z"
+    },
+    {
+      "action": "new_game",
+      "game": "Trail Boss",
+      "commitHash": "6deb670",
+      "result": "success",
+      "summary": "Built Game 20: Trail Boss - top-down wagon escort, 3 draining resources, 5 biomes, ambush/supply/river events, 40 tests pass.",
+      "runAt": "2026-05-02T04:47:06Z"
     }
   ]
 }
