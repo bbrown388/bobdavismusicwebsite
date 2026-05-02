@@ -25,6 +25,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 15 | Prairie Fire | `prairie-fire.html` | Cellular automaton wildfire / 18x26 grid / wind-direction spread / firebreak + water resource placement / environmental destruction | 2026-04-30 |
 | 16 | Moonshine Run | `moonshine-run.html` | Stealth + 3-gauge resource management / heat-pressure-proof still / revenuer lantern cone detection / HIDE mechanic dims own gauges / wave escalation | 2026-05-02 |
 | 17 | Rope Trick | `rope-trick.html` | Precision lasso throw / oscillating aim cursor / parabolic Bezier arc preview / wind-drift environmental variable / progressive target oscillation | 2026-05-02 |
+| 18 | Dead Man's Hand | `dead-mans-hand.html` | Texas Hold'em card game / full hand evaluator (eval5+best7) / 3 AI opponents with distinct styles / probabilistic bluffing tell system / chip betting | 2026-05-02 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -52,6 +53,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Prairie Fire](retrospectives/15-prairie-fire.md) — session lessons, action items for Game 16
 - [Retrospective: Moonshine Run](retrospectives/16-moonshine-run.md) — session lessons, action items for Game 17
 - [Retrospective: Rope Trick](retrospectives/17-rope-trick.md) — session lessons, action items for Game 18
+- [Retrospective: Dead Man's Hand](retrospectives/18-dead-mans-hand.md) — session lessons, action items for Game 19
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
