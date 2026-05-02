@@ -1,10 +1,10 @@
 {
   "lastRunAt": "2026-05-02T08:00:02Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 16: Moonshine Run",
+  "lastRunSummary": "Game 16 Moonshine Run tests pass",
   "currentTask": {
     "action": "new_game",
-    "context": "Building Game 16: Moonshine Run - stealth resource management, outlaw distiller evades revenuers"
+    "context": "Game 16: Moonshine Run - tests passing, committing"
   },
   "gamesBuilt": 15,
   "lastGameTitle": "Prairie Fire",
