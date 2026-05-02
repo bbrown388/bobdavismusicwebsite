@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-02T08:00:02Z",
+  "lastRunAt": "2026-05-02T08:00:34Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 16 Moonshine Run tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 16: Moonshine Run - tests passing, committing"
-  },
-  "gamesBuilt": 15,
-  "lastGameTitle": "Prairie Fire",
-  "lastGameFile": "prairie-fire.html",
+  "lastRunSummary": "Built Game 16: Moonshine Run - stealth + 3-gauge resource management, revenuer cone detection, 40 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 16,
+  "lastGameTitle": "Moonshine Run",
+  "lastGameFile": "moonshine-run.html",
   "gameQueue": [
-    {
-      "num": 16,
-      "title": "Moonshine Run",
-      "concept": "Outlaw distiller evades revenue agents: manage three still gauges (heat, pressure, proof) while revenuer lanterns sweep the darkness. Dim your own light to hide, but lose visibility of your gauges. Stealth + resource management hybrid.",
-      "raisesBarOn": "First stealth mechanic in the series, first multi-gauge simultaneous resource management, first game where visibility is both tool and threat",
-      "status": "planned"
-    },
     {
       "num": 17,
       "title": "Rope Trick",
@@ -120,6 +110,14 @@
       "result": "success",
       "summary": "Built Game 15: Prairie Fire - wildfire cellular automaton, 18x26 grid, wind-direction spread, firebreak+water placement, 35 tests pass.",
       "commitHash": "230cc44"
+    },
+    {
+      "runAt": "2026-05-02T08:00:34Z",
+      "action": "new_game",
+      "game": "Moonshine Run",
+      "result": "success",
+      "summary": "Built Game 16: Moonshine Run - stealth + 3-gauge resource management, revenuer lantern cone detection, HIDE mechanic dims own gauges, 40 tests pass.",
+      "commitHash": "153863c"
     }
   ]
 }

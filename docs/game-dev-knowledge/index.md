@@ -23,6 +23,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 13 | Snake Oil | `snake-oil.html` | Matching/inventory puzzle / NPC dialogue-driven / ingredient-combo lookup / sliding tray + timer pressure | 2026-04-28 |
 | 14 | Midnight Rodeo | `midnight-rodeo.html` | Directional response / bull telegraph + tap-match / crowd-energy multiplier / shrinking window difficulty | 2026-04-29 |
 | 15 | Prairie Fire | `prairie-fire.html` | Cellular automaton wildfire / 18x26 grid / wind-direction spread / firebreak + water resource placement / environmental destruction | 2026-04-30 |
+| 16 | Moonshine Run | `moonshine-run.html` | Stealth + 3-gauge resource management / heat-pressure-proof still / revenuer lantern cone detection / HIDE mechanic dims own gauges / wave escalation | 2026-05-02 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -48,6 +49,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Snake Oil](retrospectives/13-snake-oil.md) — session lessons, action items for Game 14
 - [Retrospective: Midnight Rodeo](retrospectives/14-midnight-rodeo.md) — session lessons, action items for Game 15
 - [Retrospective: Prairie Fire](retrospectives/15-prairie-fire.md) — session lessons, action items for Game 16
+- [Retrospective: Moonshine Run](retrospectives/16-moonshine-run.md) — session lessons, action items for Game 17
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
