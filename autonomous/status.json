@@ -1,10 +1,10 @@
 {
   "lastRunAt": "2026-05-03T10:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 27: River Run",
+  "lastRunSummary": "Game 27 tests pass",
   "currentTask": {
     "action": "new_game",
-    "context": "Designing Game 27: River Run - white-water raft, current-reading mechanic, inertia model"
+    "context": "Game 27: River Run - tests passing, committing"
   },
   "gamesBuilt": 26,
   "lastGameTitle": "Dust Storm",
