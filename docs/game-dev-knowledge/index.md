@@ -30,6 +30,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 20 | Trail Boss | `trail-boss.html` | Top-down wagon escort / 3 simultaneous draining resources / 5 biomes with distinct multipliers / ambush+supply+river event system | 2026-05-02 |
 | 21 | Wanted: Dead or Alive | `wanted-dead-or-alive.html` | First-person investigation / 5-location frontier town / witness interviews + evidence / confidence meter / accuse-the-fugitive mechanic | 2026-05-02 |
 | 22 | Gallows Road | `gallows-road.html` | Turn-based grid puzzle / push crates to block guards / 5 escalating levels / key+door unlock / WAIT mechanic / guard patrol system | 2026-05-03 |
+| 23 | Devil's Backbone | `devils-backbone.html` | Continuous physics balance / hold-to-counterbalance dynamite wagon / spring+damping+wind+bumps / 5-stage mountain pass / parallax scrolling | 2026-05-03 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -62,6 +63,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Trail Boss](retrospectives/20-trail-boss.md) — session lessons, action items for Game 21
 - [Retrospective: Wanted: Dead or Alive](retrospectives/21-wanted-dead-or-alive.md) — session lessons, action items for Game 22
 - [Retrospective: Gallows Road](retrospectives/22-gallows-road.md) — session lessons, action items for Game 23
+- [Retrospective: Devil's Backbone](retrospectives/23-devils-backbone.md) — session lessons, action items for Game 24
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
