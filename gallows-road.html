@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Gallows Road</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const CELL = 34;
+const COLS = 9, ROWS = 11;
+const GX = Math.floor((W - COLS * CELL) / 2);
+const GY = 88;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+const GUARD_INTERVAL = 2;
+
+const FLOOR = 0, WALL = 1, CRATE = 2, KEY = 3, DOOR = 4, EXIT = 5;
+
+// --- Level definitions ---
+// tiles[row][col]: 0=floor,1=wall,2=crate,3=key,4=door,5=exit
+// Guard: {col,row,waypointA:{col,row},waypointB:{col,row},dc,dr} dc/dr = current direction
+const LEVEL_DEFS = [
+  {
+    tiles: [
+      [1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,2,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,1,1,1,5,1,1,1,1],
+    ],
+    playerStart: {col:4, row:2},
+    guards: [
+      {col:1, row:8, wA:{col:1, row:8}, wB:{col:7, row:8}, dc:1, dr:0}
+    ],
+    hint: 'Push the crate to block the guard',
+    par: 18,
+  },
+  {
+    tiles: [
+      [1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,2,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,3,0,0,0,0,0,1],
+      [1,0,0,0,4,0,0,0,1],
+      [1,1,1,1,5,1,1,1,1],
+    ],
+    playerStart: {col:6, row:2},
+    guards: [
+      {col:2, row:6, wA:{col:2, row:6}, wB:{col:7, row:6}, dc:1, dr:0}
+    ],
+    hint: 'Block the guard, find the key',
+    par: 22,
+  },
+  {
+    tiles: [
+      [1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,1,0,0,0,0,1],
+      [1,0,0,1,0,0,0,0,1],
+      [1,0,2,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,2,0,0,1],
+      [1,0,0,0,3,0,0,0,1],
+      [1,0,0,0,4,0,0,0,1],
+      [1,1,1,1,5,1,1,1,1],
+    ],
+    playerStart: {col:1, row:2},
+    guards: [
+      {col:4, row:2, wA:{col:4, row:1}, wB:{col:4, row:7}, dc:0, dr:1},
+      {col:6, row:6, wA:{col:5, row:6}, wB:{col:7, row:6}, dc:1, dr:0}
+    ],
+    hint: 'Two guards. Use both crates',
+    par: 28,
+  },
+  {
+    tiles: [
+      [1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,1],
+      [1,0,0,0,1,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,1,2,0,0,0,0,1],
+      [1,0,1,0,0,0,0,0,1],
+      [1,0,0,0,0,2,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,3,0,4,0,3,0,1],
+      [1,0,0,0,4,0,0,0,1],
+      [1,1,1,1,5,1,1,1,1],
+    ],
+    playerStart: {col:1, row:1},
+    guards: [
+      {col:2, row:3, wA:{col:1, row:3}, wB:{col:3, row:3}, dc:1, dr:0},
+      {col:6, row:3, wA:{col:5, row:3}, wB:{col:7, row:3}, dc:1, dr:0}
+    ],
+    hint: 'Two locks, two keys. Plan ahead',
+    par: 32,
+  },
+  {
+    tiles: [
+      [1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,1,0,0,0,1,0,1],
+      [1,0,1,2,0,2,1,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,1,0,1,0,1,0,1,1],
+      [1,0,0,0,0,0,0,0,1],
+      [1,0,3,0,4,0,3,0,1],
+      [1,0,0,0,4,0,0,0,1],
+      [1,1,1,1,5,1,1,1,1],
+    ],
+    playerStart: {col:4, row:1},
+    guards: [
+      {col:4, row:2, wA:{col:1, row:2}, wB:{col:7, row:2}, dc:1, dr:0},
+      {col:1, row:5, wA:{col:1, row:4}, wB:{col:1, row:7}, dc:1, dr:0},
+      {col:7, row:5, wA:{col:7, row:4}, wB:{col:7, row:7}, dc:1, dr:0}
+    ],
+    hint: 'Three guards. Every move counts',
+    par: 38,
+  },
+];
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width = (W * scale) + 'px';
+  wrap.style.height = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- State ----
+let state = 'title';
+let levelIndex = 0;
+let tiles = [];
+let player = {col:0, row:0};
+let guards = [];
+let keysHeld = 0;
+let moves = 0;
+let guardMoveTick = 0;
+let totalScore = 0;
+let levelScore = 0;
+let best = parseInt(localStorage.getItem('gallows_road_best') || '0', 10);
+let popups = [];
+let flashAlpha = 0;
+let levelTransTimer = 0;
+
+// Feedback overlay
+let fbState = 'hidden';
+let fbRating = 0;
+let fbMsg = '';
+let fbSending = false;
+let fbDone = false;
+
+// Audio
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playTone(freq, dur, vol) {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol || 0.18, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.start(); osc.stop(ac.currentTime + dur);
+  } catch(_) {}
+}
+const CHORD = [261.63, 329.63, 392.00, 523.25];
+function playStep() { playTone(CHORD[moves % 4], 0.12, 0.14); }
+function playKey() { playTone(523.25, 0.25, 0.22); playTone(659.25, 0.25, 0.18); }
+function playBlock() { playTone(196.00, 0.18, 0.20); }
+function playWin() {
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+    setTimeout(() => playTone(f, 0.35, 0.22), i * 120);
+  });
+}
+function playLose() { playTone(146.83, 0.5, 0.25); }
+
+// ---- Level helpers ----
+function deepCopyTiles(src) {
+  return src.map(row => row.slice());
+}
+
+function startGame() {
+  levelIndex = 0;
+  totalScore = 0;
+  startLevel();
+}
+
+function startLevel() {
+  const def = LEVEL_DEFS[levelIndex];
+  tiles = deepCopyTiles(def.tiles);
+  player = {col: def.playerStart.col, row: def.playerStart.row};
+  guards = def.guards.map(g => ({
+    col: g.col, row: g.row,
+    wA: {col: g.wA.col, row: g.wA.row},
+    wB: {col: g.wB.col, row: g.wB.row},
+    dc: g.dc, dr: g.dr,
+    blocked: false,
+  }));
+  keysHeld = 0;
+  moves = 0;
+  guardMoveTick = 0;
+  popups = [];
+  flashAlpha = 0;
+  levelScore = 0;
+  state = 'playing';
+}
+
+function tileAt(col, row) {
+  if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return WALL;
+  return tiles[row][col];
+}
+
+function isBlocked(col, row) {
+  if (tileAt(col, row) === WALL || tileAt(col, row) === DOOR) return true;
+  for (const g of guards) {
+    if (g.col === col && g.row === row) return true;
+  }
+  return false;
+}
+
+function moveGuards() {
+  for (const g of guards) {
+    const nc = g.col + g.dc;
+    const nr = g.row + g.dr;
+    // Check if next cell is walkable (not wall, not crate)
+    const t = tileAt(nc, nr);
+    if (t === WALL || t === CRATE || t === DOOR) {
+      // Flip direction
+      g.dc = -g.dc; g.dr = -g.dr;
+      // Try moving in new direction
+      const nc2 = g.col + g.dc;
+      const nr2 = g.row + g.dr;
+      const t2 = tileAt(nc2, nr2);
+      if (t2 !== WALL && t2 !== CRATE && t2 !== DOOR) {
+        g.col = nc2; g.row = nr2;
+      }
+    } else {
+      g.col = nc; g.row = nr;
+      // Check if reached waypoint
+      const atA = g.col === g.wA.col && g.row === g.wA.row;
+      const atB = g.col === g.wB.col && g.row === g.wB.row;
+      if (atA || atB) {
+        g.dc = -g.dc; g.dr = -g.dr;
+      }
+    }
+  }
+}
+
+function addPopup(text, col, row, color) {
+  const px = GX + col * CELL + CELL / 2;
+  const py = GY + row * CELL;
+  popups.push({text, x: px, y: py, alpha: 1.0, vy: -1.2, color: color || '#FFE066'});
+}
+
+function tryMove(dc, dr) {
+  if (state !== 'playing') return false;
+  const nc = player.col + dc;
+  const nr = player.row + dr;
+
+  if (tileAt(nc, nr) === WALL) return false;
+
+  // Door check
+  if (tileAt(nc, nr) === DOOR) {
+    if (keysHeld > 0) {
+      keysHeld--;
+      tiles[nr][nc] = FLOOR;
+      addPopup('UNLOCKED', nc, nr, '#FF9F43');
+      playKey();
+    } else {
+      addPopup('NEED KEY', nc, nr, '#E74C3C');
+      return false;
+    }
+  }
+
+  // Crate push
+  if (tileAt(nc, nr) === CRATE) {
+    const nc2 = nc + dc;
+    const nr2 = nr + dr;
+    if (tileAt(nc2, nr2) === WALL || tileAt(nc2, nr2) === CRATE || tileAt(nc2, nr2) === DOOR || tileAt(nc2, nr2) === EXIT) return false;
+    for (const g of guards) {
+      if (g.col === nc2 && g.row === nr2) return false;
+    }
+    tiles[nr][nc] = FLOOR;
+    tiles[nr2][nc2] = CRATE;
+    addPopup('PUSH', nc, nr, '#C8A04A');
+    playBlock();
+  }
+
+  player.col = nc;
+  player.row = nr;
+  moves++;
+
+  // Pick up key
+  if (tileAt(nc, nr) === KEY) {
+    keysHeld++;
+    tiles[nr][nc] = FLOOR;
+    addPopup('KEY!', nc, nr, '#FFD700');
+    playKey();
+  }
+
+  // Guard movement every GUARD_INTERVAL moves
+  guardMoveTick++;
+  if (guardMoveTick >= GUARD_INTERVAL) {
+    guardMoveTick = 0;
+    moveGuards();
+  }
+
+  // Check caught
+  for (const g of guards) {
+    if (g.col === player.col && g.row === player.row) {
+      state = 'gameLose';
+      flashAlpha = 1;
+      playLose();
+      return true;
+    }
+  }
+
+  // Check exit
+  if (tileAt(nc, nr) === EXIT) {
+    const def = LEVEL_DEFS[levelIndex];
+    const efficiency = Math.max(0, def.par - moves);
+    levelScore = 500 + levelIndex * 200 + efficiency * 10;
+    totalScore += levelScore;
+    playWin();
+    if (levelIndex >= LEVEL_DEFS.length - 1) {
+      if (totalScore > best) {
+        best = totalScore;
+        localStorage.setItem('gallows_road_best', String(best));
+      }
+      state = 'gameWin';
+    } else {
+      state = 'levelWin';
+      levelTransTimer = 2.5;
+    }
+    return true;
+  }
+
+  playStep();
+  return true;
+}
+
+function handleWait() {
+  if (state !== 'playing') return;
+  moves++;
+  guardMoveTick++;
+  if (guardMoveTick >= GUARD_INTERVAL) {
+    guardMoveTick = 0;
+    moveGuards();
+  }
+  for (const g of guards) {
+    if (g.col === player.col && g.row === player.row) {
+      state = 'gameLose';
+      flashAlpha = 1;
+      playLose();
+    }
+  }
+}
+
+// ---- D-pad layout ----
+const PAD_CY = H - 68;
+const PAD_R = 30;
+const DPAD = {
+  up:    {x: W/2,         y: PAD_CY - 54, dc:  0, dr: -1},
+  down:  {x: W/2,         y: PAD_CY + 54, dc:  0, dr:  1},
+  left:  {x: W/2 - 54,   y: PAD_CY,      dc: -1, dr:  0},
+  right: {x: W/2 + 54,   y: PAD_CY,      dc:  1, dr:  0},
+  wait:  {x: W/2,         y: PAD_CY,      wait: true},
+};
+
+function hitDpad(x, y) {
+  for (const key of Object.keys(DPAD)) {
+    const btn = DPAD[key];
+    const dx = x - btn.x, dy = y - btn.y;
+    if (dx*dx + dy*dy <= PAD_R*PAD_R) return btn;
+  }
+  return null;
+}
+
+// ---- Input ----
+canvas.addEventListener('click', e => {
+  const scale = parseFloat(canvas.style.width) / W;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / scale;
+  const y = (e.clientY - rect.top) / scale;
+  handleClick(x, y);
+});
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const scale = parseFloat(canvas.style.width) / W;
+  const rect = canvas.getBoundingClientRect();
+  const t = e.changedTouches[0];
+  const x = (t.clientX - rect.left) / scale;
+  const y = (t.clientY - rect.top) / scale;
+  handleClick(x, y);
+}, {passive: false});
+
+function handleClick(x, y) {
+  if (fbState === 'open') { handleFbClick(x, y); return; }
+
+  if (state === 'title') { startGame(); return; }
+
+  if (state === 'levelWin') {
+    levelIndex++;
+    startLevel();
+    return;
+  }
+
+  if (state === 'gameWin' || state === 'gameLose') {
+    // Check feedback button
+    if (x >= W/2 - 80 && x <= W/2 + 80 && y >= H/2 + 60 && y <= H/2 + 95) {
+      fbState = 'open'; fbRating = 0; fbMsg = ''; fbSending = false; fbDone = false;
+      return;
+    }
+    startGame();
+    return;
+  }
+
+  if (state === 'playing') {
+    const btn = hitDpad(x, y);
+    if (btn) {
+      if (btn.wait) handleWait();
+      else tryMove(btn.dc, btn.dr);
+    }
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (fbState === 'open') return;
+  if (state === 'title') { startGame(); return; }
+  if (state === 'levelWin') { levelIndex++; startLevel(); return; }
+  if (state === 'gameWin' || state === 'gameLose') { startGame(); return; }
+  if (state !== 'playing') return;
+  if (e.key === 'ArrowUp'    || e.key === 'w' || e.key === 'W') { e.preventDefault(); tryMove(0,-1); }
+  if (e.key === 'ArrowDown'  || e.key === 's' || e.key === 'S') { e.preventDefault(); tryMove(0, 1); }
+  if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') { e.preventDefault(); tryMove(-1,0); }
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); tryMove(1, 0); }
+  if (e.key === ' ' || e.key === 'z' || e.key === 'Z') { e.preventDefault(); handleWait(); }
+  if (e.key === 'r' || e.key === 'R') { startLevel(); }
+});
+
+// ---- Drawing ----
+function pill(x, y, w, h, r, fill) {
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arc(x + w - r, y + r, r, -Math.PI/2, 0);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arc(x + w - r, y + h - r, r, 0, Math.PI/2);
+  ctx.lineTo(x + r, y + h);
+  ctx.arc(x + r, y + h - r, r, Math.PI/2, Math.PI);
+  ctx.lineTo(x, y + r);
+  ctx.arc(x + r, y + r, r, Math.PI, -Math.PI/2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawTile(col, row) {
+  ctx.save();
+  const x = GX + col * CELL;
+  const y = GY + row * CELL;
+  const t = tiles[row][col];
+
+  if (t === WALL) {
+    ctx.fillStyle = '#3a1f05';
+    ctx.fillRect(x, y, CELL, CELL);
+    ctx.fillStyle = '#5a3010';
+    ctx.fillRect(x, y, CELL, 4);
+    ctx.fillStyle = '#2a1000';
+    ctx.fillRect(x, y+CELL-2, CELL, 2);
+  } else {
+    // Floor
+    ctx.fillStyle = '#1a0d08';
+    ctx.fillRect(x, y, CELL, CELL);
+    ctx.strokeStyle = '#221208';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+
+    if (t === CRATE) {
+      ctx.fillStyle = '#6B3A0A';
+      ctx.fillRect(x+3, y+3, CELL-6, CELL-6);
+      ctx.fillStyle = '#C8A04A';
+      ctx.fillRect(x+5, y+5, CELL-10, CELL-10);
+      ctx.strokeStyle = '#F4C842';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x+5, y+5, CELL-10, CELL-10);
+      // X mark
+      ctx.strokeStyle = '#8B6010';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x+7, y+7); ctx.lineTo(x+CELL-7, y+CELL-7);
+      ctx.moveTo(x+CELL-7, y+7); ctx.lineTo(x+7, y+CELL-7);
+      ctx.stroke();
+    } else if (t === KEY) {
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath();
+      ctx.arc(x + CELL/2 - 4, y + CELL/2, 7, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#1a0d08';
+      ctx.beginPath();
+      ctx.arc(x + CELL/2 - 4, y + CELL/2, 4, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#FFD700';
+      ctx.fillRect(x + CELL/2 + 2, y + CELL/2 - 2, 10, 4);
+      ctx.fillRect(x + CELL/2 + 8, y + CELL/2 + 2, 4, 4);
+    } else if (t === DOOR) {
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(x+4, y+2, CELL-8, CELL-2);
+      ctx.fillStyle = '#A0522D';
+      ctx.fillRect(x+6, y+4, CELL-12, (CELL-6)/2);
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath();
+      ctx.arc(x + CELL - 9, y + CELL/2, 3, 0, Math.PI*2);
+      ctx.fill();
+    } else if (t === EXIT) {
+      ctx.fillStyle = '#1a4a1a';
+      ctx.fillRect(x, y, CELL, CELL);
+      ctx.strokeStyle = '#3db33d';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x+2, y+2, CELL-4, CELL-4);
+      ctx.fillStyle = '#3db33d';
+      ctx.font = 'bold 18px Georgia,serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('OUT', x + CELL/2, y + CELL/2);
+    }
+  }
+  ctx.restore();
+}
+
+function drawPlayer() {
+  ctx.save();
+  const x = GX + player.col * CELL + CELL/2;
+  const y = GY + player.row * CELL + CELL/2;
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 10, 9, 4, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Body
+  ctx.fillStyle = '#2a0f30';
+  ctx.fillRect(x - 6, y - 2, 12, 11);
+  // Head
+  ctx.fillStyle = '#3a1f40';
+  ctx.beginPath();
+  ctx.arc(x, y - 6, 6, 0, Math.PI*2);
+  ctx.fill();
+  // Hat
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(x - 8, y - 10, 16, 4);
+  ctx.fillRect(x - 5, y - 20, 10, 11);
+  ctx.restore();
+}
+
+function drawGuard(g) {
+  ctx.save();
+  const x = GX + g.col * CELL + CELL/2;
+  const y = GY + g.row * CELL + CELL/2;
+  // Glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, 20);
+  grd.addColorStop(0, 'rgba(200,0,0,0.3)');
+  grd.addColorStop(1, 'rgba(200,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, 20, 0, Math.PI*2);
+  ctx.fill();
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 10, 9, 4, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Body
+  ctx.fillStyle = '#7a0000';
+  ctx.fillRect(x - 6, y - 2, 12, 11);
+  // Head
+  ctx.fillStyle = '#9a1010';
+  ctx.beginPath();
+  ctx.arc(x, y - 6, 6, 0, Math.PI*2);
+  ctx.fill();
+  // Hat
+  ctx.fillStyle = '#5a0000';
+  ctx.fillRect(x - 8, y - 10, 16, 4);
+  ctx.fillRect(x - 5, y - 20, 10, 11);
+  // Star badge
+  ctx.fillStyle = '#FFD700';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('S', x, y + 3);
+  ctx.restore();
+}
+
+function drawGrid() {
+  ctx.save();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      drawTile(c, r);
+    }
+  }
+  for (const g of guards) drawGuard(g);
+  drawPlayer();
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Level
+  pill(8, 8, 90, 26, 6, 'rgba(0,0,0,0.7)');
+  ctx.fillStyle = '#F4C842';
+  ctx.font = 'bold 13px Georgia,serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('LEVEL ' + (levelIndex + 1) + '/5', 16, 21);
+  // Moves
+  pill(W/2 - 45, 8, 90, 26, 6, 'rgba(0,0,0,0.7)');
+  ctx.fillStyle = '#FFE066';
+  ctx.textAlign = 'center';
+  ctx.fillText('MOVES: ' + moves, W/2, 21);
+  // Keys
+  if (keysHeld > 0) {
+    pill(W - 80, 8, 72, 26, 6, 'rgba(0,0,0,0.7)');
+    ctx.fillStyle = '#FFD700';
+    ctx.textAlign = 'center';
+    ctx.fillText('KEY x' + keysHeld, W - 44, 21);
+  }
+  // Hint bar
+  const def = LEVEL_DEFS[levelIndex];
+  pill(GX, GY - 24, COLS*CELL, 18, 4, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(def.hint, W/2, GY - 15);
+  ctx.restore();
+}
+
+function drawDpad() {
+  ctx.save();
+  const btns = [DPAD.up, DPAD.down, DPAD.left, DPAD.right];
+  const arrows = ['▲', '▼', '◄', '►'];
+  btns.forEach((b, i) => {
+    ctx.fillStyle = 'rgba(90,48,16,0.75)';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, PAD_R, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#C8A04A';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, PAD_R, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(arrows[i], b.x, b.y);
+  });
+  // Wait button
+  ctx.fillStyle = 'rgba(40,20,5,0.75)';
+  ctx.beginPath();
+  ctx.arc(DPAD.wait.x, DPAD.wait.y, PAD_R - 4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = '#8B6010';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(DPAD.wait.x, DPAD.wait.y, PAD_R - 4, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 10px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('WAIT', DPAD.wait.x, DPAD.wait.y);
+  ctx.restore();
+}
+
+function drawPopups(dt) {
+  ctx.save();
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.y += p.vy;
+    p.alpha -= dt * 1.4;
+    if (p.alpha <= 0) { popups.splice(i, 1); continue; }
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 13px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  // Stars
+  for (let i = 0; i < 40; i++) {
+    const sx = (i * 137.5) % W;
+    const sy = (i * 89.3) % (H * 0.5);
+    ctx.fillStyle = 'rgba(255,255,200,' + (0.4 + (i % 3) * 0.2) + ')';
+    ctx.fillRect(sx, sy, 1.5, 1.5);
+  }
+  // Gallows silhouette
+  ctx.fillStyle = '#2a0f30';
+  ctx.fillRect(W/2 - 6, 130, 12, 160);
+  ctx.fillRect(W/2 - 6, 130, 60, 10);
+  ctx.fillStyle = '#3a1f40';
+  ctx.fillRect(W/2 + 48, 140, 6, 40);
+  // Title
+  ctx.shadowColor = '#F4C842';
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 46px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('GALLOWS', W/2, 330);
+  ctx.fillText('ROAD', W/2, 382);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia,serif';
+  ctx.fillText('Push crates. Block guards. Escape.', W/2, 430);
+  if (best > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '14px Georgia,serif';
+    ctx.fillText('BEST: ' + best, W/2, 460);
+  }
+  // Start prompt
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia,serif';
+  ctx.fillText('TAP TO START', W/2, 520);
+  ctx.restore();
+}
+
+function drawLevelWin() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 32px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('CELL CLEARED', W/2, H/2 - 60);
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = '20px Georgia,serif';
+  ctx.fillText('Level ' + (levelIndex + 1) + ' score: ' + levelScore, W/2, H/2 - 10);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia,serif';
+  ctx.fillText('Moves: ' + moves, W/2, H/2 + 20);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText('TAP FOR NEXT LEVEL', W/2, H/2 + 70);
+  ctx.restore();
+}
+
+function drawGameWin() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.shadowColor = '#FFE066';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 38px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('ESCAPED!', W/2, H/2 - 110);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = '24px Georgia,serif';
+  ctx.fillText('Score: ' + totalScore, W/2, H/2 - 55);
+  if (totalScore >= best) {
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 20px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W/2, H/2 - 15);
+  } else {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '16px Georgia,serif';
+    ctx.fillText('Best: ' + best, W/2, H/2 - 15);
+  }
+  pill(W/2 - 80, H/2 + 60, 160, 36, 8, '#3a1f05');
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 80, H/2 + 60, 160, 36, 8);
+  ctx.stroke();
+  ctx.fillStyle = '#F4C842';
+  ctx.font = 'bold 15px Georgia,serif';
+  ctx.fillText('LEAVE FEEDBACK', W/2, H/2 + 78);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia,serif';
+  ctx.fillText('TAP ANYWHERE TO PLAY AGAIN', W/2, H/2 + 130);
+  ctx.restore();
+}
+
+function drawGameLose() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(100,0,0,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  if (flashAlpha > 0) {
+    ctx.fillStyle = 'rgba(200,0,0,' + flashAlpha + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 38px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('CAUGHT!', W/2, H/2 - 80);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '18px Georgia,serif';
+  ctx.fillText('Level ' + (levelIndex + 1) + ', Move ' + moves, W/2, H/2 - 20);
+  pill(W/2 - 80, H/2 + 60, 160, 36, 8, '#3a1f05');
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 80, H/2 + 60, 160, 36, 8);
+  ctx.stroke();
+  ctx.fillStyle = '#F4C842';
+  ctx.font = 'bold 15px Georgia,serif';
+  ctx.fillText('LEAVE FEEDBACK', W/2, H/2 + 78);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia,serif';
+  ctx.fillText('TAP TO TRY AGAIN', W/2, H/2 + 130);
+  ctx.restore();
+}
+
+// ---- Feedback overlay ----
+const FB_STARS = 5;
+function drawFeedback() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(0, 0, W, H);
+  pill(W/2 - 140, H/2 - 170, 280, 320, 14, '#1e1008');
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 140, H/2 - 170, 280, 320, 14);
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('RATE GALLOWS ROAD', W/2, H/2 - 130);
+  for (let i = 1; i <= FB_STARS; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFD700' : '#5a3010';
+    ctx.font = '28px sans-serif';
+    ctx.fillText('★', W/2 - 60 + (i-1)*30, H/2 - 85);
+  }
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia,serif';
+  ctx.fillText('Your thoughts (optional):', W/2, H/2 - 45);
+  pill(W/2 - 110, H/2 - 30, 220, 60, 6, '#2a1500');
+  ctx.strokeStyle = '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 110, H/2 - 30, 220, 60, 6);
+  ctx.stroke();
+  if (fbMsg) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = '13px Georgia,serif';
+    ctx.textAlign = 'left';
+    const words = fbMsg.split(' ');
+    let line = '', lines = [];
+    for (const w of words) {
+      const test = line + (line ? ' ' : '') + w;
+      if (ctx.measureText(test).width > 200) { lines.push(line); line = w; }
+      else line = test;
+    }
+    lines.push(line);
+    lines.slice(0, 3).forEach((l, i) => ctx.fillText(l, W/2 - 104, H/2 - 18 + i * 16));
+  } else {
+    ctx.fillStyle = '#5a3010';
+    ctx.font = 'italic 13px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('tap to type...', W/2, H/2);
+  }
+  ctx.textAlign = 'center';
+  const canSend = fbRating > 0 && !fbSending;
+  pill(W/2 - 60, H/2 + 45, 120, 34, 8, canSend ? '#5a3010' : '#2a1500');
+  ctx.strokeStyle = canSend ? '#C8A04A' : '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 60, H/2 + 45, 120, 34, 8);
+  ctx.stroke();
+  ctx.fillStyle = canSend ? '#FFE066' : '#5a3010';
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.fillText(fbDone ? 'SENT!' : (fbSending ? 'SENDING...' : 'SEND'), W/2, H/2 + 62);
+  pill(W/2 - 35, H/2 + 100, 70, 28, 6, '#2a1500');
+  ctx.strokeStyle = '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 35, H/2 + 100, 70, 28, 6);
+  ctx.stroke();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia,serif';
+  ctx.fillText('CLOSE', W/2, H/2 + 114);
+  ctx.restore();
+}
+
+function handleFbClick(x, y) {
+  // Stars
+  for (let i = 1; i <= FB_STARS; i++) {
+    const sx = W/2 - 60 + (i-1)*30;
+    const sy = H/2 - 85;
+    if (Math.abs(x - sx) < 18 && Math.abs(y - sy) < 18) { fbRating = i; return; }
+  }
+  // Text area
+  if (x >= W/2 - 110 && x <= W/2 + 110 && y >= H/2 - 30 && y <= H/2 + 30) {
+    const t = prompt('Your feedback:') || '';
+    fbMsg = t.slice(0, 200);
+    return;
+  }
+  // Send
+  if (x >= W/2 - 60 && x <= W/2 + 60 && y >= H/2 + 45 && y <= H/2 + 79 && fbRating > 0 && !fbSending) {
+    fbSending = true;
+    const body = JSON.stringify({game:'Gallows Road', rating:fbRating, message:fbMsg, score:totalScore});
+    fetch(FEEDBACK_ENDPOINT, {method:'POST', headers:{'Content-Type':'application/json'}, body})
+      .then(() => { fbDone = true; fbSending = false; setTimeout(() => { fbState = 'hidden'; }, 1500); })
+      .catch(() => { fbDone = true; fbSending = false; setTimeout(() => { fbState = 'hidden'; }, 1500); });
+    return;
+  }
+  // Close
+  if (x >= W/2 - 35 && x <= W/2 + 35 && y >= H/2 + 100 && y <= H/2 + 128) {
+    fbState = 'hidden';
+  }
+}
+
+// ---- Main loop ----
+let lastTime = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+
+    if (flashAlpha > 0) flashAlpha = Math.max(0, flashAlpha - dt * 3);
+    if (levelTransTimer > 0) levelTransTimer = Math.max(0, levelTransTimer - dt);
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (state === 'title') {
+      drawTitle();
+    } else if (state === 'playing' || state === 'levelWin' || state === 'gameLose' || state === 'gameWin') {
+      // Always draw the grid beneath overlays
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#050208');
+      bg.addColorStop(1, '#1a0d35');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+      drawGrid();
+      drawHUD();
+      drawDpad();
+      drawPopups(dt);
+      if (state === 'levelWin')  drawLevelWin();
+      if (state === 'gameLose')  drawGameLose();
+      if (state === 'gameWin')   drawGameWin();
+    }
+
+    if (fbState === 'open') drawFeedback();
+
+  } catch(e) {
+    console.error('loop error', e);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---- Test API ----
+window.__test = {
+  getState:     () => state,
+  startGame:    () => { startGame(); },
+  getScore:     () => totalScore,
+  getLevelIndex: () => levelIndex,
+  getMoves:     () => moves,
+  getKeysHeld:  () => keysHeld,
+  getPlayer:    () => ({col: player.col, row: player.row}),
+  getGuards:    () => guards.map(g => ({col:g.col, row:g.row})),
+  getTile:      (col, row) => tiles[row][col],
+  tryMove:      (dc, dr) => tryMove(dc, dr),
+  handleWait:   () => handleWait(),
+  LEVEL_COUNT:  LEVEL_DEFS.length,
+  GUARD_INTERVAL: GUARD_INTERVAL,
+  COLS, ROWS,
+  TILE: {FLOOR, WALL, CRATE, KEY, DOOR, EXIT},
+};
+</script>
+</body>
+</html>
