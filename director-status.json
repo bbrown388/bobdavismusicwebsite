@@ -1,27 +1,17 @@
 {
-  "lastRunAt": "2026-05-03T09:45:00.000Z",
+  "lastRunAt": "2026-05-03T10:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 26: Dust Storm - tests passing, committing",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 26: Dust Storm - tests passing, committing"
-  },
-  "gamesBuilt": 25,
-  "lastGameTitle": "Fence Line",
-  "lastGameFile": "fence-line.html",
+  "lastRunSummary": "Built Game 26: Dust Storm - fog-of-war visibility cone, lane-dodge stagecoach, 42 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 26,
+  "lastGameTitle": "Dust Storm",
+  "lastGameFile": "dust-storm.html",
   "gameQueue": [
-    {
-      "num": 26,
-      "title": "Dust Storm",
-      "concept": "Guide a stagecoach through a blinding dust storm: visibility shrinks to a lantern cone, tap to swerve around unseen boulders and ravines revealed only as the coach approaches. First visibility/fog-of-war mechanic in series.",
-      "raisesBarOn": "First dynamic visibility system, first reactive obstacle reveal, highest moment-to-moment tension in series",
-      "status": "planned"
-    },
     {
       "num": 27,
       "title": "River Run",
       "concept": "Steer a raft through white-water canyon rapids: read swirling current indicators to predict boulder placement, tap left/right to dodge rocks and navigate chutes, brake-tap to manage speed through tight sections. First water-physics navigation in series.",
-      "raisesBarOn": "First water navigation and current-reading mechanic, first continuous speed-management alongside obstacle avoidance",
+      "raisesBarOn": "First water navigation and current-reading mechanic, first momentum/inertia model, first continuous speed-management alongside obstacle avoidance",
       "status": "planned"
     },
     {
@@ -30,17 +20,16 @@
       "concept": "Drag a glowing brand iron along a template path burned into the hide - follow the shape precisely while managing iron heat (too cool = faint mark, too hot = burn) across 5 cattle with escalating brand complexity. First path-tracing mechanic in series.",
       "raisesBarOn": "First continuous drag/path-tracing input, first dual-axis precision + resource management, most fine-motor challenge in series",
       "status": "planned"
+    },
+    {
+      "num": 29,
+      "title": "Jail Break",
+      "concept": "Turn-based stealth escape from a frontier jail: pick locks, distract guards with thrown objects, slip through shadow zones, and reach the horse waiting outside. Guard patrol AI with vision cones, 5 escalating layouts. First shadow/stealth grid game in series.",
+      "raisesBarOn": "First stealth grid with vision cones, first object-throw mechanic, most complex guard AI in series",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-04-27T22:39:01Z",
-      "action": "new_game",
-      "game": "Wanted Poster",
-      "result": "success",
-      "summary": "Built Game 09: Wanted Poster. Memory/deduction face-ID mechanic, procedural face system, 15 tests pass.",
-      "commitHash": "7fe5965"
-    },
     {
       "runAt": "2026-04-27T23:10:00Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 25: Fence Line - construction/placement mechanic, wind gusts, cattle gap-seek AI, 5 levels, 42 tests pass.",
       "commitHash": "23c7df0"
+    },
+    {
+      "runAt": "2026-05-03T10:30:00.000Z",
+      "action": "new_game",
+      "game": "Dust Storm",
+      "result": "success",
+      "summary": "Built Game 26: Dust Storm - fog-of-war visibility cone, lane-dodge stagecoach, 42 tests pass.",
+      "commitHash": "ab93339"
     }
   ]
 }
