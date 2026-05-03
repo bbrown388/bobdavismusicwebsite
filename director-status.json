@@ -1,10 +1,10 @@
 {
   "lastRunAt": "2026-05-03T09:45:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 26: Dust Storm",
+  "lastRunSummary": "Game 26: Dust Storm - tests passing, committing",
   "currentTask": {
     "action": "new_game",
-    "context": "Designing Game 26: Dust Storm - stagecoach fog-of-war, lane-dodge mechanic"
+    "context": "Game 26: Dust Storm - tests passing, committing"
   },
   "gamesBuilt": 25,
   "lastGameTitle": "Fence Line",
@@ -27,20 +27,12 @@
     {
       "num": 28,
       "title": "Brand Iron",
-      "concept": "Drag a glowing brand iron along a template path burned into the hide — follow the shape precisely while managing iron heat (too cool = faint mark, too hot = burn) across 5 cattle with escalating brand complexity. First path-tracing mechanic in series.",
+      "concept": "Drag a glowing brand iron along a template path burned into the hide - follow the shape precisely while managing iron heat (too cool = faint mark, too hot = burn) across 5 cattle with escalating brand complexity. First path-tracing mechanic in series.",
       "raisesBarOn": "First continuous drag/path-tracing input, first dual-axis precision + resource management, most fine-motor challenge in series",
       "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-04-27T22:10:00Z",
-      "action": "new_game",
-      "game": "Dust Devil",
-      "result": "success",
-      "summary": "Built Game 08: Dust Devil (dust-devil.html). 2-axis physics tumbleweed, tap-to-gust canyon navigation, 14 tests pass.",
-      "commitHash": "e842087"
-    },
     {
       "runAt": "2026-04-27T22:39:01Z",
       "action": "new_game",
@@ -176,6 +168,14 @@
       "result": "success",
       "summary": "Built Game 24: Dead Reckoning - celestial navigation, star bearing lines, 5-round terrain puzzle, 50 tests pass.",
       "commitHash": "d7d6e9f"
+    },
+    {
+      "runAt": "2026-05-03T09:45:00.000Z",
+      "action": "new_game",
+      "game": "Fence Line",
+      "result": "success",
+      "summary": "Built Game 25: Fence Line - construction/placement mechanic, wind gusts, cattle gap-seek AI, 5 levels, 42 tests pass.",
+      "commitHash": "23c7df0"
     },
     {
       "runAt": "2026-05-03T09:45:00.000Z",
