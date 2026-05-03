@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Devil's Backbone</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const TILT_LIMIT   = 1.0;
+const MAX_TILT_DEG = 26;
+const SPRING       = 0.9;
+const DAMPING      = 1.3;
+const HOLD_FORCE   = 2.5;
+const TRAVEL_SPEED = 11;
+const SCROLL_SPEED = 70;
+
+const STAGES = [
+  { name: 'Foothills',        dist: 140, windAmp: 0.20, windFreq: 0.50, bumpFreq: 0,   bumpMag: 0    },
+  { name: 'First Switchback', dist: 170, windAmp: 0.36, windFreq: 0.70, bumpFreq: 0.8, bumpMag: 0.18 },
+  { name: 'Canyon Ridge',     dist: 195, windAmp: 0.54, windFreq: 0.95, bumpFreq: 1.5, bumpMag: 0.27 },
+  { name: "Devil's Elbow",    dist: 215, windAmp: 0.70, windFreq: 1.25, bumpFreq: 2.5, bumpMag: 0.37 },
+  { name: 'The Backbone',     dist: 245, windAmp: 0.88, windFreq: 1.55, bumpFreq: 4.0, bumpMag: 0.46 },
+];
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+const wrap   = document.getElementById('wrap');
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  wrap.style.width    = canvas.style.width;
+  wrap.style.height   = canvas.style.height;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let state = 'title';
+let lean = 0, leanV = 0;
+let stageIndex = 0, stageDist = 0, stageScore = 0, totalScore = 0;
+let best = parseInt(localStorage.getItem('devils_backbone_best') || '0', 10);
+let scrollX = 0;
+let windPhase = 0, windPhase2 = 0;
+let windGust = 0, windGustTimer = 0;
+let bumpTimer = 0;
+let stageTransTimer = 0;
+let flashAlpha = 0, warningAlpha = 0;
+let popups = [];
+let holdLeft = false, holdRight = false;
+let currentWindForce = 0;
+let fbState = 'hidden', fbRating = 0, fbMsg = '', fbSending = false, fbDone = false;
+
+const NUM_PARTICLES = 20;
+let particles = [];
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < NUM_PARTICLES; i++) {
+    particles.push({ x: Math.random() * W, y: 60 + Math.random() * 220,
+                     len: 7 + Math.random() * 16, alpha: 0.15 + Math.random() * 0.35 });
+  }
+}
+initParticles();
+
+function updateParticles(dt, wf) {
+  const wx = wf * 190;
+  for (const p of particles) {
+    p.x += wx * dt + (Math.random() - 0.5) * 18 * dt;
+    p.y += (Math.random() - 0.5) * 8 * dt;
+    if (wx > 0 && p.x > W + p.len) { p.x = -p.len; p.y = 60 + Math.random() * 220; }
+    if (wx < 0 && p.x < -p.len)    { p.x = W + p.len; p.y = 60 + Math.random() * 220; }
+  }
+}
+
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playTone(freq, dur, vol, type) {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = type || 'triangle';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol || 0.15, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.start(); osc.stop(ac.currentTime + dur);
+  } catch(_) {}
+}
+const CHORD = [261.63, 329.63, 392.00, 440.00, 523.25, 659.25];
+function playBump() {
+  playTone(110, 0.14, 0.22, 'square');
+  playTone(82, 0.22, 0.18, 'triangle');
+}
+function playGust(intensity) { playTone(80 + intensity * 35, 0.28, 0.07 * intensity, 'sawtooth'); }
+function playHold() { playTone(CHORD[2], 0.07, 0.09); }
+function playStageWin() {
+  [392.00, 523.25, 659.25].forEach((f, i) => setTimeout(() => playTone(f, 0.32, 0.18), i * 100));
+}
+function playWin() {
+  [261.63, 329.63, 392.00, 523.25, 659.25, 783.99].forEach((f, i) => setTimeout(() => playTone(f, 0.38, 0.20), i * 85));
+}
+function playLose() {
+  playTone(110, 0.55, 0.28, 'sawtooth');
+  setTimeout(() => playTone(82, 0.75, 0.25, 'sawtooth'), 90);
+}
+
+function startGame() {
+  stageIndex = 0;
+  totalScore = 0;
+  startStage();
+}
+
+function startStage() {
+  lean = 0; leanV = 0;
+  windPhase  = Math.random() * Math.PI * 2;
+  windPhase2 = Math.random() * Math.PI * 2;
+  windGust = 0; windGustTimer = 1.2 + Math.random() * 2.0;
+  bumpTimer = 0.6;
+  stageDist = 0; stageScore = 0;
+  popups = []; flashAlpha = 0; warningAlpha = 0;
+  holdLeft = false; holdRight = false;
+  currentWindForce = 0;
+  initParticles();
+  state = 'playing';
+}
+
+function updatePhysics(dt) {
+  const stage = STAGES[stageIndex];
+  windPhase  += stage.windFreq * dt;
+  windPhase2 += stage.windFreq * 0.73 * dt;
+  const baseWind = Math.sin(windPhase) * 0.65 + Math.sin(windPhase2) * 0.35;
+
+  windGustTimer -= dt;
+  if (windGustTimer <= 0) {
+    const gustMag = 0.5 + Math.random() * 0.7;
+    windGust = (Math.random() - 0.5) * 2 * stage.windAmp * gustMag;
+    windGustTimer = 1.6 + Math.random() * 2.8;
+    if (stage.windAmp > 0.35) playGust(stage.windAmp);
+  }
+  windGust *= Math.pow(0.96, dt * 60);
+
+  currentWindForce = (baseWind * stage.windAmp + windGust) * 0.5;
+
+  if (stage.bumpFreq > 0) {
+    bumpTimer -= dt;
+    if (bumpTimer <= 0) {
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const mag = (0.5 + Math.random() * 0.5) * stage.bumpMag;
+      leanV += dir * mag;
+      bumpTimer = (1.0 / stage.bumpFreq) * (0.65 + Math.random() * 0.7);
+      addPopup('BUMP!', W / 2, 295, '#FF9F43');
+      playBump();
+    }
+  }
+
+  if (holdLeft)  leanV -= HOLD_FORCE * dt;
+  if (holdRight) leanV += HOLD_FORCE * dt;
+
+  leanV += currentWindForce * dt;
+  leanV -= lean * SPRING * dt;
+  leanV *= Math.exp(-DAMPING * dt);
+  lean  += leanV * dt;
+  lean   = Math.max(-1.2, Math.min(1.2, lean));
+
+  warningAlpha = Math.abs(lean) > 0.62
+    ? Math.min(1, warningAlpha + dt * 4)
+    : Math.max(0, warningAlpha - dt * 3);
+
+  stageDist += dt * TRAVEL_SPEED;
+  scrollX   += dt * SCROLL_SPEED;
+  updateParticles(dt, currentWindForce);
+
+  if (Math.abs(lean) >= TILT_LIMIT) {
+    state = 'gameLose'; flashAlpha = 1; playLose(); return;
+  }
+
+  if (stageDist >= stage.dist) {
+    const eff = 1 - Math.min(1, Math.abs(lean));
+    stageScore = Math.round(1000 + eff * 500 + stageIndex * 200);
+    totalScore += stageScore;
+    if (stageIndex >= STAGES.length - 1) {
+      if (totalScore > best) {
+        best = totalScore;
+        localStorage.setItem('devils_backbone_best', String(best));
+      }
+      state = 'gameWin'; playWin();
+    } else {
+      state = 'stageWin'; stageTransTimer = 2.8; playStageWin();
+    }
+  }
+}
+
+function pill(x, y, w, h, r, fill) {
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+  ctx.lineTo(x + r, y + h);
+  ctx.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+  ctx.lineTo(x, y + r);
+  ctx.arc(x + r, y + r, r, Math.PI, -Math.PI / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, alpha: 1.0, vy: -0.9, color: color || '#FFE066' });
+}
+
+function drawBackground() {
+  ctx.save();
+
+  const sky = ctx.createLinearGradient(0, 0, 0, 310);
+  sky.addColorStop(0, '#050208');
+  sky.addColorStop(1, '#170b30');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, 310);
+
+  for (let i = 0; i < 58; i++) {
+    const sx = (i * 137.5 + 9) % W;
+    const sy = (i * 91.3) % 200;
+    const br = 0.25 + (i % 4) * 0.16;
+    ctx.fillStyle = 'rgba(255,255,210,' + br + ')';
+    const sz = i % 7 === 0 ? 2 : 1;
+    ctx.fillRect(sx, sy + 10, sz, sz);
+  }
+
+  const offFar = (((-scrollX * 0.055) % W) + W) % W;
+  drawMountainRidge(offFar - W, 215, 105, W, '#140a28');
+  drawMountainRidge(offFar,     215, 105, W, '#140a28');
+
+  const offMid = (((-scrollX * 0.13) % W) + W) % W;
+  drawMountainRidge(offMid - W, 280, 80, W, '#0e0618');
+  drawMountainRidge(offMid,     280, 80, W, '#0e0618');
+
+  const gradCliff = ctx.createLinearGradient(0, 310, 0, 455);
+  gradCliff.addColorStop(0, '#1c0a02');
+  gradCliff.addColorStop(1, '#2a1200');
+  ctx.fillStyle = gradCliff;
+  ctx.fillRect(0, 310, W, 145);
+
+  const offNear = (((-scrollX * 0.28) % W) + W) % W;
+  drawCliffDetail(offNear);
+
+  ctx.fillStyle = '#2a1400';
+  ctx.fillRect(0, 452, W, 32);
+  ctx.fillStyle = '#3d1e06';
+  ctx.fillRect(0, 452, W, 5);
+  ctx.fillStyle = '#1e0e00';
+  ctx.fillRect(0, 480, W, 4);
+
+  const sp = 62;
+  const dOff = ((scrollX * 0.75 % sp) + sp) % sp;
+  ctx.fillStyle = '#4a2a08';
+  for (let x = dOff - sp; x < W + sp; x += sp) {
+    ctx.fillRect(x + 8, 464, 22, 3);
+  }
+
+  ctx.restore();
+}
+
+function drawMountainRidge(ox, baseY, h, w, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(ox, baseY);
+  const px = [0.07, 0.18, 0.31, 0.44, 0.57, 0.68, 0.79, 0.90, 1.0];
+  const ph = [0.38, 0.95, 0.55, 0.82, 0.42, 0.88, 0.52, 0.72, 0.28];
+  for (let i = 0; i < px.length; i++) ctx.lineTo(ox + px[i] * w, baseY - ph[i] * h);
+  ctx.lineTo(ox + w, baseY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawCliffDetail(ox) {
+  ctx.save();
+  ctx.fillStyle = '#1a0900';
+  const shapes = [
+    [0.0, 0.22, 0.14],
+    [0.35, 0.20, 0.18],
+    [0.60, 0.25, 0.12],
+    [0.80, 0.18, 0.20],
+  ];
+  for (const [fx, fh, fw] of shapes) {
+    const bx = ox + fx * W;
+    ctx.beginPath();
+    ctx.moveTo(bx, 310);
+    ctx.lineTo(bx + fw * W * 0.4, 310 - fh * 80);
+    ctx.lineTo(bx + fw * W, 310);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo((bx + W) % (W * 1.2), 310);
+    ctx.lineTo(((bx + W) % (W * 1.2)) + fw * W * 0.4, 310 - fh * 80);
+    ctx.lineTo(((bx + W) % (W * 1.2)) + fw * W, 310);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawWindParticles() {
+  ctx.save();
+  const strength = Math.abs(currentWindForce);
+  if (strength < 0.025) { ctx.restore(); return; }
+  for (const p of particles) {
+    ctx.globalAlpha = p.alpha * Math.min(1, strength * 3.2);
+    ctx.strokeStyle = '#C8A04A';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const dx = currentWindForce > 0 ? p.len : -p.len;
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x + dx * 0.55, p.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWagon() {
+  ctx.save();
+
+  if (warningAlpha > 0) {
+    const grd = ctx.createRadialGradient(W / 2, 462, 0, W / 2, 462, 105);
+    grd.addColorStop(0, 'rgba(231,76,60,' + warningAlpha * 0.32 + ')');
+    grd.addColorStop(1, 'rgba(231,76,60,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 375, W, 165);
+  }
+
+  ctx.translate(W / 2, 470);
+  ctx.rotate(lean * (MAX_TILT_DEG * Math.PI / 180));
+
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 92, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const wheelR = 21;
+  const wheelY = 2;
+  [[-62, wheelY], [62, wheelY]].forEach(([wx, wy]) => {
+    ctx.strokeStyle = '#5a3010';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.arc(wx, wy, wheelR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#3a2008';
+    ctx.lineWidth = 2;
+    for (let s = 0; s < 6; s++) {
+      const a = (s / 6) * Math.PI * 2 + scrollX * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(wx, wy);
+      ctx.lineTo(wx + Math.cos(a) * wheelR, wy + Math.sin(a) * wheelR);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#C8A04A';
+    ctx.beginPath();
+    ctx.arc(wx, wy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2a1000';
+    ctx.beginPath();
+    ctx.arc(wx, wy, 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle = '#3a1f05';
+  ctx.fillRect(-68, -45, 136, 40);
+  ctx.fillStyle = '#2a1000';
+  ctx.fillRect(-68, -45, 136, 6);
+  ctx.fillStyle = '#4a2a08';
+  ctx.fillRect(-68, -11, 136, 6);
+  ctx.strokeStyle = '#221000';
+  ctx.lineWidth = 1;
+  for (let px = -48; px < 68; px += 18) {
+    ctx.beginPath();
+    ctx.moveTo(px, -45); ctx.lineTo(px, -11);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#5a3010';
+  ctx.fillRect(-72, -50, 8, 48);
+  ctx.fillRect(64, -50, 8, 48);
+
+  const cw = 27, ch = 22;
+  const shift = -lean * 5;
+  const cratePositions = [
+    { x: -40 + shift, y: -67 }, { x: -13 + shift, y: -67 }, { x: 14 + shift, y: -67 },
+    { x: -27 + shift, y: -89 }, { x: 0 + shift, y: -89 },
+  ];
+  for (const c of cratePositions) {
+    ctx.fillStyle = '#6B3A0A';
+    ctx.fillRect(c.x - cw / 2, c.y - ch, cw, ch);
+    ctx.fillStyle = '#8B5A1A';
+    ctx.fillRect(c.x - cw / 2, c.y - ch, cw, 4);
+    ctx.fillStyle = '#E74C3C';
+    ctx.fillRect(c.x - cw / 2 + 4, c.y - ch + 6, 3, ch - 10);
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(c.x - cw / 2 + 9, c.y - ch + 6, 3, ch - 10);
+    ctx.strokeStyle = '#C8A04A';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(c.x - cw / 2 + 1, c.y - ch + 1);
+    ctx.lineTo(c.x + cw / 2 - 1, c.y - 1);
+    ctx.moveTo(c.x + cw / 2 - 1, c.y - ch + 1);
+    ctx.lineTo(c.x - cw / 2 + 1, c.y - 1);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 7px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('TNT', shift - 13, -78);
+  ctx.fillText('TNT', shift + 0, -100);
+
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath();
+  ctx.ellipse(-102, -16, 30, 14, -0.08, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(-132, -26, 12, 9, 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-135, -35); ctx.lineTo(-138, -46); ctx.lineTo(-132, -35);
+  ctx.moveTo(-126, -33); ctx.lineTo(-126, -44); ctx.lineTo(-120, -33);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-120, -26); ctx.lineTo(-116, -8);
+  ctx.lineTo(-106, -8); ctx.lineTo(-110, -22);
+  ctx.fill();
+  ctx.strokeStyle = '#1a0520';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-116, -4); ctx.lineTo(-112, 14);
+  ctx.moveTo(-98, -4);  ctx.lineTo(-94, 14);
+  ctx.moveTo(-86, -4);  ctx.lineTo(-90, 14);
+  ctx.moveTo(-74, -4);  ctx.lineTo(-78, 14);
+  ctx.stroke();
+  ctx.strokeStyle = '#8B6010';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-108, -14); ctx.lineTo(-68, -14);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  const stage = STAGES[stageIndex];
+  const barW = 200, barH = 14, barX = W / 2 - barW / 2, barY = 10;
+  pill(barX - 4, barY - 4, barW + 8, barH + 8, 6, 'rgba(0,0,0,0.62)');
+  ctx.fillStyle = '#2a1400';
+  ctx.fillRect(barX, barY, barW, barH);
+  const prog = Math.min(1, stageDist / stage.dist);
+  const gr = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+  gr.addColorStop(0, '#6B3A0A');
+  gr.addColorStop(0.55, '#C8A04A');
+  gr.addColorStop(1, '#FFD700');
+  ctx.fillStyle = gr;
+  ctx.fillRect(barX, barY, barW * prog, barH);
+  ctx.strokeStyle = '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, barW, barH);
+
+  pill(4, 4, 82, 23, 5, 'rgba(0,0,0,0.62)');
+  ctx.fillStyle = '#F4C842';
+  ctx.font = 'bold 11px Georgia,serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('LEG ' + (stageIndex + 1) + '/5', 10, 15);
+
+  pill(W - 88, 4, 84, 23, 5, 'rgba(0,0,0,0.62)');
+  ctx.fillStyle = '#FFE066';
+  ctx.textAlign = 'right';
+  ctx.fillText(totalScore + stageScore, W - 8, 15);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(stage.name, W / 2, 28);
+
+  ctx.restore();
+}
+
+function drawTiltMeter() {
+  ctx.save();
+  const mW = 280, mH = 18, mx = W / 2 - mW / 2, my = 497;
+  pill(mx - 6, my - 5, mW + 12, mH + 10, 7, 'rgba(0,0,0,0.72)');
+
+  const track = ctx.createLinearGradient(mx, 0, mx + mW, 0);
+  track.addColorStop(0, '#c0392b');
+  track.addColorStop(0.22, '#e67e22');
+  track.addColorStop(0.5, '#2ecc71');
+  track.addColorStop(0.78, '#e67e22');
+  track.addColorStop(1, '#c0392b');
+  ctx.fillStyle = track;
+  ctx.fillRect(mx, my, mW, mH);
+
+  ctx.strokeStyle = 'rgba(255,255,180,0.45)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(W / 2, my); ctx.lineTo(W / 2, my + mH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const ix = W / 2 + lean * (mW / 2);
+  const iy = my + mH / 2;
+  const ds = 9;
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.moveTo(ix, iy - ds);
+  ctx.lineTo(ix + ds * 0.6, iy);
+  ctx.lineTo(ix, iy + ds);
+  ctx.lineTo(ix - ds * 0.6, iy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#2a1000';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('!', mx + 7, my + mH / 2);
+  ctx.fillText('!', mx + mW - 7, my + mH / 2);
+
+  if (Math.abs(lean) > 0.40) {
+    const hint = lean > 0 ? '< LEAN LEFT' : 'LEAN RIGHT >';
+    const hcol = Math.abs(lean) > 0.70 ? '#E74C3C' : '#FF9F43';
+    ctx.fillStyle = hcol;
+    ctx.font = 'bold 11px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(hint, W / 2, my + mH + 4);
+  } else {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '10px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText('BALANCE', W / 2, my + mH + 4);
+  }
+
+  ctx.restore();
+}
+
+function drawControls() {
+  ctx.save();
+  const btnY = 530, btnH = 95, btnR = 12;
+
+  pill(12, btnY, 156, btnH, btnR, holdLeft ? 'rgba(90,48,16,0.92)' : 'rgba(30,14,2,0.72)');
+  ctx.strokeStyle = holdLeft ? '#FFE066' : '#C8A04A';
+  ctx.lineWidth = holdLeft ? 2.5 : 1.5;
+  ctx.beginPath();
+  ctx.roundRect(12, btnY, 156, btnH, btnR);
+  ctx.stroke();
+  ctx.fillStyle = holdLeft ? '#FFE066' : '#C8A04A';
+  ctx.font = 'bold 32px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('◄', 90, btnY + btnH / 2 - 9);
+  ctx.font = '12px Georgia,serif';
+  ctx.fillText('LEAN LEFT', 90, btnY + btnH / 2 + 24);
+
+  pill(192, btnY, 156, btnH, btnR, holdRight ? 'rgba(90,48,16,0.92)' : 'rgba(30,14,2,0.72)');
+  ctx.strokeStyle = holdRight ? '#FFE066' : '#C8A04A';
+  ctx.lineWidth = holdRight ? 2.5 : 1.5;
+  ctx.beginPath();
+  ctx.roundRect(192, btnY, 156, btnH, btnR);
+  ctx.stroke();
+  ctx.fillStyle = holdRight ? '#FFE066' : '#C8A04A';
+  ctx.font = 'bold 32px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('►', 270, btnY + btnH / 2 - 9);
+  ctx.font = '12px Georgia,serif';
+  ctx.fillText('LEAN RIGHT', 270, btnY + btnH / 2 + 24);
+
+  ctx.restore();
+}
+
+function drawWindIndicator() {
+  ctx.save();
+  const strength = Math.abs(currentWindForce);
+  if (strength < 0.025) { ctx.restore(); return; }
+
+  const cx = W / 2, cy = 48;
+  const maxLen = 52;
+  const arrowLen = Math.min(maxLen, strength * maxLen * 1.6);
+  const dir = currentWindForce > 0 ? 1 : -1;
+
+  let col;
+  if (strength < 0.10)      col = 'rgba(200,160,74,0.80)';
+  else if (strength < 0.28) col = 'rgba(255,224,102,0.90)';
+  else                      col = 'rgba(231,76,60,0.96)';
+
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - dir * arrowLen * 0.5, cy);
+  ctx.lineTo(cx + dir * arrowLen * 0.5, cy);
+  ctx.stroke();
+  ctx.fillStyle = col;
+  const ax = cx + dir * arrowLen * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(ax, cy);
+  ctx.lineTo(ax - dir * 8, cy - 5);
+  ctx.lineTo(ax - dir * 8, cy + 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '9px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('WIND', cx, cy - 2);
+  ctx.restore();
+}
+
+function drawPopups(dt) {
+  ctx.save();
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.y += p.vy;
+    p.alpha -= dt * 1.6;
+    if (p.alpha <= 0) { popups.splice(i, 1); continue; }
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 14px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  for (let i = 0; i < 58; i++) {
+    const sx = (i * 137.5 + 9) % W;
+    const sy = (i * 91.3) % 300;
+    ctx.fillStyle = 'rgba(255,255,210,' + (0.25 + (i % 4) * 0.16) + ')';
+    ctx.fillRect(sx, sy + 10, 1.5, 1.5);
+  }
+
+  ctx.fillStyle = '#0f0820';
+  ctx.beginPath();
+  ctx.moveTo(0, 330); ctx.lineTo(55, 210); ctx.lineTo(120, 265);
+  ctx.lineTo(175, 188); ctx.lineTo(235, 250); ctx.lineTo(285, 205); ctx.lineTo(360, 285);
+  ctx.lineTo(360, 330); ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#2a1200';
+  ctx.beginPath();
+  ctx.moveTo(110, 330); ctx.lineTo(250, 330); ctx.lineTo(290, 425); ctx.lineTo(70, 425);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#3d1e06';
+  ctx.fillRect(70, 423, 220, 4);
+
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(128, 368, 104, 28);
+  ctx.beginPath();
+  ctx.arc(158, 398, 13, 0, Math.PI * 2);
+  ctx.arc(202, 398, 13, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowColor = '#F4C842';
+  ctx.shadowBlur = 24;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 50px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText("DEVIL'S", W / 2, 474);
+  ctx.fillText('BACKBONE', W / 2, 532);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia,serif';
+  ctx.fillText('Keep the dynamite balanced.', W / 2, 574);
+
+  if (best > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '13px Georgia,serif';
+    ctx.fillText('BEST: ' + best, W / 2, 596);
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 19px Georgia,serif';
+  ctx.fillText('TAP TO START', W / 2, 622);
+  ctx.restore();
+}
+
+function drawStageWin() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.78)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.shadowColor = '#FFE066';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('SEGMENT CLEARED', W / 2, H / 2 - 80);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = '22px Georgia,serif';
+  ctx.fillText('Leg ' + (stageIndex + 1) + ' score: ' + stageScore, W / 2, H / 2 - 28);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia,serif';
+  ctx.fillText('Total: ' + totalScore, W / 2, H / 2 + 8);
+  const nextStage = STAGES[stageIndex + 1];
+  if (nextStage) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = '15px Georgia,serif';
+    ctx.fillText('Next: ' + nextStage.name, W / 2, H / 2 + 46);
+  }
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia,serif';
+  ctx.fillText('TAP TO CONTINUE', W / 2, H / 2 + 90);
+  ctx.restore();
+}
+
+function drawGameWin() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#001a00');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.shadowColor = '#FFE066';
+  ctx.shadowBlur = 26;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 46px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('DELIVERED!', W / 2, H / 2 - 118);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = '24px Georgia,serif';
+  ctx.fillText('Score: ' + totalScore, W / 2, H / 2 - 60);
+  if (totalScore >= best) {
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 20px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, H / 2 - 20);
+  } else {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '16px Georgia,serif';
+    ctx.fillText('Best: ' + best, W / 2, H / 2 - 20);
+  }
+  pill(W / 2 - 80, H / 2 + 48, 160, 36, 8, '#3a1f05');
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 80, H / 2 + 48, 160, 36, 8);
+  ctx.stroke();
+  ctx.fillStyle = '#F4C842';
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.fillText('LEAVE FEEDBACK', W / 2, H / 2 + 66);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia,serif';
+  ctx.fillText('TAP ANYWHERE TO PLAY AGAIN', W / 2, H / 2 + 118);
+  ctx.restore();
+}
+
+function drawGameLose() {
+  ctx.save();
+  if (flashAlpha > 0) {
+    ctx.fillStyle = 'rgba(200,0,0,' + flashAlpha * 0.68 + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.shadowColor = '#E74C3C';
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 42px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('LOST THE LOAD!', W / 2, H / 2 - 112);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '17px Georgia,serif';
+  ctx.fillText('Leg ' + (stageIndex + 1) + ' - ' + STAGES[stageIndex].name, W / 2, H / 2 - 52);
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = '15px Georgia,serif';
+  ctx.fillText('Score: ' + (totalScore), W / 2, H / 2 - 20);
+  pill(W / 2 - 80, H / 2 + 48, 160, 36, 8, '#3a1f05');
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 80, H / 2 + 48, 160, 36, 8);
+  ctx.stroke();
+  ctx.fillStyle = '#F4C842';
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.fillText('LEAVE FEEDBACK', W / 2, H / 2 + 66);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia,serif';
+  ctx.fillText('TAP TO TRY AGAIN', W / 2, H / 2 + 118);
+  ctx.restore();
+}
+
+const FB_STARS = 5;
+function drawFeedback() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.86)';
+  ctx.fillRect(0, 0, W, H);
+  pill(W / 2 - 140, H / 2 - 170, 280, 320, 14, '#1e1008');
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 140, H / 2 - 170, 280, 320, 14);
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = "bold 17px Georgia,serif";
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText("RATE DEVIL'S BACKBONE", W / 2, H / 2 - 132);
+  for (let i = 1; i <= FB_STARS; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFD700' : '#5a3010';
+    ctx.font = '28px sans-serif';
+    ctx.fillText('★', W / 2 - 60 + (i - 1) * 30, H / 2 - 86);
+  }
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia,serif';
+  ctx.fillText('Your thoughts (optional):', W / 2, H / 2 - 46);
+  pill(W / 2 - 110, H / 2 - 31, 220, 60, 6, '#2a1500');
+  ctx.strokeStyle = '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 110, H / 2 - 31, 220, 60, 6);
+  ctx.stroke();
+  if (fbMsg) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = '13px Georgia,serif';
+    ctx.textAlign = 'left';
+    const words = fbMsg.split(' ');
+    let line = '', lines = [];
+    for (const w of words) {
+      const test = line + (line ? ' ' : '') + w;
+      if (ctx.measureText(test).width > 200) { lines.push(line); line = w; }
+      else line = test;
+    }
+    lines.push(line);
+    lines.slice(0, 3).forEach((l, i) => ctx.fillText(l, W / 2 - 104, H / 2 - 19 + i * 16));
+  } else {
+    ctx.fillStyle = '#5a3010';
+    ctx.font = 'italic 13px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('tap to type...', W / 2, H / 2);
+  }
+  ctx.textAlign = 'center';
+  const canSend = fbRating > 0 && !fbSending;
+  pill(W / 2 - 60, H / 2 + 44, 120, 34, 8, canSend ? '#5a3010' : '#2a1500');
+  ctx.strokeStyle = canSend ? '#C8A04A' : '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 60, H / 2 + 44, 120, 34, 8);
+  ctx.stroke();
+  ctx.fillStyle = canSend ? '#FFE066' : '#5a3010';
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.fillText(fbDone ? 'SENT!' : (fbSending ? 'SENDING...' : 'SEND'), W / 2, H / 2 + 61);
+  pill(W / 2 - 35, H / 2 + 99, 70, 28, 6, '#2a1500');
+  ctx.strokeStyle = '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 35, H / 2 + 99, 70, 28, 6);
+  ctx.stroke();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia,serif';
+  ctx.fillText('CLOSE', W / 2, H / 2 + 113);
+  ctx.restore();
+}
+
+function handleFbClick(x, y) {
+  for (let i = 1; i <= FB_STARS; i++) {
+    if (Math.abs(x - (W / 2 - 60 + (i - 1) * 30)) < 18 && Math.abs(y - (H / 2 - 86)) < 18) { fbRating = i; return; }
+  }
+  if (x >= W / 2 - 110 && x <= W / 2 + 110 && y >= H / 2 - 31 && y <= H / 2 + 29) {
+    const t = prompt('Your feedback:') || '';
+    fbMsg = t.slice(0, 200); return;
+  }
+  if (x >= W / 2 - 60 && x <= W / 2 + 60 && y >= H / 2 + 44 && y <= H / 2 + 78 && fbRating > 0 && !fbSending) {
+    fbSending = true;
+    const body = JSON.stringify({ game: "Devil's Backbone", rating: fbRating, message: fbMsg, score: totalScore });
+    fetch(FEEDBACK_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+      .then(() => { fbDone = true; fbSending = false; setTimeout(() => { fbState = 'hidden'; }, 1500); })
+      .catch(() => { fbDone = true; fbSending = false; setTimeout(() => { fbState = 'hidden'; }, 1500); });
+    return;
+  }
+  if (x >= W / 2 - 35 && x <= W / 2 + 35 && y >= H / 2 + 99 && y <= H / 2 + 127) { fbState = 'hidden'; }
+}
+
+function getCoords(e) {
+  const s = parseFloat(canvas.style.width) / W;
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s };
+}
+
+const activePointers = new Map();
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const { x, y } = getCoords(e);
+  if (fbState === 'open') { handleFbClick(x, y); return; }
+  if (state === 'title') { startGame(); return; }
+  if (state === 'stageWin') { stageIndex++; startStage(); return; }
+  if (state === 'gameWin' || state === 'gameLose') {
+    if (x >= W / 2 - 80 && x <= W / 2 + 80 && y >= H / 2 + 48 && y <= H / 2 + 84) {
+      fbState = 'open'; fbRating = 0; fbMsg = ''; fbSending = false; fbDone = false; return;
+    }
+    startGame(); return;
+  }
+  if (state === 'playing' && y >= 530) {
+    const dir = x < W / 2 ? 'left' : 'right';
+    activePointers.set(e.pointerId, dir);
+    if (dir === 'left') { holdLeft = true; playHold(); }
+    else                { holdRight = true; playHold(); }
+  }
+});
+
+function releasePointer(id) {
+  const dir = activePointers.get(id);
+  if (dir === 'left')  holdLeft = false;
+  if (dir === 'right') holdRight = false;
+  activePointers.delete(id);
+}
+canvas.addEventListener('pointerup',     e => releasePointer(e.pointerId));
+canvas.addEventListener('pointercancel', e => releasePointer(e.pointerId));
+
+document.addEventListener('keydown', e => {
+  if (fbState === 'open') return;
+  if (state === 'title')    { startGame(); return; }
+  if (state === 'stageWin') { stageIndex++; startStage(); return; }
+  if (state === 'gameWin' || state === 'gameLose') { startGame(); return; }
+  if (state !== 'playing') return;
+  if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') { e.preventDefault(); holdLeft = true; }
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); holdRight = true; }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') holdLeft = false;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') holdRight = false;
+});
+
+let lastTime = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+    if (flashAlpha > 0) flashAlpha = Math.max(0, flashAlpha - dt * 3.2);
+    if (stageTransTimer > 0) stageTransTimer = Math.max(0, stageTransTimer - dt);
+    if (state === 'playing') updatePhysics(dt);
+    ctx.clearRect(0, 0, W, H);
+    if (state === 'title') {
+      drawTitle();
+    } else {
+      drawBackground();
+      drawWindParticles();
+      drawWagon();
+      drawHUD();
+      drawTiltMeter();
+      drawControls();
+      drawWindIndicator();
+      drawPopups(dt);
+      if (state === 'stageWin') drawStageWin();
+      if (state === 'gameLose') drawGameLose();
+      if (state === 'gameWin')  drawGameWin();
+    }
+    if (fbState === 'open') drawFeedback();
+  } catch(e) { console.error('loop error', e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+window.__test = {
+  getState:        () => state,
+  getLean:         () => lean,
+  getLeanV:        () => leanV,
+  getStageIndex:   () => stageIndex,
+  getStageDist:    () => stageDist,
+  getTotalScore:   () => totalScore,
+  getStageScore:   () => stageScore,
+  getScrollX:      () => scrollX,
+  getBest:         () => best,
+  startGame:       () => startGame(),
+  startStage:      () => startStage(),
+  setLean:         v => { lean = v; },
+  setLeanV:        v => { leanV = v; },
+  setHoldLeft:     v => { holdLeft = v; },
+  setHoldRight:    v => { holdRight = v; },
+  setStageDist:    v => { stageDist = v; },
+  setStageIndex:   v => { stageIndex = v; },
+  applyPhysicsStep: dt => { if (state === 'playing') updatePhysics(dt); },
+  STAGES:          STAGES,
+  TILT_LIMIT:      TILT_LIMIT,
+  HOLD_FORCE:      HOLD_FORCE,
+  STAGES_COUNT:    STAGES.length,
+  MAX_TILT_DEG:    MAX_TILT_DEG,
+};
+</script>
+</body>
+</html>
