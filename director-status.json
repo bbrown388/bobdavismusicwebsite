@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-03T08:30:19.141Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 23: Devil's Backbone - hold-to-balance wagon load, spring+damping physics, 5-stage mountain pass, 44 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 24: Dead Reckoning",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 24: Dead Reckoning - celestial navigation, star bearing lines, terrain map, 5 rounds"
+  },
   "gamesBuilt": 23,
   "lastGameTitle": "Devil's Backbone",
   "lastGameFile": "devils-backbone.html",
