@@ -34,6 +34,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 24 | Dead Reckoning | `dead-reckoning.html` | Celestial navigation puzzle / tap named stars to draw bearing lines on terrain map / locate position at intersection / navigate cattle to ranch / cloud cover urgency / 5 rounds | 2026-05-03 |
 | 25 | Fence Line | `fence-line.html` | Construction/placement mechanic / tap gap to place post then rail / wind gusts knock posts back / cattle AI seeks open gaps / 5 escalating timed levels / dual-threat pressure | 2026-05-03 |
 | 26 | Dust Storm | `dust-storm.html` | Fog-of-war visibility cone / top-down stagecoach / radial gradient dust overlay / boulder + tumbleweed obstacles revealed only as coach approaches / 3-lane swerve / 5 rounds | 2026-05-03 |
+| 27 | River Run | `river-run.html` | White-water raft / velocity/inertia steering model / predictive current swirl indicators / steer+brake dual input / laterally-drifting logs + stationary boulders / speed-responsive audio / 5 rounds | 2026-05-03 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -70,6 +71,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Dead Reckoning](retrospectives/24-dead-reckoning.md) — session lessons, action items for Game 25
 - [Retrospective: Fence Line](retrospectives/25-fence-line.md) — session lessons, action items for Game 26
 - [Retrospective: Dust Storm](retrospectives/26-dust-storm.md) — session lessons, action items for Game 27
+- [Retrospective: River Run](retrospectives/27-river-run.md) — session lessons, action items for Game 28
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
