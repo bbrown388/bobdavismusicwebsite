@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-03T09:45:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 25: Fence Line - construction/wind/cattle AI, dual-threat pressure, 42 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 26: Dust Storm",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 26: Dust Storm - stagecoach fog-of-war, lane-dodge mechanic"
+  },
   "gamesBuilt": 25,
   "lastGameTitle": "Fence Line",
   "lastGameFile": "fence-line.html",
@@ -30,14 +33,6 @@
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-04-27T19:23:00Z",
-      "action": "new_game",
-      "game": "Tin Star Showdown",
-      "result": "success",
-      "summary": "Built Game 07: Tin Star Showdown (tin-star-showdown.html). Quick-draw duel, best-of-3, AI difficulty scaling, 13 tests pass.",
-      "commitHash": "b3329ab"
-    },
     {
       "runAt": "2026-04-27T22:10:00Z",
       "action": "new_game",
@@ -181,6 +176,14 @@
       "result": "success",
       "summary": "Built Game 24: Dead Reckoning - celestial navigation, star bearing lines, 5-round terrain puzzle, 50 tests pass.",
       "commitHash": "d7d6e9f"
+    },
+    {
+      "runAt": "2026-05-03T09:45:00.000Z",
+      "action": "new_game",
+      "game": "Fence Line",
+      "result": "success",
+      "summary": "Built Game 25: Fence Line - construction/placement mechanic, wind gusts, cattle gap-seek AI, 5 levels, 42 tests pass.",
+      "commitHash": "23c7df0"
     },
     {
       "runAt": "2026-05-03T09:45:00.000Z",
