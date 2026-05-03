@@ -1,10 +1,10 @@
 {
   "lastRunAt": "2026-05-03T08:00:02Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 21: Wanted: Dead or Alive - first-person investigation, 5 locations, confidence system, 47 tests pass.",
+  "lastRunSummary": "Building Game 22: Gallows Road",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Designing Game 22: Gallows Road - Sokoban jail escape puzzle"
   },
   "gamesBuilt": 21,
   "lastGameTitle": "Wanted: Dead or Alive",
