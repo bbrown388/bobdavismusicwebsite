@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-03T08:30:19.141Z",
+  "lastRunAt": "2026-05-03T09:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 24: Dead Reckoning - 50 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 24: Dead Reckoning - tests passing, committing"
-  },
-  "gamesBuilt": 23,
-  "lastGameTitle": "Devil's Backbone",
-  "lastGameFile": "devils-backbone.html",
+  "lastRunSummary": "Built Game 24: Dead Reckoning - celestial navigation, star bearing lines, 5-round terrain puzzle, 50 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 24,
+  "lastGameTitle": "Dead Reckoning",
+  "lastGameFile": "dead-reckoning.html",
   "gameQueue": [
-    {
-      "num": 24,
-      "title": "Dead Reckoning",
-      "concept": "Navigate a night cattle drive using stars: tap two constellation stars to draw bearing lines, find their intersection on the terrain map, and plot your route to the ranch before clouds close in. First navigation/celestial puzzle mechanic in the series.",
-      "raisesBarOn": "First map-based gameplay, first celestial navigation mechanic, most geometric/spatial reasoning in series",
-      "status": "planned"
-    },
     {
       "num": 25,
       "title": "Fence Line",
@@ -29,6 +19,13 @@
       "title": "Dust Storm",
       "concept": "Guide a stagecoach through a blinding dust storm: visibility shrinks to a lantern cone, tap to swerve around unseen boulders and ravines revealed only as the coach approaches. First visibility/fog-of-war mechanic in series.",
       "raisesBarOn": "First dynamic visibility system, first reactive obstacle reveal, highest moment-to-moment tension in series",
+      "status": "planned"
+    },
+    {
+      "num": 27,
+      "title": "River Run",
+      "concept": "Steer a raft through white-water canyon rapids: read swirling current indicators to predict boulder placement, tap left/right to dodge rocks and navigate chutes, brake-tap to manage speed through tight sections. First water-physics navigation in series.",
+      "raisesBarOn": "First water navigation and current-reading mechanic, first continuous speed-management alongside obstacle avoidance",
       "status": "planned"
     }
   ],
@@ -184,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 23: Devil's Backbone - hold-to-balance wagon load, spring+damping physics, 5-stage mountain pass, 44 tests pass.",
       "commitHash": "2ae179d"
+    },
+    {
+      "runAt": "2026-05-03T09:00:00.000Z",
+      "action": "new_game",
+      "game": "Dead Reckoning",
+      "result": "success",
+      "summary": "Built Game 24: Dead Reckoning - celestial navigation, star bearing lines, 5-round terrain puzzle, 50 tests pass.",
+      "commitHash": "d7d6e9f"
     }
   ]
 }
