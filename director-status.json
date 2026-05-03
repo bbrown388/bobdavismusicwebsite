@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-03T09:30:00.000Z",
+  "lastRunAt": "2026-05-03T08:30:19.141Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 23 tests pass (44/44)",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 23: Devil's Backbone - tests passing, committing"
-  },
-  "gamesBuilt": 22,
-  "lastGameTitle": "Gallows Road",
-  "lastGameFile": "gallows-road.html",
+  "lastRunSummary": "Built Game 23: Devil's Backbone - hold-to-balance wagon load, spring+damping physics, 5-stage mountain pass, 44 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 23,
+  "lastGameTitle": "Devil's Backbone",
+  "lastGameFile": "devils-backbone.html",
   "gameQueue": [
-    {
-      "num": 23,
-      "title": "Devil's Backbone",
-      "concept": "Carry a volatile dynamite load through a mountain pass on a tilting wagon. Tap left/right to counterbalance wind and rough terrain. First balance/tilt physics mechanic in series with escalating tilt amplitude.",
-      "raisesBarOn": "First balance physics engine, first tilt-response mechanic, most tactile feedback in series",
-      "status": "planned"
-    },
     {
       "num": 24,
       "title": "Dead Reckoning",
@@ -29,6 +19,13 @@
       "title": "Fence Line",
       "concept": "Rebuild a storm-damaged fence before the cattle scatter: place fence posts and rails by tapping grid cells in the right order while wind gusts push you off balance and time runs out. First construction mechanic in series.",
       "raisesBarOn": "First construction/placement mechanic, first real-time sequencing under environmental pressure",
+      "status": "planned"
+    },
+    {
+      "num": 26,
+      "title": "Dust Storm",
+      "concept": "Guide a stagecoach through a blinding dust storm: visibility shrinks to a lantern cone, tap to swerve around unseen boulders and ravines revealed only as the coach approaches. First visibility/fog-of-war mechanic in series.",
+      "raisesBarOn": "First dynamic visibility system, first reactive obstacle reveal, highest moment-to-moment tension in series",
       "status": "planned"
     }
   ],
@@ -176,6 +173,14 @@
       "result": "success",
       "summary": "Built Game 22: Gallows Road - turn-based grid puzzle, 5 levels, guard patrol, crate push mechanic, 37 tests pass.",
       "commitHash": "97e35cf"
+    },
+    {
+      "runAt": "2026-05-03T08:30:19.000Z",
+      "action": "new_game",
+      "game": "Devil's Backbone",
+      "result": "success",
+      "summary": "Built Game 23: Devil's Backbone - hold-to-balance wagon load, spring+damping physics, 5-stage mountain pass, 44 tests pass.",
+      "commitHash": "2ae179d"
     }
   ]
 }
