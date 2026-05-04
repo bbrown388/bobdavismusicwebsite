@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-04T08:30:00.000Z",
+  "lastRunAt": "2026-05-04T09:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 29: Jail Break",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Designing Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw distraction"
-  },
-  "gamesBuilt": 28,
-  "lastGameTitle": "Brand Iron",
-  "lastGameFile": "brand-iron.html",
+  "lastRunSummary": "Built Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw, shadow zones, 50 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 29,
+  "lastGameTitle": "Jail Break",
+  "lastGameFile": "jail-break.html",
   "gameQueue": [
-    {
-      "num": 29,
-      "title": "Jail Break",
-      "concept": "Turn-based stealth escape from a frontier jail: pick locks, distract guards with thrown objects, slip through shadow zones, and reach the horse waiting outside. Guard patrol AI with vision cones, 5 escalating layouts. First shadow/stealth grid game in series.",
-      "raisesBarOn": "First stealth grid with vision cones, first object-throw mechanic, most complex guard AI in series",
-      "status": "planned"
-    },
     {
       "num": 30,
       "title": "Tumbleweed Pinball",
@@ -29,6 +19,13 @@
       "title": "Pony Express",
       "concept": "Rhythm-based horse riding: tap in sync with hoofbeat patterns to maintain gallop speed across 5 terrain sections. Pattern complexity escalates. Miss the beat and the horse slows; nail a streak and earn a burst of speed. First pure rhythm game since Honky Tonk but built around action rather than notes.",
       "raisesBarOn": "First action-rhythm hybrid, first procedurally-generated beat pattern, first gait simulation mechanic",
+      "status": "planned"
+    },
+    {
+      "num": 32,
+      "title": "Barbed Wire",
+      "concept": "Strategic wire-laying tower defense: stretch barbed wire between fence posts to slow and redirect rustlers heading for the herd. Posts have limited wire capacity; rustlers cut through over time. Upgrade posts, repair wire, protect the cattle across 5 waves.",
+      "raisesBarOn": "First tower-defense structure, first wire/graph edge mechanic, first upgrade system in series",
       "status": "planned"
     }
   ],
@@ -138,22 +135,6 @@
       "commitHash": "23c7df0"
     },
     {
-      "runAt": "2026-05-03T09:45:00.000Z",
-      "action": "new_game",
-      "game": "Fence Line",
-      "result": "success",
-      "summary": "Built Game 25: Fence Line - construction/placement mechanic, wind gusts, cattle gap-seek AI, 5 levels, 42 tests pass.",
-      "commitHash": "23c7df0"
-    },
-    {
-      "runAt": "2026-05-03T09:45:00.000Z",
-      "action": "new_game",
-      "game": "Fence Line",
-      "result": "success",
-      "summary": "Built Game 25: Fence Line - construction/placement mechanic, wind gusts, cattle gap-seek AI, 5 levels, 42 tests pass.",
-      "commitHash": "23c7df0"
-    },
-    {
       "runAt": "2026-05-03T10:30:00.000Z",
       "action": "new_game",
       "game": "Dust Storm",
@@ -170,28 +151,20 @@
       "commitHash": "2c6b15b"
     },
     {
-      "runAt": "2026-05-03T11:30:00.000Z",
-      "action": "new_game",
-      "game": "River Run",
-      "result": "success",
-      "summary": "Built Game 27: River Run - white-water raft, inertia model, current-reading swirls, 42 tests pass.",
-      "commitHash": "2c6b15b"
-    },
-    {
-      "runAt": "2026-05-03T11:30:00.000Z",
-      "action": "new_game",
-      "game": "River Run",
-      "result": "success",
-      "summary": "Built Game 27: River Run - white-water raft, inertia model, current-reading swirls, 42 tests pass.",
-      "commitHash": "2c6b15b"
-    },
-    {
       "runAt": "2026-05-04T08:30:00.000Z",
       "action": "new_game",
       "game": "Brand Iron",
       "result": "success",
       "summary": "Built Game 28: Brand Iron - path-tracing drag mechanic, heat sweet-zone gauge, 45 tests pass.",
       "commitHash": "4e20960"
+    },
+    {
+      "runAt": "2026-05-04T09:30:00.000Z",
+      "action": "new_game",
+      "game": "Jail Break",
+      "result": "success",
+      "summary": "Built Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw, shadow zones, 50 tests pass.",
+      "commitHash": "9a691f5"
     }
   ]
 }
