@@ -1,8 +1,11 @@
 {
-  "lastRunAt": "2026-05-03T11:30:00.000Z",
+  "lastRunAt": "2026-05-04T08:00:02Z",
   "lastRunResult": "success",
   "lastRunSummary": "Built Game 27: River Run - white-water raft, inertia model, current-reading swirls, 42 tests pass.",
-  "currentTask": null,
+  "currentTask": {
+    "context": "Director session starting - reading feedback and deciding next action",
+    "action": "starting"
+  },
   "gamesBuilt": 27,
   "lastGameTitle": "River Run",
   "lastGameFile": "river-run.html",
