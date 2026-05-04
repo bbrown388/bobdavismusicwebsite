@@ -1,10 +1,10 @@
 {
-  "lastRunAt": "2026-05-04T08:00:02Z",
+  "lastRunAt": "2026-05-04T08:01:34.315Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 27: River Run - white-water raft, inertia model, current-reading swirls, 42 tests pass.",
+  "lastRunSummary": "Building Game 28: Brand Iron",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Designing Game 28: Brand Iron - path-tracing drag mechanic, heat management"
   },
   "gamesBuilt": 27,
   "lastGameTitle": "River Run",
@@ -33,14 +33,6 @@
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-04-28T09:00:00Z",
-      "action": "new_game",
-      "game": "Boot Hill Bluff",
-      "result": "success",
-      "summary": "Built Game 11: Boot Hill Bluff - turn-based bluffing duel with AI tell system, narrative choices, chip betting. 18 tests pass.",
-      "commitHash": "fdb9c13"
-    },
     {
       "runAt": "2026-04-28T10:30:00Z",
       "action": "new_game",
@@ -184,6 +176,14 @@
       "result": "success",
       "summary": "Built Game 26: Dust Storm - fog-of-war visibility cone, lane-dodge stagecoach, 42 tests pass.",
       "commitHash": "ab93339"
+    },
+    {
+      "runAt": "2026-05-03T11:30:00.000Z",
+      "action": "new_game",
+      "game": "River Run",
+      "result": "success",
+      "summary": "Built Game 27: River Run - white-water raft, inertia model, current-reading swirls, 42 tests pass.",
+      "commitHash": "2c6b15b"
     },
     {
       "runAt": "2026-05-03T11:30:00.000Z",
