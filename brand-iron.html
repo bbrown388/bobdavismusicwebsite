@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Brand Iron</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; align-items: center; justify-content: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="360" height="640"></canvas>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+const W = 360, H = 640;
+
+const HEAT_COLD     = 0.22;
+const HEAT_HOT      = 0.80;
+const HEAT_RISE     = 0.28;
+const HEAT_FALL     = 0.18;
+const TOLERANCE     = 22;
+const ADVANCE_LIMIT = 88;
+const IRON_R        = 14;
+const PASS_PCT      = 0.82;
+
+const BRAND_CX = W / 2;
+const BRAND_CY = 315;
+const BRAND_OX = BRAND_CX - 90;
+const BRAND_OY = BRAND_CY - 80;
+
+function toCanvas(lx, ly) { return [BRAND_OX + lx, BRAND_OY + ly]; }
+
+function starPath(cx, cy, ro, ri) {
+  const pts = [];
+  for (let i = 0; i < 5; i++) {
+    const ao = Math.PI * (-0.5 + i * 0.4);
+    const ai = Math.PI * (-0.5 + 0.2 + i * 0.4);
+    pts.push([cx + Math.cos(ao) * ro, cy + Math.sin(ao) * ro]);
+    pts.push([cx + Math.cos(ai) * ri, cy + Math.sin(ai) * ri]);
+  }
+  pts.push([pts[0][0], pts[0][1]]);
+  return pts;
+}
+
+const BRANDS = [
+  { name: 'Crossbar',   pts: [[30,20],[90,140],[150,20]],                                   time: 38 },
+  { name: 'Trail Z',    pts: [[25,20],[155,20],[25,140],[155,140]],                          time: 35 },
+  { name: 'Thunder',    pts: [[95,10],[55,80],[110,80],[70,150]],                            time: 32 },
+  { name: 'Arrowhead',  pts: [[90,10],[155,115],[90,82],[25,115],[90,10]],                   time: 29 },
+  { name: 'Lone Star',  pts: starPath(90, 78, 68, 29),                                      time: 26 },
+];
+
+function buildPath(pts) {
+  const segs = [], cumLens = [0];
+  let cumLen = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, ay] = toCanvas(pts[i][0],   pts[i][1]);
+    const [bx, by] = toCanvas(pts[i+1][0], pts[i+1][1]);
+    const len = Math.hypot(bx - ax, by - ay);
+    segs.push({ ax, ay, bx, by, len });
+    cumLen += len;
+    cumLens.push(cumLen);
+  }
+  return { segs, cumLens, totalLen: cumLen };
+}
+
+function nearestOnPathAhead(px, py, path, currentProg) {
+  let bestDist = Infinity, bestArcLen = currentProg;
+  const searchEnd = Math.min(path.totalLen, currentProg + ADVANCE_LIMIT);
+  for (let i = 0; i < path.segs.length; i++) {
+    const segStart = path.cumLens[i];
+    const segEnd   = path.cumLens[i + 1];
+    if (segEnd < currentProg) continue;
+    if (segStart > searchEnd) break;
+    const { ax, ay, bx, by, len } = path.segs[i];
+    if (len < 0.001) continue;
+    const dx = bx - ax, dy = by - ay;
+    const t  = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (len * len)));
+    const nx = ax + t * dx, ny = ay + t * dy;
+    const d  = Math.hypot(px - nx, py - ny);
+    const arcLen = segStart + t * len;
+    if (arcLen >= currentProg && arcLen <= searchEnd && d < bestDist) {
+      bestDist = d;
+      bestArcLen = arcLen;
+    }
+  }
+  return { dist: bestDist, arcLen: bestArcLen };
+}
+
+const C   = document.getElementById('c');
+const ctx = C.getContext('2d');
+
+(function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  C.style.width  = W * s + 'px';
+  C.style.height = H * s + 'px';
+  window.addEventListener('resize', resize);
+})();
+
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+let state, score, level, lives;
+let heat, progress, isDragging, ironX, ironY;
+let path, timeLeft, burnAccum;
+let popups;
+let feedbackMode, fbRating, fbText;
+let personalBest;
+
+let audioCtx, sizzleSource, sizzleFilter, sizzleGain, masterGain;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.65;
+  masterGain.connect(audioCtx.destination);
+}
+
+function startSizzle() {
+  if (!audioCtx) return;
+  stopSizzle();
+  const bufSize = audioCtx.sampleRate;
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+  sizzleSource = audioCtx.createBufferSource();
+  sizzleSource.buffer = buf;
+  sizzleSource.loop = true;
+  sizzleFilter = audioCtx.createBiquadFilter();
+  sizzleFilter.type = 'highpass';
+  sizzleFilter.frequency.value = 2000;
+  sizzleGain = audioCtx.createGain();
+  sizzleGain.gain.value = 0;
+  sizzleSource.connect(sizzleFilter);
+  sizzleFilter.connect(sizzleGain);
+  sizzleGain.connect(masterGain);
+  sizzleSource.start();
+}
+
+function updateSizzle(onHide, heatVal) {
+  if (!sizzleFilter || !sizzleGain) return;
+  const t = audioCtx.currentTime;
+  if (!onHide || heatVal < HEAT_COLD) {
+    sizzleGain.gain.setTargetAtTime(0, t, 0.06);
+    return;
+  }
+  const intensity = Math.min(heatVal / HEAT_HOT, 1.4);
+  sizzleFilter.frequency.setTargetAtTime(1400 + intensity * 2200, t, 0.04);
+  sizzleGain.gain.setTargetAtTime(0.055 * Math.min(intensity, 1), t, 0.04);
+}
+
+function stopSizzle() {
+  if (sizzleSource) { try { sizzleSource.stop(); } catch (_) {} sizzleSource = null; }
+}
+
+function startGame() {
+  state = 'playing';
+  score = 0;
+  level = 0;
+  lives = 3;
+  heat  = 0.5;
+  progress   = 0;
+  isDragging = false;
+  ironX = W / 2;
+  ironY = H - 140;
+  burnAccum = 0;
+  popups = [];
+  feedbackMode = false;
+  fbRating = 0;
+  fbText   = '';
+  personalBest = parseInt(localStorage.getItem('brand_iron_best') || '0', 10);
+  loadLevel(0);
+}
+
+function loadLevel(lvl) {
+  level    = lvl;
+  path     = buildPath(BRANDS[lvl].pts);
+  progress = 0;
+  timeLeft = BRANDS[lvl].time;
+  heat     = 0.5;
+  isDragging = false;
+  burnAccum  = 0;
+  const [sx, sy] = toCanvas(BRANDS[lvl].pts[0][0], BRANDS[lvl].pts[0][1]);
+  ironX = sx;
+  ironY = sy;
+  popups = [];
+}
+
+function spawnPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, life: 0.85 });
+}
+
+let lastT = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastT) / 1000, 0.1);
+    lastT = ts;
+    update(dt);
+    draw();
+  } catch (e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  if (state !== 'playing') return;
+
+  if (isDragging) {
+    heat = Math.min(1, heat + HEAT_RISE * dt);
+  } else {
+    heat = Math.max(0, heat - HEAT_FALL * dt);
+  }
+
+  if (isDragging && heat > HEAT_HOT) {
+    burnAccum += dt;
+    if (burnAccum >= 0.35) {
+      score = Math.max(0, score - 2);
+      spawnPopup(ironX, ironY - 24, 'BURNING!', '#E74C3C');
+      burnAccum = 0;
+    }
+  } else {
+    burnAccum = 0;
+  }
+
+  timeLeft -= dt;
+  if (timeLeft <= 0) {
+    timeLeft = 0;
+    lives--;
+    if (lives <= 0) {
+      state = 'gameover';
+      stopSizzle();
+      return;
+    }
+    spawnPopup(W / 2, 300, "TIME'S UP!", '#E74C3C');
+    loadLevel(level);
+    return;
+  }
+
+  if (isDragging) {
+    const { dist, arcLen } = nearestOnPathAhead(ironX, ironY, path, progress);
+    const inTol = dist <= TOLERANCE;
+    const inHot = heat >= HEAT_COLD;
+    if (inTol && inHot) {
+      if (arcLen > progress) {
+        score += Math.floor((arcLen - progress) * 0.45);
+        progress = arcLen;
+      }
+    }
+
+    if (progress >= path.totalLen * PASS_PCT) {
+      const tBonus = Math.floor(timeLeft * 5);
+      score += tBonus;
+      if (tBonus > 0) spawnPopup(W / 2, 250, '+' + tBonus + ' TIME BONUS!', '#FFE066');
+      spawnPopup(W / 2, 300, 'BRANDED!', '#FF9F43');
+      stopSizzle();
+      if (level + 1 >= BRANDS.length) {
+        state = 'gamewin';
+        if (score > personalBest) {
+          personalBest = score;
+          localStorage.setItem('brand_iron_best', score);
+        }
+      } else {
+        state = 'success';
+      }
+      return;
+    }
+  }
+
+  if (audioCtx) updateSizzle(isDragging, heat);
+
+  popups = popups.filter(p => { p.life -= dt; p.y -= 28 * dt; return p.life > 0; });
+}
+
+function getPointerPos(e) {
+  const rect = C.getBoundingClientRect();
+  const s    = rect.width / W;
+  const src  = e.touches ? e.touches[0] : e;
+  return [(src.clientX - rect.left) / s, (src.clientY - rect.top) / s];
+}
+
+C.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const [px, py] = getPointerPos(e);
+  if (state === 'title') { initAudio(); startGame(); return; }
+  if (state === 'success') {
+    loadLevel(level + 1);
+    state = 'playing';
+    if (audioCtx) startSizzle();
+    return;
+  }
+  if (state === 'gameover' || state === 'gamewin') {
+    feedbackMode ? handleFbTap(px, py) : handleEndTap(px, py);
+    return;
+  }
+  if (state === 'playing') {
+    ironX = px; ironY = py;
+    isDragging = true;
+    if (audioCtx) startSizzle();
+  }
+});
+
+C.addEventListener('pointermove', e => {
+  e.preventDefault();
+  if (state !== 'playing' || !isDragging) return;
+  const [px, py] = getPointerPos(e);
+  ironX = px; ironY = py;
+});
+
+C.addEventListener('pointerup',     e => { e.preventDefault(); isDragging = false; if (audioCtx) updateSizzle(false, heat); });
+C.addEventListener('pointercancel', e => { e.preventDefault(); isDragging = false; if (audioCtx) updateSizzle(false, heat); });
+
+function handleEndTap(px, py) {
+  if (py >= 455 && py <= 505 && px >= 80 && px <= 280) { initAudio(); startGame(); return; }
+  if (py >= 515 && py <= 555 && px >= 80 && px <= 280) {
+    if (navigator.share) navigator.share({ title: 'Brand Iron', text: 'I scored ' + score + ' in Brand Iron!' });
+    return;
+  }
+  if (py >= 565 && py <= 605 && px >= 80 && px <= 280) { feedbackMode = true; }
+}
+
+function handleFbTap(px, py) {
+  if (py >= 300 && py <= 345) {
+    const idx = Math.floor((px - 40) / 56);
+    if (idx >= 0 && idx < 5) fbRating = idx + 1;
+    return;
+  }
+  if (py >= 425 && py <= 465 && px >= 60 && px <= 300 && fbRating > 0) {
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Brand Iron', rating: fbRating, score, message: fbText }),
+    }).catch(() => {});
+    feedbackMode = false;
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if      (state === 'title')                      drawTitle();
+  else if (state === 'playing')                    drawPlaying();
+  else if (state === 'success')                    drawSuccess();
+  else if (state === 'gameover' || state === 'gamewin') drawEnd();
+}
+
+function drawTitle() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(255,255,220,0.55)';
+  for (let i = 0; i < 40; i++) {
+    ctx.beginPath();
+    ctx.arc((i * 79 + 23) % W, (i * 43 + 17) % (H * 0.5), 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 52px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BRAND IRON', W / 2, 200);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '17px Georgia, serif';
+  ctx.fillText('Trace the brand. Control the heat.', W / 2, 242);
+
+  const demo = BRANDS[0];
+  ctx.save();
+  ctx.translate(W / 2 - 90, BRAND_OY + 60);
+  ctx.strokeStyle = 'rgba(255,150,50,0.45)';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < demo.pts.length; i++) {
+    if (i === 0) ctx.moveTo(demo.pts[i][0], demo.pts[i][1]);
+    else         ctx.lineTo(demo.pts[i][0], demo.pts[i][1]);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  const best = parseInt(localStorage.getItem('brand_iron_best') || '0', 10);
+  if (best > 0) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = '16px Georgia, serif';
+    ctx.fillText('BEST: ' + best, W / 2, 490);
+  }
+
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('TAP TO START', W / 2, 560);
+  ctx.restore();
+}
+
+function drawPlaying() {
+  ctx.save();
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#2a1500');
+  bg.addColorStop(1, '#3a1f05');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const hx = BRAND_OX - 18, hy = BRAND_OY - 22, hw = 180 + 36, hh = 160 + 44;
+
+  ctx.fillStyle = '#8B6914';
+  rr(hx, hy, hw, hh, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#5a3d06';
+  ctx.lineWidth = 3;
+  rr(hx, hy, hw, hh, 12);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(hx, hy, hw, hh);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(60,30,0,0.13)';
+  ctx.lineWidth = 1;
+  for (let gy = hy; gy < hy + hh; gy += 9) {
+    ctx.beginPath();
+    ctx.moveTo(hx, gy + Math.sin(gy * 0.28) * 2);
+    ctx.lineTo(hx + hw, gy + Math.sin(gy * 0.28 + 2) * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  drawBrandPath(path, 'rgba(255,210,80,0.32)', 3.5);
+  drawTracedPath(path, progress);
+  drawIron(ironX, ironY, heat, isDragging);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  rr(0, 0, W, 54, 0);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 26px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 34);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('♥'.repeat(lives) + '♡'.repeat(3 - lives), 12, 33);
+
+  const tColor = timeLeft < 8 ? '#E74C3C' : '#FFE066';
+  ctx.fillStyle = tColor;
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.ceil(timeLeft) + 's', W - 12, 33);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BRAND ' + (level + 1) + ' / ' + BRANDS.length + ' — ' + BRANDS[level].name.toUpperCase(), W / 2, 72);
+
+  const gx = W - 26, gy = 92, gh = 158;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  rr(gx - 4, gy - 4, 20, gh + 8, 5);
+  ctx.fill();
+  const heatFill = heat * gh;
+  const heatGrad = ctx.createLinearGradient(0, gy + gh, 0, gy);
+  heatGrad.addColorStop(0,            '#2255CC');
+  heatGrad.addColorStop(HEAT_COLD,    '#66AAFF');
+  heatGrad.addColorStop(HEAT_COLD + 0.01, '#88EE88');
+  heatGrad.addColorStop(0.5,          '#FF9F43');
+  heatGrad.addColorStop(HEAT_HOT,     '#FF4400');
+  heatGrad.addColorStop(1,            '#FF0000');
+  ctx.fillStyle = heatGrad;
+  if (heatFill > 0) { rr(gx - 2, gy + gh - heatFill, 16, heatFill, 3); ctx.fill(); }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1;
+  const coldY = gy + gh - HEAT_COLD * gh;
+  const hotY  = gy + gh - HEAT_HOT  * gh;
+  ctx.beginPath(); ctx.moveTo(gx - 5, coldY); ctx.lineTo(gx + 14, coldY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(gx - 5, hotY);  ctx.lineTo(gx + 14, hotY);  ctx.stroke();
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('HEAT', gx + 10, gy + gh + 20);
+
+  const prog = Math.min(progress / path.totalLen, 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  rr(30, H - 38, W - 60, 16, 5);
+  ctx.fill();
+  if (prog > 0) {
+    const bw = Math.max(10, (W - 60) * prog);
+    ctx.fillStyle = '#FF9F43';
+    rr(30, H - 38, bw, 16, 5);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.floor(prog * 100) + '%', W / 2, H - 25);
+
+  if (isDragging) {
+    let heatMsg = null, heatClr = null;
+    if (heat < HEAT_COLD) { heatMsg = 'TOO COLD'; heatClr = '#66AAFF'; }
+    else if (heat > HEAT_HOT) { heatMsg = 'TOO HOT!'; heatClr = '#E74C3C'; }
+    if (heatMsg) {
+      ctx.fillStyle = heatClr;
+      ctx.font = 'bold 14px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(heatMsg, W / 2 - 25, 85);
+    }
+  }
+
+  for (const p of popups) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, p.life / 0.3);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawBrandPath(pathObj, color, lw) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < pathObj.segs.length; i++) {
+    const { ax, ay, bx, by } = pathObj.segs[i];
+    if (i === 0) ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.arc(pathObj.segs[0].ax, pathObj.segs[0].ay, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawTracedPath(pathObj, prog) {
+  if (prog <= 0) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  let remaining = prog;
+  for (const seg of pathObj.segs) {
+    if (remaining <= 0) break;
+    const frac = Math.min(remaining / seg.len, 1);
+    const ex = seg.ax + (seg.bx - seg.ax) * frac;
+    const ey = seg.ay + (seg.by - seg.ay) * frac;
+    ctx.strokeStyle = '#3a1500';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(seg.ax, seg.ay); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.strokeStyle = '#FF7722';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(seg.ax, seg.ay); ctx.lineTo(ex, ey); ctx.stroke();
+    remaining -= seg.len;
+  }
+  ctx.restore();
+}
+
+function drawIron(x, y, heatVal, active) {
+  ctx.save();
+  let ri, gi, bi;
+  if (heatVal < HEAT_COLD) {
+    ri = 68; gi = 136; bi = 255;
+  } else if (heatVal > HEAT_HOT) {
+    ri = 255; gi = 34; bi = 0;
+  } else {
+    const t = (heatVal - HEAT_COLD) / (HEAT_HOT - HEAT_COLD);
+    ri = 255;
+    gi = Math.floor(200 * (1 - t));
+    bi = Math.floor(50 * (1 - t));
+  }
+  if (active) {
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, IRON_R * 2.8);
+    glow.addColorStop(0, 'rgba(' + ri + ',' + gi + ',' + bi + ',0.55)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, IRON_R * 2.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#1a0d35';
+  ctx.beginPath();
+  ctx.arc(x, y, IRON_R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgb(' + ri + ',' + gi + ',' + bi + ')';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = 'rgb(' + ri + ',' + gi + ',' + bi + ')';
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#777';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x + IRON_R * 0.65, y + IRON_R * 0.65);
+  ctx.lineTo(x + IRON_R * 2.4,  y + IRON_R * 2.4);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSuccess() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#2a1500');
+  bg.addColorStop(1, '#3a1f05');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 50px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BRANDED!', W / 2, 270);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '20px Georgia, serif';
+  ctx.fillText(BRANDS[level].name.toUpperCase(), W / 2, 320);
+
+  if (level + 1 < BRANDS.length) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '18px Georgia, serif';
+    ctx.fillText('Next: ' + BRANDS[level + 1].name, W / 2, 365);
+  }
+
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '16px sans-serif';
+  ctx.fillText('Tap to continue', W / 2, 425);
+  ctx.restore();
+}
+
+function drawEnd() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  if (feedbackMode) { drawFeedbackOverlay(); ctx.restore(); return; }
+
+  const isWin = state === 'gamewin';
+  ctx.fillStyle = isWin ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 44px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(isWin ? 'BRAND MASTER!' : 'IRON COLD', W / 2, 195);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 38px sans-serif';
+  ctx.fillText(score, W / 2, 255);
+
+  const best = parseInt(localStorage.getItem('brand_iron_best') || '0', 10);
+  if (score >= best && score > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 296);
+  } else if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '16px sans-serif';
+    ctx.fillText('BEST: ' + best, W / 2, 296);
+  }
+
+  ctx.fillStyle = '#FF9F43';
+  rr(80, 455, 200, 48, 10);
+  ctx.fill();
+  ctx.fillStyle = '#1a0d35';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W / 2, 486);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  rr(80, 515, 200, 40, 10);
+  ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '16px Georgia, serif';
+  ctx.fillText('SHARE', W / 2, 540);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  rr(80, 565, 200, 38, 10);
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Send Feedback', W / 2, 588);
+
+  ctx.restore();
+}
+
+function drawFeedbackOverlay() {
+  ctx.fillStyle = 'rgba(0,0,0,0.86)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 26px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText("How'd we do?", W / 2, 238);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('Rate Brand Iron', W / 2, 270);
+
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i < fbRating ? '#FFE066' : 'rgba(255,224,102,0.25)';
+    ctx.font = '34px sans-serif';
+    ctx.fillText('★', 60 + i * 56, 335);
+  }
+
+  ctx.fillStyle = fbRating > 0 ? '#FF9F43' : 'rgba(255,150,50,0.3)';
+  rr(60, 425, 240, 44, 10);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('SUBMIT', W / 2, 452);
+}
+
+window.__test = {
+  getState:    () => state,
+  getScore:    () => score,
+  getLevel:    () => level,
+  getLives:    () => lives,
+  getHeat:     () => heat,
+  getProgress: () => progress,
+  getTimeLeft: () => timeLeft,
+  getPath:     () => ({ totalLen: path ? path.totalLen : 0, segCount: path ? path.segs.length : 0 }),
+  getIronX:    () => ironX,
+  getIronY:    () => ironY,
+  isDragging:  () => isDragging,
+  getBurnAccum: () => burnAccum,
+  startGame,
+  loadLevel,
+  BRANDS,
+  HEAT_COLD, HEAT_HOT, HEAT_RISE, HEAT_FALL,
+  TOLERANCE, ADVANCE_LIMIT, IRON_R, PASS_PCT,
+  W, H, BRAND_OX, BRAND_OY, BRAND_CX, BRAND_CY,
+  nearestOnPathAhead,
+  buildPath,
+  toCanvas,
+  starPath,
+  setIronPos:  (x, y) => { ironX = x; ironY = y; },
+  setDragging: (v) => { isDragging = v; },
+  setHeat:     (v) => { heat = v; },
+  setProgress: (v) => { progress = v; },
+  setTimeLeft: (v) => { timeLeft = v; },
+  setState:    (v) => { state = v; },
+  setLevel:    (v) => { level = v; },
+  setLives:    (v) => { lives = v; },
+  setScore:    (v) => { score = v; },
+  tickUpdate:  (dt) => update(dt),
+  spawnPopup,
+  FEEDBACK_ENDPOINT,
+};
+
+state = 'title';
+personalBest = parseInt(localStorage.getItem('brand_iron_best') || '0', 10);
+ironX = W / 2;
+ironY = H / 2;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
