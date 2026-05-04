@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Jail Break</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; align-items: center; justify-content: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="360" height="640"></canvas>
+<script>
+'use strict';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+const W = 360, H = 640;
+const COLS = 12, ROWS = 17, CELL = 30;
+const GX = 0, GY = 52;
+const BTN_Y = GY + ROWS * CELL + 10;
+const BTN_H = 52;
+
+const WALL = 0, FLOOR = 1, SHADOW = 2, DOOR = 3, EXIT = 4;
+const DIR_N = 0, DIR_E = 1, DIR_S = 2, DIR_W = 3;
+const DX = [0, 1, 0, -1];
+const DY = [-1, 0, 1, 0];
+const VISION_RANGE = 5;
+const VISION_HALF  = 38 * Math.PI / 180;
+const ALERT_DIST   = 4;
+const ALERT_TURNS  = 3;
+
+const LEVEL_DATA = [
+  {
+    map: [
+      'WWWWWWWWWWWW',
+      'W..........W',
+      'W..P.......W',
+      'W..........W',
+      'WWWWDWWWWWWW',
+      'W..........W',
+      'W..........W',
+      'W..1.......W',
+      'W..........W',
+      'W..........W',
+      'W..........W',
+      'W..........W',
+      'W..........W',
+      'W..........W',
+      'W..........W',
+      'W.........EW',
+      'WWWWWWWWWWWW',
+    ],
+    guards: [
+      { x:3, y:7, facing:DIR_E, patrol:[{x:3,y:7},{x:9,y:7},{x:9,y:8},{x:3,y:8}] }
+    ],
+    picks:3, throws:2, turns:40
+  },
+  {
+    map: [
+      'WWWWWWWWWWWW',
+      'W..........W',
+      'W..P.......W',
+      'W..........W',
+      'WWWWDWWWWWWW',
+      'W....SS....W',
+      'W....SS....W',
+      'W..1.......W',
+      'W..........W',
+      'W..........W',
+      'WWWWWWWWDWWW',
+      'W..........W',
+      'W..........W',
+      'W..2.......W',
+      'W..........W',
+      'W.........EW',
+      'WWWWWWWWWWWW',
+    ],
+    guards: [
+      { x:3, y:7, facing:DIR_E, patrol:[{x:3,y:7},{x:9,y:7},{x:9,y:8},{x:3,y:8}] },
+      { x:3, y:13, facing:DIR_E, patrol:[{x:3,y:13},{x:7,y:13},{x:7,y:14},{x:3,y:14}] }
+    ],
+    picks:3, throws:2, turns:50
+  },
+  {
+    map: [
+      'WWWWWWWWWWWW',
+      'W..........W',
+      'W..P.......W',
+      'W..........W',
+      'WWWDWWWWWWWW',
+      'W....SS....W',
+      'WWWWWWWWDWWW',
+      'W..........W',
+      'W.1........W',
+      'W..........W',
+      'W....SS....W',
+      'W..........W',
+      'W.2........W',
+      'W..........W',
+      'W..........W',
+      'W.........EW',
+      'WWWWWWWWWWWW',
+    ],
+    guards: [
+      { x:2, y:8, facing:DIR_E, patrol:[{x:2,y:8},{x:9,y:8},{x:9,y:7},{x:2,y:7}] },
+      { x:2, y:12, facing:DIR_E, patrol:[{x:2,y:12},{x:9,y:12},{x:9,y:13},{x:2,y:13}] }
+    ],
+    picks:2, throws:2, turns:45
+  },
+  {
+    map: [
+      'WWWWWWWWWWWW',
+      'W..........W',
+      'W..P.......W',
+      'WWWDWWWWWWWW',
+      'W..........W',
+      'W.1........W',
+      'W..........W',
+      'W....SS....W',
+      'W.2........W',
+      'WWWWWWWWDWWW',
+      'W..........W',
+      'W..........W',
+      'W.3........W',
+      'W..........W',
+      'W..........W',
+      'W.........EW',
+      'WWWWWWWWWWWW',
+    ],
+    guards: [
+      { x:2, y:5, facing:DIR_E, patrol:[{x:2,y:5},{x:9,y:5},{x:9,y:4},{x:2,y:4}] },
+      { x:2, y:8, facing:DIR_E, patrol:[{x:2,y:8},{x:9,y:8},{x:9,y:7},{x:2,y:7}] },
+      { x:2, y:12, facing:DIR_E, patrol:[{x:2,y:12},{x:9,y:12},{x:9,y:13},{x:2,y:13}] }
+    ],
+    picks:2, throws:1, turns:40
+  },
+  {
+    map: [
+      'WWWWWWWWWWWW',
+      'W..........W',
+      'W..P.......W',
+      'WWDWWWWWWWWW',
+      'W..........W',
+      'W........1.W',
+      'WWWWWWWWDWWW',
+      'W..........W',
+      'W.2........W',
+      'WWWWDWWWWWWW',
+      'W..........W',
+      'W..........W',
+      'WWWWWWWWWDWW',
+      'W........3.W',
+      'W..........W',
+      'W.........EW',
+      'WWWWWWWWWWWW',
+    ],
+    guards: [
+      { x:9, y:5, facing:DIR_W, patrol:[{x:9,y:5},{x:2,y:5},{x:2,y:4},{x:9,y:4}] },
+      { x:2, y:8, facing:DIR_E, patrol:[{x:2,y:8},{x:9,y:8},{x:9,y:7},{x:2,y:7}] },
+      { x:9, y:13, facing:DIR_W, patrol:[{x:9,y:13},{x:2,y:13},{x:2,y:14},{x:9,y:14}] }
+    ],
+    picks:4, throws:1, turns:35
+  }
+];
+
+let state = 'title';
+let level = 0;
+let grid = [];
+let player = { x:0, y:0 };
+let guards = [];
+let picks = 0;
+let throws = 0;
+let turns = 0;
+let throwMode = false;
+let stones = [];
+let score = 0;
+let levelScores = [0,0,0,0,0];
+let best = parseInt(localStorage.getItem('jail_break_best') || '0', 10);
+let msgs = [];
+let feedbackMode = false;
+let fbRating = 0;
+let fbSent = false;
+let lastMs = 0;
+
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playNote(freq, dur, vol, type) {
+  vol = vol || 0.25; type = type || 'sine';
+  try {
+    const a = getAC();
+    const o = a.createOscillator();
+    const g = a.createGain();
+    o.connect(g); g.connect(a.destination);
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+    o.start(); o.stop(a.currentTime + dur + 0.01);
+  } catch(_) {}
+}
+function sfxStep()   { playNote(660, 0.04, 0.12); }
+function sfxPick()   { [392,494,622].forEach((f,i) => setTimeout(() => playNote(f, 0.09, 0.2), i*55)); }
+function sfxThrow()  { playNote(523, 0.05, 0.2); setTimeout(() => playNote(330, 0.12, 0.15), 60); }
+function sfxAlert()  { playNote(440, 0.08, 0.25, 'square'); }
+function sfxCaught() { playNote(220, 0.5, 0.4, 'sawtooth'); setTimeout(() => playNote(165, 0.6, 0.35, 'sawtooth'), 150); }
+function sfxEscape() { [523,659,784,1047].forEach((f,i) => setTimeout(() => playNote(f, 0.18, 0.3), i*90)); }
+
+function cellAt(c, r) {
+  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return WALL;
+  return grid[r][c];
+}
+
+function parseMap(mapArr) {
+  const g = [];
+  for (let r = 0; r < ROWS; r++) {
+    const row = [];
+    for (let c = 0; c < COLS; c++) {
+      const ch = mapArr[r][c];
+      if      (ch === 'W') row.push(WALL);
+      else if (ch === 'S') row.push(SHADOW);
+      else if (ch === 'D') row.push(DOOR);
+      else if (ch === 'E') row.push(EXIT);
+      else                 row.push(FLOOR);
+    }
+    g.push(row);
+  }
+  return g;
+}
+
+function hasLOS(x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const steps = Math.max(Math.abs(dx), Math.abs(dy)) * 4;
+  for (let i = 1; i < steps; i++) {
+    const x = Math.round(x1 + dx * i / steps);
+    const y = Math.round(y1 + dy * i / steps);
+    if (x === x2 && y === y2) break;
+    const ct = cellAt(x, y);
+    if (ct === WALL || ct === DOOR) return false;
+  }
+  return true;
+}
+
+function getVisibleTiles(g) {
+  const vis = new Set();
+  const facingAngle = [-Math.PI * 0.5, 0, Math.PI * 0.5, Math.PI][g.facing];
+  for (let dy = -VISION_RANGE; dy <= VISION_RANGE; dy++) {
+    for (let dx = -VISION_RANGE; dx <= VISION_RANGE; dx++) {
+      const cx = g.x + dx, cy = g.y + dy;
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+      const dist = Math.hypot(dx, dy);
+      if (dist > VISION_RANGE || dist < 0.5) continue;
+      let angle = Math.atan2(dy, dx);
+      let diff = angle - facingAngle;
+      while (diff >  Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      if (Math.abs(diff) > VISION_HALF) continue;
+      if (hasLOS(g.x, g.y, cx, cy)) vis.add(cy * COLS + cx);
+    }
+  }
+  return vis;
+}
+
+function isDetected() {
+  if (cellAt(player.x, player.y) === SHADOW) return false;
+  for (const g of guards) {
+    const vis = getVisibleTiles(g);
+    if (vis.has(player.y * COLS + player.x)) return true;
+  }
+  return false;
+}
+
+function stepGuard(g) {
+  if (g.alertTurns > 0) {
+    g.alertTurns--;
+    if (g.alertTarget) {
+      const dx = g.alertTarget.x - g.x, dy = g.alertTarget.y - g.y;
+      if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+        let nx = g.x, ny = g.y;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          nx += dx > 0 ? 1 : -1;
+          g.facing = dx > 0 ? DIR_E : DIR_W;
+        } else {
+          ny += dy > 0 ? 1 : -1;
+          g.facing = dy > 0 ? DIR_S : DIR_N;
+        }
+        const ct = cellAt(nx, ny);
+        if (ct !== WALL && ct !== DOOR) { g.x = nx; g.y = ny; }
+      }
+    }
+    if (g.alertTurns === 0) g.alertTarget = null;
+    return;
+  }
+  const wp = g.patrol[g.patrolIdx];
+  const dx = wp.x - g.x, dy = wp.y - g.y;
+  if (dx === 0 && dy === 0) {
+    g.patrolIdx = (g.patrolIdx + 1) % g.patrol.length;
+    return;
+  }
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    g.x += dx > 0 ? 1 : -1;
+    g.facing = dx > 0 ? DIR_E : DIR_W;
+  } else {
+    g.y += dy > 0 ? 1 : -1;
+    g.facing = dy > 0 ? DIR_S : DIR_N;
+  }
+}
+
+function initLevel(idx) {
+  const ld = LEVEL_DATA[idx];
+  grid = parseMap(ld.map);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (ld.map[r][c] === 'P') { player.x = c; player.y = r; }
+    }
+  }
+  guards = ld.guards.map(gd => ({
+    x: gd.x, y: gd.y, facing: gd.facing,
+    patrol: gd.patrol.map(p => ({ x: p.x, y: p.y })),
+    patrolIdx: 0, alertTurns: 0, alertTarget: null
+  }));
+  picks = ld.picks;
+  throws = ld.throws;
+  turns = ld.turns;
+  throwMode = false;
+  stones = [];
+  msgs = [];
+}
+
+function addMsg(text, x, y, color) {
+  msgs.push({ text: text, x: x, y: y, color: color || '#FFE066', t: 0 });
+}
+
+function endTurn() {
+  turns--;
+  for (const g of guards) stepGuard(g);
+  stones = stones.map(s => ({ x: s.x, y: s.y, ttl: s.ttl - 1 })).filter(s => s.ttl > 0);
+  if (isDetected()) { triggerCaught(); return; }
+  if (turns <= 0) {
+    addMsg("TIME'S UP!", W / 2, H / 2 - 60, '#E74C3C');
+    setTimeout(triggerCaught, 800);
+  }
+}
+
+function triggerCaught() {
+  state = 'caught';
+  sfxCaught();
+}
+
+function triggerEscape() {
+  const lscore = turns * 20;
+  levelScores[level] = lscore;
+  score = levelScores.reduce(function(a, b) { return a + b; }, 0);
+  if (score > best) {
+    best = score;
+    localStorage.setItem('jail_break_best', best);
+  }
+  sfxEscape();
+  if (level >= 4) {
+    state = 'gamewin';
+  } else {
+    state = 'escaped';
+  }
+}
+
+function doThrow(tc, tr) {
+  if (throws <= 0) return;
+  const ct = cellAt(tc, tr);
+  if (ct === WALL) return;
+  throws--;
+  stones.push({ x: tc, y: tr, ttl: 3 });
+  sfxThrow();
+  for (const g of guards) {
+    const dist = Math.hypot(g.x - tc, g.y - tr);
+    if (dist <= ALERT_DIST) {
+      g.alertTurns = ALERT_TURNS;
+      g.alertTarget = { x: tc, y: tr };
+      const adx = tc - g.x, ady = tr - g.y;
+      if (Math.abs(adx) >= Math.abs(ady)) g.facing = adx >= 0 ? DIR_E : DIR_W;
+      else                                 g.facing = ady >= 0 ? DIR_S : DIR_N;
+      sfxAlert();
+    }
+  }
+  throwMode = false;
+  endTurn();
+}
+
+function tryPlayerAction(gc, gr) {
+  const dx = gc - player.x, dy = gr - player.y;
+  if (Math.abs(dx) + Math.abs(dy) !== 1) return;
+  const ct = cellAt(gc, gr);
+  if (ct === WALL) return;
+  if (ct === DOOR) {
+    if (picks <= 0) { addMsg('NO PICKS', W / 2, GY + gr * CELL + 15, '#E74C3C'); return; }
+    picks--;
+    grid[gr][gc] = FLOOR;
+    sfxPick();
+    addMsg('PICKED!', GX + gc * CELL + 15, GY + gr * CELL + 15, '#FF9F43');
+    endTurn();
+    return;
+  }
+  if (guards.some(function(g) { return g.x === gc && g.y === gr; })) return;
+  player.x = gc; player.y = gr;
+  sfxStep();
+  if (ct === EXIT) { triggerEscape(); return; }
+  if (isDetected()) { triggerCaught(); return; }
+  endTurn();
+}
+
+function startGame() {
+  level = 0;
+  levelScores = [0,0,0,0,0];
+  score = 0;
+  feedbackMode = false;
+  fbRating = 0;
+  fbSent = false;
+  initLevel(0);
+  state = 'playing';
+}
+
+function handleTap(ex, ey) {
+  if (state === 'title') { startGame(); return; }
+
+  if (state === 'caught') {
+    initLevel(level);
+    state = 'playing';
+    return;
+  }
+
+  if (state === 'escaped') {
+    level++;
+    initLevel(level);
+    state = 'playing';
+    return;
+  }
+
+  if (state === 'gamewin') {
+    if (feedbackMode) {
+      handleFbTap(ex, ey);
+    } else {
+      handleEndTap(ex, ey);
+    }
+    return;
+  }
+
+  if (state !== 'playing') return;
+
+  if (ey >= BTN_Y && ey <= BTN_Y + BTN_H) {
+    if (ex < W / 2) {
+      throwMode = false;
+      endTurn();
+    } else {
+      if (throws > 0) throwMode = !throwMode;
+    }
+    return;
+  }
+
+  const gc = Math.floor((ex - GX) / CELL);
+  const gr = Math.floor((ey - GY) / CELL);
+  if (gc < 0 || gc >= COLS || gr < 0 || gr >= ROWS) return;
+
+  if (throwMode) { doThrow(gc, gr); return; }
+  tryPlayerAction(gc, gr);
+}
+
+function handleEndTap(ex, ey) {
+  if (ey >= 440 && ey <= 490 && ex >= 80 && ex <= 280) { startGame(); return; }
+  if (ey >= 505 && ey <= 545 && ex >= 80 && ex <= 280) {
+    if (navigator.share) navigator.share({ title: 'Jail Break', text: 'I scored ' + score + ' in Jail Break! A Bob Davis Game.' });
+    return;
+  }
+  if (ey >= 558 && ey <= 598 && ex >= 80 && ex <= 280) { feedbackMode = true; }
+}
+
+function handleFbTap(ex, ey) {
+  if (ey >= 290 && ey <= 340) {
+    const idx = Math.floor((ex - 30) / 60);
+    if (idx >= 0 && idx < 5) fbRating = idx + 1;
+    return;
+  }
+  if (ey >= 420 && ey <= 465 && ex >= 60 && ex <= 300 && fbRating > 0 && !fbSent) {
+    fbSent = true;
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Jail Break', rating: fbRating, score: score, message: '' })
+    }).catch(function() {});
+    feedbackMode = false;
+  }
+}
+
+function cx(col) { return GX + col * CELL; }
+function cy(row) { return GY + row * CELL; }
+
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function drawGrid() {
+  ctx.save();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = cx(c), y = cy(r);
+      const ct = grid[r][c];
+      if (ct === WALL) {
+        ctx.fillStyle = '#2a1500';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = '#1a0d00';
+        ctx.fillRect(x, y, CELL, 1);
+        ctx.fillRect(x, y + CELL - 1, CELL, 1);
+        ctx.fillRect(x, y, 1, CELL);
+        ctx.fillRect(x + CELL - 1, y, 1, CELL);
+        if ((r + c) % 2 === 0) {
+          ctx.fillStyle = 'rgba(0,0,0,0.15)';
+          ctx.fillRect(x + 2, y + 2, CELL - 4, CELL / 2 - 2);
+        } else {
+          ctx.fillStyle = 'rgba(0,0,0,0.15)';
+          ctx.fillRect(x + 2, y + CELL / 2, CELL - 4, CELL / 2 - 2);
+        }
+      } else if (ct === SHADOW) {
+        ctx.fillStyle = '#090614';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = 'rgba(80,40,160,0.12)';
+        ctx.fillRect(x, y, CELL, CELL);
+        if (((r * 13 + c * 7) % 5) === 0) {
+          ctx.fillStyle = 'rgba(180,160,255,0.35)';
+          ctx.fillRect(x + (c * 7 + r * 3) % (CELL - 4) + 2,
+                       y + (r * 5 + c * 11) % (CELL - 4) + 2, 1, 1);
+        }
+      } else if (ct === DOOR) {
+        ctx.fillStyle = '#170c0c';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.fillStyle = '#5a3010';
+        ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
+        ctx.fillStyle = '#3a1f05';
+        ctx.fillRect(x + 4, y + 4, CELL - 8, CELL - 8);
+        ctx.fillStyle = '#C8A04A';
+        ctx.fillRect(x + 12, y + 14, 6, 5);
+        ctx.strokeStyle = '#C8A04A';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x + 15, y + 14, 3, Math.PI, 0);
+        ctx.stroke();
+      } else if (ct === EXIT) {
+        ctx.fillStyle = '#170c0c';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 2, y + 2, CELL - 4, CELL - 4);
+        ctx.fillStyle = '#FFD700';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('EXIT', x + CELL / 2, y + CELL / 2);
+      } else {
+        ctx.fillStyle = '#170c0c';
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawVision() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(231,76,60,0.20)';
+  for (const g of guards) {
+    const vis = getVisibleTiles(g);
+    for (const key of vis) {
+      const r = Math.floor(key / COLS), c = key % COLS;
+      ctx.fillRect(cx(c), cy(r), CELL, CELL);
+    }
+  }
+  ctx.restore();
+}
+
+function drawHints() {
+  ctx.save();
+  if (!throwMode) {
+    ctx.fillStyle = 'rgba(255,224,102,0.22)';
+    const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+    for (const d of dirs) {
+      const nc = player.x + d[0], nr = player.y + d[1];
+      if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+      const ct = cellAt(nc, nr);
+      if (ct !== WALL && !guards.some(function(g) { return g.x === nc && g.y === nr; })) {
+        ctx.fillRect(cx(nc), cy(nr), CELL, CELL);
+      }
+    }
+  } else {
+    ctx.fillStyle = 'rgba(200,160,74,0.22)';
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (cellAt(c, r) !== WALL) ctx.fillRect(cx(c), cy(r), CELL, CELL);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawPlayer() {
+  const px = cx(player.x) + CELL / 2;
+  const py = cy(player.y) + CELL / 2;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(px, py + 10, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#F4C842';
+  ctx.beginPath();
+  ctx.arc(px, py, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillRect(px - 11, py - 2, 22, 2);
+  ctx.fillRect(px - 8, py - 10, 16, 9);
+  ctx.restore();
+}
+
+function drawGuard(g) {
+  const px = cx(g.x) + CELL / 2;
+  const py = cy(g.y) + CELL / 2;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(px, py + 10, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const col = g.alertTurns > 0 ? '#FF6B35' : '#E74C3C';
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.arc(px, py, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillRect(px - 10, py - 2, 20, 2);
+  ctx.fillRect(px - 7, py - 9, 14, 8);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '8px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('★', px, py);
+  const adx = DX[g.facing] * 7, ady = DY[g.facing] * 7;
+  ctx.strokeStyle = 'rgba(255,159,67,0.75)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(px, py - 11);
+  ctx.lineTo(px + adx, py - 11 + ady);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawStones() {
+  ctx.save();
+  for (const s of stones) {
+    const alpha = s.ttl / 3;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#C8A04A';
+    ctx.beginPath();
+    ctx.arc(cx(s.x) + CELL / 2, cy(s.y) + CELL / 2, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = '#0d0620';
+  ctx.fillRect(0, 0, W, GY - 2);
+  ctx.fillStyle = '#2a1035';
+  ctx.fillRect(0, GY - 2, W, 2);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 13px Georgia,serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('LVL ' + (level + 1) + '/5', 8, 14);
+
+  ctx.textAlign = 'center';
+  ctx.fillText('' + score, W / 2, 14);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '10px Georgia,serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('BEST ' + best, W - 8, 14);
+
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('PICKS ' + picks, 8, 36);
+  ctx.textAlign = 'center';
+  ctx.fillText('THROWS ' + throws, W / 2, 36);
+  ctx.fillStyle = turns <= 10 ? '#E74C3C' : '#FFE066';
+  ctx.textAlign = 'right';
+  ctx.fillText('TURNS ' + turns, W - 8, 36);
+  ctx.restore();
+}
+
+function drawButtons() {
+  ctx.save();
+  ctx.fillStyle = '#1a1035';
+  rr(8, BTN_Y, W / 2 - 16, BTN_H, 8);
+  ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('WAIT', W / 4, BTN_Y + BTN_H / 2);
+
+  ctx.fillStyle = throwMode ? '#C8A04A' : '#1a1035';
+  rr(W / 2 + 8, BTN_Y, W / 2 - 16, BTN_H, 8);
+  ctx.fill();
+  ctx.fillStyle = throwMode ? '#050208' : (throws > 0 ? '#FFE066' : '#555');
+  ctx.fillText('THROW (' + throws + ')', W * 3 / 4, BTN_Y + BTN_H / 2);
+  ctx.restore();
+}
+
+function drawMsgs(dt) {
+  ctx.save();
+  msgs = msgs.filter(function(m) { return m.t < 1.0; });
+  for (const m of msgs) {
+    m.t += dt * 1.3;
+    ctx.globalAlpha = Math.max(0, 1 - m.t);
+    ctx.fillStyle = m.color;
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(m.text, m.x, m.y - m.t * 28);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPlaying(dt) {
+  ctx.save();
+  ctx.fillStyle = '#050208';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#0d0620';
+  ctx.fillRect(0, BTN_Y - 10, W, H - BTN_Y + 10);
+  ctx.restore();
+  drawGrid();
+  drawVision();
+  drawHints();
+  drawStones();
+  drawPlayer();
+  for (const g of guards) drawGuard(g);
+  drawHUD();
+  drawButtons();
+  drawMsgs(dt);
+}
+
+function drawEndOverlay(msg, col) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = col;
+  ctx.font = 'bold 48px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(msg, W / 2, 160);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 15px sans-serif';
+  if (msg === 'CAUGHT!') {
+    ctx.fillText('Score: ' + score, W / 2, 225);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Tap to retry this level', W / 2, 260);
+  } else {
+    ctx.fillText('+' + levelScores[level] + ' pts  (Total: ' + score + ')', W / 2, 225);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Tap for Level ' + (level + 2), W / 2, 260);
+  }
+  ctx.restore();
+}
+
+function drawWin() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  if (feedbackMode) { drawFeedback(); ctx.restore(); return; }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 42px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('JAIL BROKEN!', W / 2, 165);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 44px sans-serif';
+  ctx.fillText('' + score, W / 2, 240);
+
+  if (score >= best && score > 0) {
+    const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 250);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 18px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, 285);
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '15px sans-serif';
+    ctx.fillText('BEST: ' + best, W / 2, 285);
+  }
+
+  ctx.fillStyle = '#FF9F43';
+  rr(80, 440, 200, 50, 10);
+  ctx.fill();
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 20px Georgia,serif';
+  ctx.fillText('PLAY AGAIN', W / 2, 468);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  rr(80, 505, 200, 40, 10);
+  ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '16px Georgia,serif';
+  ctx.fillText('SHARE', W / 2, 528);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  rr(80, 558, 200, 40, 10);
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Send Feedback', W / 2, 580);
+
+  ctx.restore();
+}
+
+function drawFeedback() {
+  ctx.fillStyle = 'rgba(0,0,0,0.88)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 26px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText("How'd we do?", W / 2, 230);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('Rate Jail Break', W / 2, 265);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i < fbRating ? '#FFE066' : 'rgba(255,224,102,0.22)';
+    ctx.font = '36px sans-serif';
+    ctx.fillText('★', 30 + i * 60 + 30, 320);
+  }
+  ctx.fillStyle = fbSent ? '#555' : (fbRating > 0 ? '#FF9F43' : 'rgba(255,150,50,0.3)');
+  rr(60, 420, 240, 45, 10);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText(fbSent ? 'SENT!' : 'SUBMIT', W / 2, 445);
+}
+
+function drawTitle() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(255,255,220,0.5)';
+  for (let i = 0; i < 50; i++) {
+    ctx.fillRect((i * 79 + 23) % W, (i * 43 + 17) % (H * 0.55), 1, 1);
+  }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 56px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('JAIL', W / 2, 140);
+  ctx.fillText('BREAK', W / 2, 200);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia,serif';
+  ctx.fillText('A Bob Davis Game', W / 2, 245);
+
+  const instrs = [
+    'Escape through 5 frontier jails.',
+    'Tap adjacent cell to move.',
+    'Tap a locked door to pick the lock.',
+    'THROW stones to distract guards.',
+    'WAIT skips your turn.',
+    'Red glow = guard sight   Dark = safe shadow'
+  ];
+  ctx.fillStyle = '#aaa';
+  ctx.font = '12px sans-serif';
+  instrs.forEach(function(ln, i) { ctx.fillText(ln, W / 2, 293 + i * 20); });
+
+  if (best > 0) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('BEST: ' + best, W / 2, 435);
+  }
+
+  const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 420);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 20px Georgia,serif';
+  ctx.fillText('TAP TO PLAY', W / 2, 500);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastMs) / 1000, 0.1);
+    lastMs = ts;
+    ctx.clearRect(0, 0, W, H);
+    if (state === 'title') {
+      drawTitle();
+    } else if (state === 'playing') {
+      drawPlaying(dt);
+    } else if (state === 'caught') {
+      drawPlaying(dt);
+      drawEndOverlay('CAUGHT!', '#E74C3C');
+    } else if (state === 'escaped') {
+      drawPlaying(dt);
+      drawEndOverlay('ESCAPED!', '#FFE066');
+    } else if (state === 'gamewin') {
+      drawWin();
+    }
+  } catch(e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+C.addEventListener('pointerdown', function(e) {
+  e.preventDefault();
+  const rect = C.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  handleTap((e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy);
+});
+
+window.addEventListener('keydown', function(e) {
+  if (state === 'title') { startGame(); return; }
+  if (state === 'caught') { initLevel(level); state = 'playing'; return; }
+  if (state === 'escaped') { level++; initLevel(level); state = 'playing'; return; }
+  if (state !== 'playing') return;
+  const mv = { ArrowUp:[0,-1], KeyW:[0,-1], ArrowDown:[0,1], KeyS:[0,1],
+               ArrowLeft:[-1,0], KeyA:[-1,0], ArrowRight:[1,0], KeyD:[1,0] };
+  if (mv[e.code]) { e.preventDefault(); tryPlayerAction(player.x + mv[e.code][0], player.y + mv[e.code][1]); }
+  if (e.code === 'Space') { e.preventDefault(); endTurn(); }
+  if (e.code === 'KeyT') { if (throws > 0) throwMode = !throwMode; }
+});
+
+window.__test = {
+  getState:     function() { return state; },
+  setState:     function(s) { state = s; },
+  startGame:    function() { startGame(); },
+  getScore:     function() { return score; },
+  setScore:     function(s) { score = s; },
+  getLevel:     function() { return level; },
+  setLevel:     function(n) { level = n; initLevel(n); state = 'playing'; },
+  getPlayer:    function() { return { x: player.x, y: player.y }; },
+  getGuards:    function() { return guards.map(function(g) { return { x: g.x, y: g.y, facing: g.facing, alertTurns: g.alertTurns }; }); },
+  getGrid:      function() { return grid.map(function(r) { return r.slice(); }); },
+  getPicks:     function() { return picks; },
+  getThrows:    function() { return throws; },
+  getTurns:     function() { return turns; },
+  setTurns:     function(n) { turns = n; },
+  getBest:      function() { return best; },
+  setBest:      function(n) { best = n; },
+  getLevelData: function() { return LEVEL_DATA; },
+  getLevelScores: function() { return levelScores.slice(); },
+  isDetected:   function() { return isDetected(); },
+  getVisibleTiles: function(gi) { return Array.from(getVisibleTiles(guards[gi])); },
+  doWait:       function() { endTurn(); },
+  doThrow:      function(c, r) { doThrow(c, r); },
+  cellAt:       function(c, r) { return cellAt(c, r); },
+  initLevel:    function(n) { initLevel(n); },
+  parseMap:     function(m) { return parseMap(m); },
+  hasLOS:       function(x1, y1, x2, y2) { return hasLOS(x1, y1, x2, y2); },
+  stepGuard:    function(gi) { stepGuard(guards[gi]); },
+  tryPlayerAction: function(c, r) { tryPlayerAction(c, r); },
+  WALL: WALL, FLOOR: FLOOR, SHADOW: SHADOW, DOOR: DOOR, EXIT: EXIT,
+  DIR_N: DIR_N, DIR_E: DIR_E, DIR_S: DIR_S, DIR_W: DIR_W,
+  COLS: COLS, ROWS: ROWS, CELL: CELL,
+  VISION_RANGE: VISION_RANGE, VISION_HALF: VISION_HALF,
+  FEEDBACK_ENDPOINT: FEEDBACK_ENDPOINT
+};
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
