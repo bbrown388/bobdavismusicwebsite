@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-04T08:01:34.315Z",
+  "lastRunAt": "2026-05-04T08:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 28 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 28: Brand Iron - tests passing, committing"
-  },
-  "gamesBuilt": 27,
-  "lastGameTitle": "River Run",
-  "lastGameFile": "river-run.html",
+  "lastRunSummary": "Built Game 28: Brand Iron - path-tracing drag mechanic, heat sweet-zone, 45 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 28,
+  "lastGameTitle": "Brand Iron",
+  "lastGameFile": "brand-iron.html",
   "gameQueue": [
-    {
-      "num": 28,
-      "title": "Brand Iron",
-      "concept": "Drag a glowing brand iron along a template path burned into the hide - follow the shape precisely while managing iron heat (too cool = faint mark, too hot = burn) across 5 cattle with escalating brand complexity. First path-tracing mechanic in series.",
-      "raisesBarOn": "First continuous drag/path-tracing input, first dual-axis precision + resource management, most fine-motor challenge in series",
-      "status": "planned"
-    },
     {
       "num": 29,
       "title": "Jail Break",
@@ -30,17 +20,16 @@
       "concept": "Physics-based pinball on a frontier table: tumbleweeds as balls, cactus bumpers, wanted-poster targets, saloon flippers. First physics simulation with multiple simultaneous objects and bumper scoring chains.",
       "raisesBarOn": "First full physics simulation, first multi-object simultaneous play, first bumper chain scoring",
       "status": "planned"
+    },
+    {
+      "num": 31,
+      "title": "Pony Express",
+      "concept": "Rhythm-based horse riding: tap in sync with hoofbeat patterns to maintain gallop speed across 5 terrain sections. Pattern complexity escalates. Miss the beat and the horse slows; nail a streak and earn a burst of speed. First pure rhythm game since Honky Tonk but built around action rather than notes.",
+      "raisesBarOn": "First action-rhythm hybrid, first procedurally-generated beat pattern, first gait simulation mechanic",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-04-28T11:00:00Z",
-      "action": "new_game",
-      "game": "Snake Oil",
-      "result": "success",
-      "summary": "Built Game 13: Snake Oil - frontier medicine wagon, match ingredients to ailments, NPC dialogue, 30 tests pass.",
-      "commitHash": "a35efec"
-    },
     {
       "runAt": "2026-04-29T08:00:00Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 27: River Run - white-water raft, inertia model, current-reading swirls, 42 tests pass.",
       "commitHash": "2c6b15b"
+    },
+    {
+      "runAt": "2026-05-04T08:30:00.000Z",
+      "action": "new_game",
+      "game": "Brand Iron",
+      "result": "success",
+      "summary": "Built Game 28: Brand Iron - path-tracing drag mechanic, heat sweet-zone gauge, 45 tests pass.",
+      "commitHash": "4e20960"
     }
   ]
 }
