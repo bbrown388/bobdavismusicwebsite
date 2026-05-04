@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-04T08:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 28: Brand Iron - path-tracing drag mechanic, heat sweet-zone, 45 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 29: Jail Break",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw distraction"
+  },
   "gamesBuilt": 28,
   "lastGameTitle": "Brand Iron",
   "lastGameFile": "brand-iron.html",
