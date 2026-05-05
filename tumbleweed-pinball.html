@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Tumbleweed Pinball</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100dvh; overflow:hidden; touch-action:none; }
+canvas { display:block; image-rendering:crisp-edges; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>'use strict';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// ===== CANVAS =====
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = s * W + 'px'; canvas.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize); resize();
+
+// Polyfill roundRect for older Chromium
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    this.moveTo(x + rr, y);
+    this.arcTo(x + w, y, x + w, y + h, rr);
+    this.arcTo(x + w, y + h, x, y + h, rr);
+    this.arcTo(x, y + h, x, y, rr);
+    this.arcTo(x, y, x + w, y, rr);
+    this.closePath();
+  };
+}
+
+// ===== AUDIO =====
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+
+function playClick() {
+  try {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    o.frequency.value = 800;
+    g.gain.setValueAtTime(0.25, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.06);
+    o.start(AC.currentTime); o.stop(AC.currentTime + 0.06);
+  } catch(e) {}
+}
+
+function playBump(spd) {
+  try {
+    const len = AC.sampleRate * 0.12;
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.18));
+    const src = AC.createBufferSource(), g = AC.createGain(), f = AC.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 250 + spd * 0.4;
+    src.buffer = buf; src.connect(f); f.connect(g); g.connect(AC.destination);
+    g.gain.value = Math.min(0.45, 0.15 + spd / 1500);
+    src.start(AC.currentTime);
+  } catch(e) {}
+}
+
+function playDrain() {
+  try {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'triangle'; o.connect(g); g.connect(AC.destination);
+    o.frequency.setValueAtTime(420, AC.currentTime);
+    o.frequency.exponentialRampToValueAtTime(105, AC.currentTime + 0.9);
+    g.gain.setValueAtTime(0.28, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.9);
+    o.start(AC.currentTime); o.stop(AC.currentTime + 0.9);
+  } catch(e) {}
+}
+
+function playBonusChime() {
+  try {
+    const freqs = [523, 659, 784, 1047];
+    freqs.forEach((f, i) => {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+      const t = AC.currentTime + i * 0.1;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.2, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o.start(t); o.stop(t + 0.35);
+    });
+  } catch(e) {}
+}
+
+// ===== CONSTANTS =====
+const GRAVITY = 900;
+const DRAG = 0.9993;
+const BALL_R = 11;
+const BUMPER_R = 22;
+const WALL_L = 22, WALL_R = 338, WALL_T = 44;
+const DRAIN_Y = H + BALL_R + 5;
+const E_WALL = 0.68;
+const E_GUIDE = 0.62;
+const E_FLIPPER = 0.84;
+const BUMPER_MIN_SPD = 280;
+const CHAIN_TIMEOUT = 2.0;
+const FLIPPER_SPD = 14; // rad/s
+
+// ===== FLIPPERS =====
+const LF_PIVOT = { x: 95, y: 548 };
+const RF_PIVOT = { x: 265, y: 548 };
+const FLIPPER_LEN = 80;
+const LF_REST   =  Math.PI / 180 * 28;
+const LF_ACTIVE = -Math.PI / 180 * 32;
+const RF_REST   =  Math.PI - Math.PI / 180 * 28;
+const RF_ACTIVE =  Math.PI + Math.PI / 180 * 32;
+
+// ===== TABLE OBJECTS =====
+const BUMPERS = [
+  { x: 130, y: 135, r: BUMPER_R, flash: 0 },
+  { x: 230, y: 135, r: BUMPER_R, flash: 0 },
+  { x:  88, y: 228, r: BUMPER_R, flash: 0 },
+  { x: 180, y: 218, r: BUMPER_R, flash: 0 },
+  { x: 272, y: 228, r: BUMPER_R, flash: 0 },
+];
+
+const TARGETS = [
+  { x: 28, y: 315, w: 54, h: 22, hit: false, flash: 0 },
+  { x: 28, y: 345, w: 54, h: 22, hit: false, flash: 0 },
+  { x: 28, y: 375, w: 54, h: 22, hit: false, flash: 0 },
+];
+
+const GUIDES = [
+  { ax: WALL_L, ay: 472, bx: 84, by: 548 },
+  { ax: WALL_R, ay: 472, bx: 276, by: 548 },
+];
+
+const KICKERS = [
+  { ax: WALL_L, ay: 90, bx: 64, by: 72 },
+  { ax: WALL_R, ay: 90, bx: 296, by: 72 },
+];
+
+const DRAIN_POST = { x: 180, y: 564, r: 7 };
+
+// ===== STATE =====
+let phase = 'title';
+let score = 0, balls = 3, chain = 1, chainTimer = 0;
+let lfAngle = LF_REST, rfAngle = RF_REST;
+let leftActive = false, rightActive = false;
+let ball = { x: 180, y: 80, vx: 0, vy: 0 };
+let ballAlive = false;
+let ballDeadTimer = 0;
+let popups = [];
+let feedbackOpen = false, fbRating = 0;
+
+function getBest() { return parseInt(localStorage.getItem('tumbleweed_pinball_best') || '0', 10); }
+function setBest(n) { localStorage.setItem('tumbleweed_pinball_best', String(n)); }
+
+function startGame() {
+  score = 0; balls = 3; chain = 1; chainTimer = 0;
+  lfAngle = LF_REST; rfAngle = RF_REST;
+  leftActive = false; rightActive = false;
+  popups = [];
+  feedbackOpen = false; fbRating = 0;
+  BUMPERS.forEach(b => { b.flash = 0; });
+  TARGETS.forEach(t => { t.hit = false; t.flash = 0; });
+  spawnBall();
+  phase = 'playing';
+}
+
+function spawnBall() {
+  ball.x = 180 + (Math.random() - 0.5) * 28;
+  ball.y = 78;
+  ball.vx = (Math.random() - 0.5) * 55;
+  ball.vy = 90;
+  ballAlive = true;
+}
+
+// ===== PHYSICS =====
+function closestOnSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+  if (len2 < 1e-10) return { x: ax, y: ay };
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return { x: ax + t * dx, y: ay + t * dy };
+}
+
+function resolveSegment(ax, ay, bx, by, e) {
+  const c = closestOnSeg(ball.x, ball.y, ax, ay, bx, by);
+  const dx = ball.x - c.x, dy = ball.y - c.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const THICK = 6;
+  if (dist < BALL_R + THICK && dist > 0.01) {
+    const nx = dx / dist, ny = dy / dist;
+    ball.x += nx * ((BALL_R + THICK) - dist);
+    ball.y += ny * ((BALL_R + THICK) - dist);
+    const dot = ball.vx * nx + ball.vy * ny;
+    if (dot < 0) {
+      ball.vx -= (1 + e) * dot * nx;
+      ball.vy -= (1 + e) * dot * ny;
+    }
+    return true;
+  }
+  return false;
+}
+
+function flipperEndpoints(pivot, angle) {
+  return {
+    ax: pivot.x, ay: pivot.y,
+    bx: pivot.x + Math.cos(angle) * FLIPPER_LEN,
+    by: pivot.y + Math.sin(angle) * FLIPPER_LEN,
+  };
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, color, life: 0.85 });
+}
+
+// ===== UPDATE =====
+function update(dt) {
+  if (phase === 'ballDead') {
+    ballDeadTimer -= dt;
+    if (ballDeadTimer <= 0) {
+      if (balls > 0) { spawnBall(); phase = 'playing'; }
+      else { const b = getBest(); if (score > b) setBest(score); phase = 'gameover'; }
+    }
+    return;
+  }
+  if (phase !== 'playing') return;
+
+  // Chain decay
+  if (chain > 1) {
+    chainTimer -= dt;
+    if (chainTimer <= 0) { chain = 1; chainTimer = 0; }
+  }
+
+  // Gravity + drag
+  ball.vy += GRAVITY * dt;
+  ball.vx *= Math.pow(DRAG, dt * 60);
+  ball.vy *= Math.pow(DRAG, dt * 60);
+
+  // Speed cap
+  const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+  if (spd > 960) { ball.vx *= 960 / spd; ball.vy *= 960 / spd; }
+
+  // Move
+  ball.x += ball.vx * dt;
+  ball.y += ball.vy * dt;
+
+  // Flipper angle advance
+  const fdt = FLIPPER_SPD * dt;
+  if (leftActive)  lfAngle = Math.max(LF_ACTIVE, lfAngle - fdt);
+  else             lfAngle = Math.min(LF_REST,   lfAngle + fdt);
+  if (rightActive) rfAngle = Math.min(RF_ACTIVE, rfAngle + fdt);
+  else             rfAngle = Math.max(RF_REST,   rfAngle - fdt);
+
+  // Walls
+  if (ball.x < WALL_L + BALL_R) { ball.x = WALL_L + BALL_R; ball.vx =  Math.abs(ball.vx) * E_WALL; }
+  if (ball.x > WALL_R - BALL_R) { ball.x = WALL_R - BALL_R; ball.vx = -Math.abs(ball.vx) * E_WALL; }
+  if (ball.y < WALL_T + BALL_R) { ball.y = WALL_T + BALL_R; ball.vy =  Math.abs(ball.vy) * E_WALL; }
+
+  // Kickers
+  for (const k of KICKERS) resolveSegment(k.ax, k.ay, k.bx, k.by, 0.75);
+
+  // Guide walls
+  for (const g of GUIDES) resolveSegment(g.ax, g.ay, g.bx, g.by, E_GUIDE);
+
+  // Bumpers
+  for (const b of BUMPERS) {
+    if (b.flash > 0) b.flash -= dt;
+    const dx = ball.x - b.x, dy = ball.y - b.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const minD = BALL_R + b.r;
+    if (dist < minD && dist > 0.01) {
+      const nx = dx / dist, ny = dy / dist;
+      ball.x = b.x + nx * minD; ball.y = b.y + ny * minD;
+      const inSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+      const outSpd = Math.max(BUMPER_MIN_SPD, inSpd * 1.22);
+      ball.vx = nx * outSpd; ball.vy = ny * outSpd;
+      const pts = 100 * chain;
+      score += pts;
+      addPopup('+' + pts, ball.x, ball.y - 26, chain > 1 ? '#FF9F43' : '#FFE066');
+      chain = Math.min(8, chain * 2);
+      chainTimer = CHAIN_TIMEOUT;
+      b.flash = 0.28;
+      playBump(outSpd);
+    }
+  }
+
+  // Targets
+  const allHit0 = TARGETS.every(t => t.hit);
+  for (const t of TARGETS) {
+    if (t.flash > 0) t.flash -= dt;
+    if (t.hit) continue;
+    const cx = Math.max(t.x, Math.min(ball.x, t.x + t.w));
+    const cy = Math.max(t.y, Math.min(ball.y, t.y + t.h));
+    const dx = ball.x - cx, dy = ball.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < BALL_R && dist > 0.01) {
+      t.hit = true; t.flash = 0.4;
+      score += 200;
+      addPopup('+200', ball.x, ball.y - 20, '#FF9F43');
+      const nx = dx / dist || 0, ny = dy / dist || -1;
+      ball.x += nx * (BALL_R - dist); ball.y += ny * (BALL_R - dist);
+      const dot = ball.vx * nx + ball.vy * ny;
+      if (dot < 0) { ball.vx -= 2 * dot * nx; ball.vy -= 2 * dot * ny; }
+    }
+  }
+  if (!allHit0 && TARGETS.every(t => t.hit)) {
+    score += 2000;
+    TARGETS.forEach(t => t.hit = false);
+    addPopup('WANTED! +2000', W / 2, 295, '#FFD700');
+    playBonusChime();
+  }
+
+  // Drain post
+  {
+    const dp = DRAIN_POST;
+    const dx = ball.x - dp.x, dy = ball.y - dp.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const minD = BALL_R + dp.r;
+    if (dist < minD && dist > 0.01) {
+      const nx = dx / dist, ny = dy / dist;
+      ball.x = dp.x + nx * minD; ball.y = dp.y + ny * minD;
+      const dot = ball.vx * nx + ball.vy * ny;
+      if (dot < 0) { ball.vx -= 1.6 * dot * nx; ball.vy -= 1.6 * dot * ny; }
+    }
+  }
+
+  // Flippers
+  const lf = flipperEndpoints(LF_PIVOT, lfAngle);
+  const rf = flipperEndpoints(RF_PIVOT, rfAngle);
+  const hitL = resolveSegment(lf.ax, lf.ay, lf.bx, lf.by, E_FLIPPER);
+  const hitR = resolveSegment(rf.ax, rf.ay, rf.bx, rf.by, E_FLIPPER);
+  if (hitL && leftActive  && ball.vy > -120) { ball.vy -= 370; if (ball.vy < -850) ball.vy = -850; }
+  if (hitR && rightActive && ball.vy > -120) { ball.vy -= 370; if (ball.vy < -850) ball.vy = -850; }
+
+  // Drain check
+  if (ball.y > DRAIN_Y) {
+    balls--;
+    ballAlive = false;
+    chain = 1; chainTimer = 0;
+    phase = 'ballDead'; ballDeadTimer = 1.3;
+    playDrain();
+  }
+
+  // Popups
+  for (const p of popups) { p.y -= 38 * dt; p.life -= dt; }
+  popups = popups.filter(p => p.life > 0);
+}
+
+// ===== DRAW =====
+
+function drawTable() {
+  ctx.save();
+  // Felt background
+  ctx.fillStyle = '#110903';
+  ctx.fillRect(0, 0, W, H);
+  // Rail borders
+  ctx.strokeStyle = '#4a2504';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(WALL_L, WALL_T, WALL_R - WALL_L, H - WALL_T - 8);
+  // Guide walls
+  ctx.strokeStyle = '#4a2504';
+  ctx.lineWidth = 2.5;
+  for (const g of GUIDES) {
+    ctx.beginPath(); ctx.moveTo(g.ax, g.ay); ctx.lineTo(g.bx, g.by); ctx.stroke();
+  }
+  for (const k of KICKERS) {
+    ctx.beginPath(); ctx.moveTo(k.ax, k.ay); ctx.lineTo(k.bx, k.by); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBumper(b) {
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  const lit = b.flash > 0;
+  if (lit) {
+    const gr = ctx.createRadialGradient(0, 0, b.r * 0.2, 0, 0, b.r * 2);
+    gr.addColorStop(0, 'rgba(255,224,102,0.65)');
+    gr.addColorStop(1, 'rgba(255,224,102,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(0, 0, b.r * 2, 0, Math.PI * 2); ctx.fill();
+  }
+  // Cactus body
+  ctx.fillStyle = lit ? '#9ecf5e' : '#3d6b35';
+  ctx.strokeStyle = lit ? '#FFE066' : '#2a4a24';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // Arms
+  ctx.fillStyle = lit ? '#9ecf5e' : '#3d6b35';
+  ctx.strokeStyle = lit ? '#FFE066' : '#2a4a24';
+  ctx.lineWidth = 1.5;
+  // Left arm
+  ctx.beginPath();
+  ctx.roundRect(-b.r * 0.85, -b.r * 0.42, b.r * 0.45, b.r * 0.28, 4);
+  ctx.fill(); ctx.stroke();
+  // Right arm
+  ctx.beginPath();
+  ctx.roundRect(b.r * 0.40, -b.r * 0.42, b.r * 0.45, b.r * 0.28, 4);
+  ctx.fill(); ctx.stroke();
+  // Spine dots
+  ctx.fillStyle = lit ? '#FFE066' : '#C8A04A';
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath(); ctx.arc(i * b.r * 0.28, -b.r * 0.82, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTargets() {
+  ctx.save();
+  ctx.font = 'bold 8px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const t of TARGETS) {
+    const lit = t.flash > 0;
+    ctx.fillStyle = t.hit ? '#a07820' : (lit ? '#8B6914' : '#160c03');
+    ctx.strokeStyle = lit ? '#FFE066' : (t.hit ? '#FFD700' : '#6a4410');
+    ctx.lineWidth = lit ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.roundRect(t.x, t.y, t.w, t.h, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = t.hit ? '#FFE066' : '#8B6914';
+    ctx.fillText(t.hit ? 'CLEARED' : 'WANTED', t.x + t.w / 2, t.y + t.h / 2);
+  }
+  // Label
+  ctx.fillStyle = '#4a2504';
+  ctx.font = '9px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('POSTERS', 55, 302);
+  ctx.restore();
+}
+
+function drawFlippers() {
+  ctx.save();
+  ctx.lineCap = 'round';
+  const lf = flipperEndpoints(LF_PIVOT, lfAngle);
+  const rf = flipperEndpoints(RF_PIVOT, rfAngle);
+
+  function drawFlipper(a, b, active) {
+    ctx.lineWidth = 13;
+    const gr = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+    gr.addColorStop(0, '#7a3a0a'); gr.addColorStop(1, '#4a2205');
+    ctx.strokeStyle = gr;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = active ? '#FFE066' : '#C8A04A';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+
+  drawFlipper({ x: lf.ax, y: lf.ay }, { x: lf.bx, y: lf.by }, leftActive);
+  drawFlipper({ x: rf.ax, y: rf.ay }, { x: rf.bx, y: rf.by }, rightActive);
+
+  // Pivot caps
+  for (const p of [LF_PIVOT, RF_PIVOT]) {
+    ctx.fillStyle = '#C8A04A'; ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+
+  // Drain post (center deflector)
+  ctx.fillStyle = '#3a1f05'; ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(DRAIN_POST.x, DRAIN_POST.y, DRAIN_POST.r, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawBall() {
+  if (!ballAlive) return;
+  ctx.save();
+  ctx.translate(ball.x, ball.y);
+  // Glow
+  const gr = ctx.createRadialGradient(0, 0, 3, 0, 0, BALL_R * 1.6);
+  gr.addColorStop(0, 'rgba(180,130,60,0.45)');
+  gr.addColorStop(1, 'rgba(180,130,60,0)');
+  ctx.fillStyle = gr;
+  ctx.beginPath(); ctx.arc(0, 0, BALL_R * 1.6, 0, Math.PI * 2); ctx.fill();
+  // Body
+  ctx.fillStyle = '#5c3020';
+  ctx.beginPath(); ctx.arc(0, 0, BALL_R, 0, Math.PI * 2); ctx.fill();
+  // Twigs
+  ctx.strokeStyle = '#8B5e3c'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * BALL_R * 0.18, Math.sin(a) * BALL_R * 0.18);
+    ctx.lineTo(Math.cos(a) * BALL_R * 0.88, Math.sin(a) * BALL_R * 0.88);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#4a2815'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-BALL_R * 0.6, 0); ctx.lineTo(BALL_R * 0.6, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -BALL_R * 0.6); ctx.lineTo(0, BALL_R * 0.6); ctx.stroke();
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Score
+  ctx.fillStyle = 'rgba(18,9,3,0.88)';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 58, 4, 116, 32, 16); ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(score), W / 2, 22);
+  // Lives
+  for (let i = 0; i < balls; i++) {
+    const lx = 14 + i * 22, ly = 20;
+    ctx.fillStyle = '#5c3020';
+    ctx.beginPath(); ctx.arc(lx, ly, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#8B5e3c'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(lx - 5, ly); ctx.lineTo(lx + 5, ly); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx, ly - 5); ctx.lineTo(lx, ly + 5); ctx.stroke();
+  }
+  // Chain
+  if (chain > 1) {
+    ctx.fillStyle = 'rgba(18,9,3,0.88)';
+    ctx.beginPath(); ctx.roundRect(W - 66, 4, 62, 30, 15); ctx.fill();
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(chain + 'x CHAIN', W - 35, 20);
+  }
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.life * 2.2);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  const gr = ctx.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#180c04'); gr.addColorStop(1, '#090503');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  // Draw a few bumpers for visual
+  BUMPERS.slice(0, 3).forEach(b => drawBumper({ ...b, flash: 0 }));
+  // Title
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = 'rgba(255,224,102,0.55)'; ctx.shadowBlur = 18;
+  ctx.font = 'bold 38px Georgia, serif';
+  ctx.fillText('TUMBLEWEED', W / 2, 360);
+  ctx.fillText('PINBALL', W / 2, 405);
+  ctx.shadowBlur = 0;
+  // Sub
+  ctx.fillStyle = '#C8A04A'; ctx.font = '15px Georgia, serif';
+  ctx.fillText('Tap LEFT half — left flipper', W / 2, 455);
+  ctx.fillText('Tap RIGHT half — right flipper', W / 2, 477);
+  ctx.fillStyle = '#6a4410'; ctx.font = '12px Georgia, serif';
+  ctx.fillText('Clear all 3 WANTED posters for +2000!', W / 2, 505);
+  const best = getBest();
+  if (best > 0) { ctx.fillStyle = '#6a4410'; ctx.font = '14px Georgia, serif'; ctx.fillText('BEST: ' + best, W / 2, 527); }
+  // Button
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 85, 555, 170, 52, 26); ctx.fill();
+  ctx.fillStyle = '#1a0d05'; ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText('LAUNCH', W / 2, 582);
+  ctx.restore();
+}
+
+function drawBallDead() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#E74C3C'; ctx.font = 'bold 26px Georgia, serif';
+  ctx.fillText('TUMBLEWEED LOST', W / 2, H / 2);
+  if (balls > 0) {
+    ctx.fillStyle = '#C8A04A'; ctx.font = '16px Georgia, serif';
+    ctx.fillText(balls + (balls === 1 ? ' left' : ' remaining'), W / 2, H / 2 + 34);
+  }
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.84)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFE066'; ctx.shadowColor = 'rgba(255,224,102,0.5)'; ctx.shadowBlur = 14;
+  ctx.font = 'bold 34px Georgia, serif'; ctx.fillText('BALL OUT', W / 2, 215);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A'; ctx.font = '26px Georgia, serif';
+  ctx.fillText('SCORE: ' + score, W / 2, 268);
+  const best = getBest();
+  if (score > 0 && score >= best) {
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 19px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 305);
+  } else if (best > 0) {
+    ctx.fillStyle = '#6a4410'; ctx.font = '15px Georgia, serif';
+    ctx.fillText('BEST: ' + best, W / 2, 305);
+  }
+  // Play Again
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 92, 355, 184, 50, 25); ctx.fill();
+  ctx.fillStyle = '#1a0d05'; ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W / 2, 382);
+  // Feedback
+  ctx.fillStyle = 'rgba(200,160,74,0.18)';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 72, 428, 144, 42, 21); ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('Leave Feedback', W / 2, 450);
+  ctx.restore();
+}
+
+function drawFeedback() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.9)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('Rate Tumbleweed Pinball', W / 2, 155);
+  for (let i = 1; i <= 5; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFE066' : '#3a1f05';
+    ctx.font = '40px Georgia, serif';
+    ctx.fillText('★', 42 + i * 56, 225);
+  }
+  ctx.fillStyle = 'rgba(200,160,74,0.12)';
+  ctx.beginPath(); ctx.roundRect(40, 265, 280, 80, 8); ctx.fill();
+  ctx.strokeStyle = '#4a2504'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#4a2504'; ctx.font = '12px Georgia, serif';
+  ctx.fillText('(open email to add comments)', W / 2, 306);
+  ctx.fillStyle = fbRating > 0 ? '#FFE066' : '#3a1f05';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 65, 375, 130, 46, 23); ctx.fill();
+  ctx.fillStyle = '#1a0d05'; ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText('SUBMIT', W / 2, 400);
+  ctx.fillStyle = '#4a2504'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('✕ Close', W / 2, 453);
+  ctx.restore();
+}
+
+// ===== RENDER =====
+function draw() {
+  if (phase === 'title') { drawTitle(); return; }
+  if (feedbackOpen) { drawFeedback(); return; }
+  drawTable();
+  for (const b of BUMPERS) drawBumper(b);
+  drawTargets();
+  drawFlippers();
+  drawBall();
+  drawHUD();
+  drawPopups();
+  if (phase === 'ballDead') drawBallDead();
+  if (phase === 'gameover') drawGameOver();
+}
+
+// ===== GAME LOOP =====
+let last = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - last) / 1000, 0.05);
+    last = ts;
+    update(dt);
+    draw();
+  } catch (e) { console.error('loop error:', e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(ts => { last = ts; requestAnimationFrame(loop); });
+
+// ===== INPUT =====
+function tapPos(e, t) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+  return { x: (t.clientX - rect.left) * sx, y: (t.clientY - rect.top) * sy };
+}
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); AC.resume();
+  for (const t of e.changedTouches) {
+    const p = tapPos(e, t);
+    handleDown(p.x, p.y);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const p = tapPos(e, t);
+    handleUp(p.x);
+  }
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  AC.resume();
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+  handleDown((e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy);
+});
+canvas.addEventListener('mouseup', e => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width;
+  handleUp((e.clientX - rect.left) * sx);
+});
+
+function handleDown(x, y) {
+  if (phase === 'title') { startGame(); return; }
+  if (feedbackOpen) {
+    if (y > 198 && y < 252) {
+      for (let i = 1; i <= 5; i++) { if (Math.abs(x - (42 + i * 56)) < 30) { fbRating = i; } }
+    } else if (x > W / 2 - 65 && x < W / 2 + 65 && y > 375 && y < 421 && fbRating > 0) {
+      submitFeedback();
+    } else if (y > 438 && y < 468) { feedbackOpen = false; }
+    return;
+  }
+  if (phase === 'gameover') {
+    if (x > W / 2 - 92 && x < W / 2 + 92 && y > 355 && y < 405) { startGame(); return; }
+    if (x > W / 2 - 72 && x < W / 2 + 72 && y > 428 && y < 470) { feedbackOpen = true; return; }
+    return;
+  }
+  if (phase === 'playing' || phase === 'ballDead') {
+    if (x < W / 2) { leftActive = true; playClick(); }
+    else { rightActive = true; playClick(); }
+  }
+}
+
+function handleUp(x) {
+  if (x < W / 2) leftActive = false;
+  else rightActive = false;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.repeat) return; AC.resume();
+  if (phase === 'title') { startGame(); return; }
+  if (e.key === 'z' || e.key === 'Z' || e.key === 'ArrowLeft')  { leftActive = true; playClick(); }
+  if (e.key === '/' || e.key === '?' || e.key === 'ArrowRight') { rightActive = true; playClick(); }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'z' || e.key === 'Z' || e.key === 'ArrowLeft')  leftActive = false;
+  if (e.key === '/' || e.key === '?' || e.key === 'ArrowRight') rightActive = false;
+});
+
+function submitFeedback() {
+  const data = { game: 'Tumbleweed Pinball', rating: fbRating, score, message: '' };
+  fetch(FEEDBACK_ENDPOINT, { method: 'POST', body: JSON.stringify(data) }).catch(() => {});
+  feedbackOpen = false;
+  addPopup('Thanks!', W / 2, H / 2, '#FFE066');
+}
+
+// ===== TEST HARNESS =====
+window.__test = {
+  get phase()       { return phase; },
+  get score()       { return score; },
+  get balls()       { return balls; },
+  get chain()       { return chain; },
+  get chainTimer()  { return chainTimer; },
+  get ball()        { return ball; },
+  get ballAlive()   { return ballAlive; },
+  get leftActive()  { return leftActive; },
+  get rightActive() { return rightActive; },
+  get lfAngle()     { return lfAngle; },
+  get rfAngle()     { return rfAngle; },
+  get popups()      { return popups; },
+  get feedbackOpen(){ return feedbackOpen; },
+  get fbRating()    { return fbRating; },
+  BUMPERS, TARGETS, GUIDES, KICKERS, DRAIN_POST,
+  LF_PIVOT, RF_PIVOT, LF_ACTIVE, LF_REST, RF_ACTIVE, RF_REST,
+  FLIPPER_LEN, BUMPER_R, BALL_R, WALL_L, WALL_R, WALL_T, DRAIN_Y,
+  W, H, GRAVITY, CHAIN_TIMEOUT, BUMPER_MIN_SPD, E_WALL, E_FLIPPER,
+  FEEDBACK_ENDPOINT,
+  startGame, spawnBall, update,
+  closestOnSeg, resolveSegment, flipperEndpoints,
+  setScore(n)       { score = n; },
+  setBalls(n)       { balls = n; },
+  setChain(n, t)    { chain = n; chainTimer = t !== undefined ? t : CHAIN_TIMEOUT; },
+  setChainTimer(t)  { chainTimer = t; },
+  setPhase(p)       { phase = p; },
+  setBall(x, y, vx, vy) { ball.x = x; ball.y = y; ball.vx = vx; ball.vy = vy; ballAlive = true; },
+  setLeftActive(v)  { leftActive = v; },
+  setRightActive(v) { rightActive = v; },
+  setLfAngle(a)     { lfAngle = a; },
+  setRfAngle(a)     { rfAngle = a; },
+  getBest, setBest,
+  get best() { return getBest(); },
+};
+</script>
+</body>
+</html>
