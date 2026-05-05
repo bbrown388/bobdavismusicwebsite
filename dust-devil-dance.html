@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Dust Devil Dance</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #050208; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W;
+  canvas.height = H;
+  canvas.style.width = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// -- Audio --
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playChime(freq, dur) {
+  if (!audioCtx) return;
+  const ac = audioCtx;
+  const t = ac.currentTime;
+  const d = dur || 0.55;
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.1, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + d);
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  try { osc.start(t); osc.stop(t + d); } catch (_) {}
+}
+
+// -- Constants --
+const COMPOSE_TIME = 60;
+const MAX_DEVILS = 5;
+const MIN_PATH_LEN = 80;
+const DEVIL_SPEED = 0.19;
+const LANDMARK_RADIUS = 65;
+const RESONANCE_DIST = 90;
+const RESONANCE_COOLDOWN = 1.8;
+const PENTA = [220, 261.63, 293.66, 329.63, 392.00];
+const DEVIL_COLORS = ['#FFE066', '#FF9F43', '#F4C842', '#FFD700', '#E8C020'];
+
+const LANDMARKS = [
+  { name: 'Mesa',      x: 62,  y: 282, type: 'mesa'     },
+  { name: 'Barn',      x: 286, y: 322, type: 'barn'      },
+  { name: 'Waterhole', x: 178, y: 368, type: 'waterhole' },
+  { name: 'Cactus',   x: 308, y: 352, type: 'cactus'    },
+];
+
+// -- State --
+let state = 'title';
+let stormT = 0;
+let devils = [];
+let drawingPath = null;
+let resonanceMeter = 0;
+let resonanceSparks = [];
+let resultType = 'saved';
+let stars = [];
+let lastTime = 0;
+let fbVisible = false;
+let fbRating = 0;
+let fbText = '';
+let fbStatus = '';
+let statusMsg = { text: '', alpha: 0 };
+
+function seedStars() {
+  stars = [];
+  for (let i = 0; i < 85; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * 360,
+      r: 0.4 + Math.random() * 1.3,
+      a: 0.3 + Math.random() * 0.65,
+    });
+  }
+}
+
+// -- Path utilities --
+function pathLength(pts) {
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y;
+    len += Math.sqrt(dx * dx + dy * dy);
+  }
+  return len;
+}
+
+function resamplePath(pts, steps) {
+  if (pts.length < 2) return pts.slice();
+  const out = [];
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    const raw = t * (pts.length - 1);
+    const a = Math.min(Math.floor(raw), pts.length - 2);
+    const frac = raw - a;
+    out.push({ x: pts[a].x + (pts[a + 1].x - pts[a].x) * frac, y: pts[a].y + (pts[a + 1].y - pts[a].y) * frac });
+  }
+  return out;
+}
+
+// -- Devil creation --
+function createDevil(rawPath) {
+  const ac = ensureAudio();
+  const idx = devils.length;
+  const freq = PENTA[idx % PENTA.length];
+  const path = resamplePath(rawPath, Math.max(48, rawPath.length));
+
+  let osc = null, vibratoLFO = null, vibratoGain = null, masterGain = null;
+  try {
+    osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+
+    vibratoLFO = ac.createOscillator();
+    vibratoLFO.type = 'sine';
+    vibratoLFO.frequency.value = 4.8 + idx * 0.45;
+
+    vibratoGain = ac.createGain();
+    vibratoGain.gain.value = 2.5;
+    vibratoLFO.connect(vibratoGain);
+    vibratoGain.connect(osc.frequency);
+
+    masterGain = ac.createGain();
+    masterGain.gain.value = 0;
+    osc.connect(masterGain);
+    masterGain.connect(ac.destination);
+
+    osc.start();
+    vibratoLFO.start();
+    masterGain.gain.setValueAtTime(0, ac.currentTime);
+    masterGain.gain.linearRampToValueAtTime(0.065, ac.currentTime + 0.85);
+  } catch (_) {}
+
+  return {
+    path,
+    progress: 0,
+    x: path[0].x,
+    y: path[0].y,
+    osc,
+    vibratoLFO,
+    vibratoGain,
+    masterGain,
+    freq,
+    color: DEVIL_COLORS[idx % DEVIL_COLORS.length],
+    spin: 0,
+    lastResonanceAt: {},
+  };
+}
+
+function spawnDevil(rawPath) {
+  if (devils.length >= MAX_DEVILS) return false;
+  if (pathLength(rawPath) < MIN_PATH_LEN) return false;
+  const d = createDevil(rawPath);
+  devils.push(d);
+  playChime(d.freq * 2, 0.4);
+  return true;
+}
+
+// -- Devil update --
+function updateDevil(devil, dt) {
+  devil.progress = (devil.progress + DEVIL_SPEED * dt) % 1;
+  const p = devil.path;
+  const raw = devil.progress * (p.length - 1);
+  const a = Math.min(Math.floor(raw), p.length - 2);
+  const frac = raw - a;
+  devil.x = p[a].x + (p[a + 1].x - p[a].x) * frac;
+  devil.y = p[a].y + (p[a + 1].y - p[a].y) * frac;
+  devil.spin += dt * 4.2;
+
+  if (!audioCtx) return;
+  const ac = audioCtx;
+  for (const lm of LANDMARKS) {
+    const dx = devil.x - lm.x, dy = devil.y - lm.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    try {
+      if (dist < LANDMARK_RADIUS) {
+        const s = 1 - dist / LANDMARK_RADIUS;
+        if (lm.type === 'mesa' && devil.osc) {
+          devil.osc.detune.setTargetAtTime(-850 * s, ac.currentTime, 0.08);
+        } else if (lm.type === 'waterhole' && devil.vibratoGain) {
+          devil.vibratoGain.gain.setTargetAtTime(2.5 + 16 * s, ac.currentTime, 0.08);
+        } else if (lm.type === 'barn' && devil.osc) {
+          devil.osc.detune.setTargetAtTime(1000 * s, ac.currentTime, 0.08);
+        }
+      } else {
+        if (lm.type === 'mesa' && devil.osc) {
+          devil.osc.detune.setTargetAtTime(0, ac.currentTime, 0.28);
+        } else if (lm.type === 'waterhole' && devil.vibratoGain) {
+          devil.vibratoGain.gain.setTargetAtTime(2.5, ac.currentTime, 0.28);
+        } else if (lm.type === 'barn' && devil.osc) {
+          devil.osc.detune.setTargetAtTime(0, ac.currentTime, 0.28);
+        }
+      }
+    } catch (_) {}
+  }
+}
+
+// -- Resonance --
+function checkResonance(nowSec) {
+  for (let i = 0; i < devils.length; i++) {
+    for (let j = i + 1; j < devils.length; j++) {
+      const a = devils[i], b = devils[j];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      if (dx * dx + dy * dy < RESONANCE_DIST * RESONANCE_DIST) {
+        const key = i + '_' + j;
+        const last = a.lastResonanceAt[key] || 0;
+        if (nowSec - last >= RESONANCE_COOLDOWN) {
+          a.lastResonanceAt[key] = nowSec;
+          b.lastResonanceAt[key] = nowSec;
+          resonanceSparks.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, life: 1.0 });
+          resonanceMeter = Math.min(1, resonanceMeter + 0.08);
+          playChime(880, 0.45);
+        }
+      }
+    }
+  }
+  for (const s of resonanceSparks) s.life -= 0.025;
+  resonanceSparks = resonanceSparks.filter(s => s.life > 0);
+}
+
+// -- End composition --
+function endComposition() {
+  state = 'result';
+  resultType = devils.length >= 2 ? 'saved' : 'silent';
+  const pct = Math.round(resonanceMeter * 100);
+  if (resultType === 'saved') {
+    const best = parseInt(localStorage.getItem('dust_devil_dance_best') || '0');
+    if (pct > best) localStorage.setItem('dust_devil_dance_best', String(pct));
+  }
+  if (audioCtx) {
+    const now = audioCtx.currentTime;
+    for (const d of devils) {
+      if (d.masterGain) {
+        try {
+          d.masterGain.gain.setValueAtTime(d.masterGain.gain.value, now);
+          d.masterGain.gain.linearRampToValueAtTime(0, now + 2.8);
+        } catch (_) {}
+      }
+    }
+  }
+}
+
+// -- Start game --
+function startGame() {
+  ensureAudio();
+  for (const d of devils) {
+    try { if (d.osc) d.osc.stop(); } catch (_) {}
+    try { if (d.vibratoLFO) d.vibratoLFO.stop(); } catch (_) {}
+  }
+  state = 'composing';
+  stormT = 0;
+  devils = [];
+  drawingPath = null;
+  resonanceMeter = 0;
+  resonanceSparks = [];
+  resultType = 'saved';
+  statusMsg = { text: '', alpha: 0 };
+  seedStars();
+}
+
+// -- Update loop --
+function update(nowMs) {
+  const dt = Math.min((nowMs - lastTime) / 1000, 0.05);
+  lastTime = nowMs;
+
+  if (state === 'composing') {
+    stormT += dt;
+    for (const d of devils) updateDevil(d, dt);
+    checkResonance(nowMs / 1000);
+    if (stormT >= COMPOSE_TIME) endComposition();
+  }
+
+  if (statusMsg.alpha > 0) statusMsg.alpha = Math.max(0, statusMsg.alpha - dt * 1.4);
+}
+
+// -- Drawing helpers --
+function rrect(x, y, w, h, r) {
+  if (w <= 0) return;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawBg(sf) {
+  ctx.save();
+  const r = Math.round(5 + sf * 65);
+  const g = Math.round(2 + sf * 12);
+  const skyG = ctx.createLinearGradient(0, 0, 0, 390);
+  skyG.addColorStop(0, `rgb(${r},${g},8)`);
+  skyG.addColorStop(1, '#2a1010');
+  ctx.fillStyle = skyG;
+  ctx.fillRect(0, 0, W, 390);
+  ctx.restore();
+}
+
+function drawStars(sf) {
+  ctx.save();
+  const fade = Math.max(0, 1 - sf * 1.6);
+  for (const s of stars) {
+    ctx.globalAlpha = s.a * fade;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawGround() {
+  ctx.save();
+  const gG = ctx.createLinearGradient(0, 390, 0, H);
+  gG.addColorStop(0, '#3a1f05');
+  gG.addColorStop(1, '#1a0d02');
+  ctx.fillStyle = gG;
+  ctx.fillRect(0, 390, W, H - 390);
+  ctx.globalAlpha = 0.07;
+  ctx.fillStyle = '#C8A04A';
+  for (let y = 402; y < H; y += 15) ctx.fillRect(0, y, W, 1);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawMesa(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#200830';
+  ctx.beginPath();
+  ctx.moveTo(-46, 0); ctx.lineTo(-56, 34); ctx.lineTo(56, 34); ctx.lineTo(46, 0);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#2d1040';
+  ctx.beginPath();
+  ctx.moveTo(-46, 0); ctx.lineTo(-38, -11); ctx.lineTo(38, -11); ctx.lineTo(46, 0);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#6a4a30';
+  ctx.font = '9px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('MESA', 0, 50);
+  ctx.restore();
+}
+
+function drawBarn(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#200830';
+  ctx.fillRect(-15, -12, 30, 24);
+  ctx.beginPath();
+  ctx.moveTo(-20, -12); ctx.lineTo(0, -28); ctx.lineTo(20, -12);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#6a4a30';
+  ctx.font = '9px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('BARN', 0, 22);
+  ctx.restore();
+}
+
+function drawWaterhole(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#081828';
+  ctx.beginPath(); ctx.ellipse(0, 0, 24, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#1a4060'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#6a4a30';
+  ctx.font = '9px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('WATERHOLE', 0, 24);
+  ctx.restore();
+}
+
+function drawCactus(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#200830';
+  ctx.fillRect(-4, -30, 8, 40);
+  ctx.fillRect(-15, -20, 11, 5);
+  ctx.fillRect(-15, -30, 5, 12);
+  ctx.fillRect(4, -16, 11, 5);
+  ctx.fillRect(10, -26, 5, 12);
+  ctx.fillStyle = '#6a4a30';
+  ctx.font = '9px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('CACTUS', 0, 20);
+  ctx.restore();
+}
+
+function drawLandmarks() {
+  ctx.save();
+  for (const lm of LANDMARKS) {
+    if      (lm.type === 'mesa')      drawMesa(lm.x, lm.y);
+    else if (lm.type === 'barn')      drawBarn(lm.x, lm.y);
+    else if (lm.type === 'waterhole') drawWaterhole(lm.x, lm.y);
+    else if (lm.type === 'cactus')    drawCactus(lm.x, lm.y);
+  }
+  ctx.restore();
+}
+
+function drawStormEffect(sf) {
+  if (sf < 0.1) return;
+  ctx.save();
+  // Dust haze from top
+  const hazeH = Math.min(H * 0.6, H * sf * 0.75);
+  const hazeG = ctx.createLinearGradient(0, 0, 0, hazeH);
+  hazeG.addColorStop(0, `rgba(90,38,8,${Math.min(0.85, sf * 0.9)})`);
+  hazeG.addColorStop(1, 'rgba(90,38,8,0)');
+  ctx.fillStyle = hazeG;
+  ctx.fillRect(0, 0, W, hazeH);
+  ctx.restore();
+}
+
+function drawDevilPath(d) {
+  ctx.save();
+  ctx.strokeStyle = d.color;
+  ctx.globalAlpha = 0.18;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 8]);
+  ctx.beginPath();
+  d.path.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.closePath(); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawDevil(d) {
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  for (let ring = 3; ring >= 1; ring--) {
+    const sc = ring / 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 11 * sc, 19 * sc, d.spin * 0.45 + ring * 0.9, 0, Math.PI * 2);
+    ctx.strokeStyle = d.color;
+    ctx.globalAlpha = 0.12 + 0.28 * (1 - sc);
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 0.92;
+  const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, 8);
+  grd.addColorStop(0, d.color);
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawCurrentPath() {
+  if (!drawingPath || drawingPath.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = '#FFE066';
+  ctx.globalAlpha = 0.42;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 6]);
+  ctx.beginPath();
+  drawingPath.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawSparks() {
+  ctx.save();
+  for (const s of resonanceSparks) {
+    for (let a = 0; a < 8; a++) {
+      const ang = (a / 8) * Math.PI * 2;
+      const r = (1 - s.life) * 24;
+      ctx.globalAlpha = s.life * 0.65;
+      ctx.fillStyle = '#FFE066';
+      ctx.beginPath();
+      ctx.arc(s.x + Math.cos(ang) * r, s.y + Math.sin(ang) * r, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Devil dots — top-left
+  for (let i = 0; i < MAX_DEVILS; i++) {
+    ctx.globalAlpha = i < devils.length ? 1 : 0.22;
+    ctx.fillStyle = i < devils.length ? DEVIL_COLORS[i] : '#444';
+    ctx.beginPath(); ctx.arc(16 + i * 18, 16, 5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // Timer arc — top-right
+  const rem = Math.max(0, COMPOSE_TIME - stormT);
+  const frac = rem / COMPOSE_TIME;
+  const tx = W - 34, ty = 34;
+  ctx.beginPath();
+  ctx.arc(tx, ty, 22, -Math.PI / 2, -Math.PI / 2 + (1 - frac) * Math.PI * 2);
+  ctx.strokeStyle = frac > 0.35 ? '#FFE066' : '#E74C3C';
+  ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = frac > 0.35 ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(Math.ceil(rem), tx, ty);
+  ctx.textBaseline = 'alphabetic';
+  // Resonance bar — bottom
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('RESONANCE', W / 2, H - 38);
+  const bw = 130, bh = 8, bx = (W - bw) / 2, by = H - 28;
+  ctx.fillStyle = '#130a22';
+  rrect(bx, by, bw, bh, 4); ctx.fill();
+  if (resonanceMeter > 0) {
+    ctx.fillStyle = '#FFE066';
+    rrect(bx, by, bw * resonanceMeter, bh, 4); ctx.fill();
+  }
+  // Rate button
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '11px Georgia, serif'; ctx.textAlign = 'right';
+  ctx.fillText('★ RATE', W - 8, H - 8);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawStatusMsg() {
+  if (statusMsg.alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = statusMsg.alpha;
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = '13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(statusMsg.text, W / 2, H / 2 - 20);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// -- Screens --
+function drawTitle() {
+  ctx.save();
+  drawBg(0); drawStars(0); drawGround(); drawLandmarks();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 42px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('DUST DEVIL', W / 2, 210);
+  ctx.fillText('DANCE', W / 2, 260);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia, serif';
+  ctx.fillText('Draw paths. Make music.', W / 2, 314);
+  ctx.fillText('Before the storm arrives.', W / 2, 340);
+  const best = localStorage.getItem('dust_devil_dance_best');
+  if (best && parseInt(best) > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '12px Georgia, serif';
+    ctx.fillText('BEST RESONANCE: ' + best + '%', W / 2, 488);
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('TAP TO BEGIN', W / 2, 432);
+  ctx.restore();
+}
+
+function drawComposing() {
+  ctx.save();
+  const sf = stormT / COMPOSE_TIME;
+  drawBg(sf * 0.7); drawStars(sf); drawGround(); drawStormEffect(sf);
+  drawLandmarks();
+  for (const d of devils) { drawDevilPath(d); drawDevil(d); }
+  drawCurrentPath(); drawSparks();
+  if (devils.length === 0 && !drawingPath) {
+    ctx.fillStyle = 'rgba(255,224,102,0.5)';
+    ctx.font = '13px Georgia, serif'; ctx.textAlign = 'center';
+    ctx.fillText('Draw a path to summon a dust devil', W / 2, 56);
+  }
+  drawStatusMsg(); drawHUD();
+  ctx.restore();
+}
+
+function drawResult() {
+  ctx.save();
+  drawBg(1); drawGround();
+  for (const d of devils) { drawDevilPath(d); drawDevil(d); }
+  drawSparks();
+  ctx.fillStyle = 'rgba(5,2,8,0.76)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (resultType === 'saved') {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 34px Georgia, serif';
+    ctx.fillText('COMPOSITION', W / 2, 222);
+    ctx.fillText('SAVED', W / 2, 268);
+    const pct = Math.round(resonanceMeter * 100);
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '16px Georgia, serif';
+    ctx.fillText('Resonance: ' + pct + '%', W / 2, 318);
+    ctx.fillText(devils.length + ' dust devil' + (devils.length !== 1 ? 's' : ''), W / 2, 346);
+    const best = parseInt(localStorage.getItem('dust_devil_dance_best') || '0');
+    if (pct > 0 && pct >= best) {
+      ctx.fillStyle = '#FF9F43';
+      ctx.font = 'bold 15px Georgia, serif';
+      ctx.fillText('NEW RECORD!', W / 2, 375);
+    }
+  } else {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 30px Georgia, serif';
+    ctx.fillText('THE DESERT', W / 2, 222);
+    ctx.fillText('IS SILENT', W / 2, 264);
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('No song to carry home.', W / 2, 310);
+  }
+  ctx.fillStyle = '#FFE066';
+  rrect(W / 2 - 74, 416, 148, 44, 8); ctx.fill();
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 17px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W / 2, 438);
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '11px Georgia, serif'; ctx.textAlign = 'right';
+  ctx.fillText('★ RATE', W - 8, H - 8);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawFeedback() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.9)';
+  rrect(18, 96, W - 36, 436, 10); ctx.fill();
+  ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.5;
+  rrect(18, 96, W - 36, 436, 10); ctx.stroke();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('RATE THIS GAME', W / 2, 136);
+
+  for (let i = 1; i <= 5; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFE066' : '#3a3a3a';
+    ctx.font = '30px Georgia, serif';
+    ctx.fillText('★', 38 + i * 54, 190);
+  }
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('Comments (optional)', W / 2, 228);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  rrect(28, 240, W - 56, 80, 6); ctx.fill();
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+  rrect(28, 240, W - 56, 80, 6); ctx.stroke();
+  ctx.fillStyle = '#ddd';
+  ctx.font = '13px Georgia, serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  const cursor = Date.now() % 800 < 400 ? '|' : '';
+  const displayText = fbText.length > 38 ? '…' + fbText.slice(-37) : fbText;
+  ctx.fillText(displayText + cursor, 36, 252, W - 72);
+
+  if (fbStatus) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = fbStatus.startsWith('✓') ? '#27ae60' : '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText(fbStatus, W / 2, 346);
+  }
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = fbRating > 0 ? '#FFE066' : '#2a2a2a';
+  rrect(28, 360, W - 56, 44, 8); ctx.fill();
+  ctx.fillStyle = fbRating > 0 ? '#050208' : '#666';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText('SUBMIT', W / 2, 382);
+
+  ctx.fillStyle = '#777';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('✕ Close', W / 2, 500);
+  ctx.restore();
+}
+
+function draw(nowMs) {
+  ctx.clearRect(0, 0, W, H);
+  if      (state === 'title')     drawTitle();
+  else if (state === 'composing') drawComposing();
+  else if (state === 'result')    drawResult();
+  if (fbVisible) drawFeedback();
+}
+
+// -- Game loop --
+function loop(nowMs) {
+  try {
+    update(nowMs);
+    draw(nowMs);
+  } catch (e) {
+    console.error('[DustDevilDance]', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// -- Input helpers --
+function getCanvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const s = W / r.width;
+  const src = e.touches ? e.touches[0] : e;
+  return { x: (src.clientX - r.left) * s, y: (src.clientY - r.top) * s };
+}
+
+function handleFbTap(p) {
+  if (p.y >= 162 && p.y <= 212) {
+    const idx = Math.round((p.x - 38) / 54);
+    if (idx >= 1 && idx <= 5) fbRating = idx;
+    return;
+  }
+  if (p.y >= 360 && p.y <= 404 && fbRating > 0) { submitFeedback(); return; }
+  if (p.y >= 485 && p.y <= 518) {
+    fbVisible = false; fbText = ''; fbRating = 0; fbStatus = '';
+  }
+}
+
+canvas.addEventListener('pointerdown', function (e) {
+  e.preventDefault();
+  const p = getCanvasPos(e);
+
+  if (fbVisible) { handleFbTap(p); return; }
+
+  if (state === 'title') {
+    ensureAudio(); startGame(); return;
+  }
+
+  if (state === 'result') {
+    if (p.x > W / 2 - 74 && p.x < W / 2 + 74 && p.y > 416 && p.y < 460) {
+      startGame(); return;
+    }
+    if (p.x > W - 72 && p.y > H - 26) { fbVisible = true; return; }
+    return;
+  }
+
+  if (state === 'composing') {
+    if (p.x > W - 72 && p.y > H - 26) { fbVisible = true; return; }
+    if (devils.length < MAX_DEVILS) {
+      drawingPath = [{ x: p.x, y: p.y }];
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('pointermove', function (e) {
+  e.preventDefault();
+  if (state !== 'composing' || !drawingPath) return;
+  const p = getCanvasPos(e);
+  const last = drawingPath[drawingPath.length - 1];
+  const dx = p.x - last.x, dy = p.y - last.y;
+  if (dx * dx + dy * dy > 64) drawingPath.push({ x: p.x, y: p.y });
+}, { passive: false });
+
+canvas.addEventListener('pointerup', function () {
+  if (state !== 'composing' || !drawingPath) return;
+  if (drawingPath.length >= 4 && pathLength(drawingPath) >= MIN_PATH_LEN) {
+    spawnDevil(drawingPath);
+  } else if (drawingPath.length >= 2) {
+    statusMsg = { text: 'Draw a longer path', alpha: 1 };
+  }
+  drawingPath = null;
+});
+
+canvas.addEventListener('pointercancel', function () { drawingPath = null; });
+
+canvas.addEventListener('click', function (e) {
+  if (fbVisible) return;
+  if (state === 'title') { ensureAudio(); startGame(); }
+  else if (state === 'result') {
+    const p = getCanvasPos(e);
+    if (p.x > W / 2 - 74 && p.x < W / 2 + 74 && p.y > 416 && p.y < 460) startGame();
+  }
+});
+
+window.addEventListener('keydown', function (e) {
+  if (fbVisible) {
+    if (e.key === 'Backspace') fbText = fbText.slice(0, -1);
+    else if (e.key === 'Escape') { fbVisible = false; fbText = ''; fbRating = 0; fbStatus = ''; }
+    else if (e.key.length === 1 && fbText.length < 200) fbText += e.key;
+  }
+});
+
+function submitFeedback() {
+  fbStatus = 'Sending…';
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game: 'Dust Devil Dance', rating: fbRating, message: fbText, score: Math.round(resonanceMeter * 100) }),
+  }).then(() => {
+    fbStatus = '✓ Thanks!';
+    setTimeout(() => { fbVisible = false; fbText = ''; fbRating = 0; fbStatus = ''; }, 1500);
+  }).catch(() => { fbStatus = 'Error — try again'; });
+}
+
+// -- Test interface --
+window.__test = {
+  get state()           { return state; },
+  set state(v)          { state = v; },
+  get stormT()          { return stormT; },
+  set stormT(v)         { stormT = v; },
+  get devils()          { return devils; },
+  set devils(v)         { devils = v; },
+  get drawingPath()     { return drawingPath; },
+  set drawingPath(v)    { drawingPath = v; },
+  get resonanceMeter()  { return resonanceMeter; },
+  set resonanceMeter(v) { resonanceMeter = v; },
+  get resonanceSparks() { return resonanceSparks; },
+  get resultType()      { return resultType; },
+  get fbVisible()       { return fbVisible; },
+  COMPOSE_TIME,
+  MAX_DEVILS,
+  MIN_PATH_LEN,
+  PENTA,
+  LANDMARKS,
+  DEVIL_SPEED,
+  RESONANCE_DIST,
+  RESONANCE_COOLDOWN,
+  FEEDBACK_ENDPOINT,
+  startGame,
+  spawnDevil,
+  checkResonance,
+  pathLength,
+  resamplePath,
+  updateDevil,
+  endComposition,
+  createDevil,
+};
+
+// -- Init --
+seedStars();
+requestAnimationFrame(t => { lastTime = t; requestAnimationFrame(loop); });
+</script>
+</body>
+</html>
