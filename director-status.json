@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-05T08:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 30: Tumbleweed Pinball - physics pinball engine, cactus bumpers, WANTED poster targets, chain multiplier, 50 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 31: Pony Express",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 31: Pony Express - rhythm-based horse riding with hoofbeat pattern matching"
+  },
   "gamesBuilt": 30,
   "lastGameTitle": "Tumbleweed Pinball",
   "lastGameFile": "tumbleweed-pinball.html",
