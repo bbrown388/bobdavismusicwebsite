@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rodeo Queen — Bob Davis</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#050208; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; touch-action:none; font-family:Georgia,serif; }
+canvas { display:block; cursor:crosshair; }
+#fb-overlay {
+  display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.85); z-index:10;
+  justify-content:center; align-items:center;
+}
+#fb-overlay.open { display:flex; }
+#fb-box {
+  background:#1a0d35; border:1px solid #FFE066; border-radius:12px;
+  padding:24px; width:300px; max-width:90vw; color:#FFE066;
+}
+#fb-box h3 { font-size:18px; margin-bottom:12px; text-align:center; }
+#fb-box select, #fb-box textarea {
+  width:100%; background:#0a0514; color:#fff; border:1px solid #FFE066;
+  border-radius:6px; padding:8px; font-size:14px; margin-bottom:10px;
+}
+#fb-box textarea { height:80px; resize:none; }
+.fb-stars { display:flex; gap:6px; justify-content:center; margin-bottom:10px; }
+.fb-star { font-size:28px; cursor:pointer; color:#555; }
+.fb-star.lit { color:#FFE066; }
+#fb-submit {
+  width:100%; background:#FFE066; color:#1a0520; border:none;
+  padding:10px; border-radius:8px; font-size:16px; font-weight:bold;
+  cursor:pointer; font-family:Georgia,serif;
+}
+#fb-close {
+  position:absolute; top:12px; right:16px; color:#FFE066;
+  font-size:22px; cursor:pointer; background:none; border:none;
+}
+#fb-msg { text-align:center; margin-top:8px; font-size:13px; min-height:20px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="fb-overlay">
+  <div id="fb-box" style="position:relative;">
+    <button id="fb-close">&#x2715;</button>
+    <h3>How'd the Rodeo Treat Ya?</h3>
+    <div class="fb-stars" id="fb-stars">
+      <span class="fb-star" data-v="1">&#9733;</span>
+      <span class="fb-star" data-v="2">&#9733;</span>
+      <span class="fb-star" data-v="3">&#9733;</span>
+      <span class="fb-star" data-v="4">&#9733;</span>
+      <span class="fb-star" data-v="5">&#9733;</span>
+    </div>
+    <textarea id="fb-text" placeholder="Leave a note for Bob..."></textarea>
+    <button id="fb-submit">Send Feedback</button>
+    <div id="fb-msg"></div>
+  </div>
+</div>
+
+<script>
+// === CONSTANTS ===
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const GAME_SLUG = 'rodeo-queen';
+
+const BARREL_WINDOW_PERFECT = 0.10; // t-units from 1.0
+const BARREL_WINDOW_GOOD    = 0.25;
+const BARREL_ADVANCE_TIMER  = 0.45; // seconds after tap before advancing
+const BARREL_AUTOMISS_T     = 1.38;
+
+const ROPE_TURNS_NEEDED     = 1.8;  // full rotations to ready lasso
+const ROPE_RESULT_TIMER     = 1.2;  // seconds to show result then advance
+
+const TRICKS_CYCLES         = 8;    // hold/release pairs per event
+const TRICKS_ADVANCE_TIMER  = 0.9;  // seconds after final cycle before advancing
+
+const TOTAL_ROUNDS          = 3;
+
+const BASE_BARREL_PERFECT   = 150;
+const BASE_BARREL_GOOD      = 100;
+const BASE_ROPE_PERFECT     = 225;
+const BASE_ROPE_GOOD        = 150;
+const BASE_TRICKS_PERFECT   = 50;
+
+const ENERGY_GAIN_PERFECT   = 10;
+const ENERGY_GAIN_GOOD      = 5;
+const ENERGY_DRAIN_MISS     = 15;
+const MULTI_MAX             = 5.0;
+const MULTI_STEP            = 0.5;
+
+// Visual
+const C_GOLD   = '#FFE066';
+const C_ORANGE = '#FF9F43';
+const C_RED    = '#E74C3C';
+const C_GREEN  = '#27AE60';
+const C_BG     = '#0a0514';
+const C_DARK   = '#1a0520';
+
+// Barrel positions (figure-8): left, right, left top to bottom
+const BARREL_POS = [
+  { x: 110, y: 185 },
+  { x: 250, y: 320 },
+  { x: 110, y: 455 },
+];
+const ROPE_CENTER_X = W / 2;
+const ROPE_CENTER_Y = 340;
+
+// === CANVAS SETUP ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// === AUDIO ===
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, dur, vol, type) {
+  vol  = vol  || 0.3;
+  type = type || 'sine';
+  const ac = ensureAudio();
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.connect(g); g.connect(ac.destination);
+  o.frequency.value = freq; o.type = type;
+  g.gain.setValueAtTime(0, ac.currentTime);
+  g.gain.linearRampToValueAtTime(vol, ac.currentTime + 0.01);
+  g.gain.linearRampToValueAtTime(0, ac.currentTime + dur);
+  o.start(); o.stop(ac.currentTime + dur + 0.05);
+}
+
+function playCowbell(vol) {
+  vol = vol || 0.4;
+  const ac = ensureAudio();
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.connect(g); g.connect(ac.destination);
+  o.type = 'square';
+  o.frequency.setValueAtTime(820, ac.currentTime);
+  o.frequency.exponentialRampToValueAtTime(500, ac.currentTime + 0.12);
+  g.gain.setValueAtTime(vol, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
+  o.start(); o.stop(ac.currentTime + 0.22);
+}
+
+function playGallop() {
+  try {
+    const ac = ensureAudio();
+    const len = Math.floor(ac.sampleRate * 0.07);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = ac.createBufferSource();
+    const f = ac.createBiquadFilter();
+    const g = ac.createGain();
+    f.type = 'lowpass'; f.frequency.value = 280;
+    src.buffer = buf;
+    src.connect(f); f.connect(g); g.connect(ac.destination);
+    g.gain.value = 0.45;
+    src.start();
+  } catch(e) {}
+}
+
+function playWhoosh() {
+  try {
+    const ac = ensureAudio();
+    const len = Math.floor(ac.sampleRate * 0.3);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      d[i] = (Math.random() * 2 - 1) * Math.sin(t * Math.PI) * 0.6;
+    }
+    const src = ac.createBufferSource();
+    const g = ac.createGain();
+    src.buffer = buf;
+    src.connect(g); g.connect(ac.destination);
+    g.gain.value = 0.7;
+    src.start();
+  } catch(e) {}
+}
+
+function playCrowd() {
+  playTone(300 + Math.random() * 150, 0.45, 0.12, 'sawtooth');
+}
+
+// === STATE ===
+let phase = 'title'; // title | barrel | rope | tricks | round_end | game_over
+let round       = 0;
+let score       = 0;
+let bestScore   = parseInt(localStorage.getItem(GAME_SLUG + '_best') || '0');
+let multiplier  = 1.0;
+let energy      = 70;  // 0-100
+let popups      = [];
+let lastTime    = 0;
+let roundEndTimer = 0;
+
+// --- Barrel phase ---
+let bp = {};
+function initBarrel() {
+  bp = {
+    t:           0,
+    barrelIdx:   0,
+    speed:       0.65 + (round - 1) * 0.12,
+    tapResult:   null,
+    tapTimer:    0,
+    advancing:   false,
+    complete:    false,
+  };
+  phase = 'barrel';
+}
+
+// --- Rope phase ---
+let rp = {};
+function initRope() {
+  rp = {
+    lastAngle:   null,
+    totalTurns:  0,
+    ready:       false,
+    spinAngle:   0,
+    calfX:       310,
+    calfDir:     -1,
+    calfSpeed:   55 + (round - 1) * 12,
+    thrown:      false,
+    result:      null,
+    resultTimer: 0,
+    complete:    false,
+  };
+  phase = 'rope';
+}
+
+// --- Tricks phase ---
+let tp = {};
+function initTricks() {
+  tp = {
+    barT:        0,
+    barSpeed:    1.7 + (round - 1) * 0.55,
+    prevCos:     1,
+    holdActive:  false,
+    cyclesDone:  0,
+    totalCycles: TRICKS_CYCLES,
+    doneTimer:   0,
+    complete:    false,
+    gallopTimer: 0,
+    lastAction:  null,
+    actionTimer: 0,
+  };
+  phase = 'tricks';
+}
+
+// === HELPERS ===
+function roundRect(cx, x, y, w, h, r) {
+  cx.beginPath();
+  cx.moveTo(x + r, y);
+  cx.lineTo(x + w - r, y);
+  cx.quadraticCurveTo(x + w, y, x + w, y + r);
+  cx.lineTo(x + w, y + h - r);
+  cx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  cx.lineTo(x + r, y + h);
+  cx.quadraticCurveTo(x, y + h, x, y + h - r);
+  cx.lineTo(x, y + r);
+  cx.quadraticCurveTo(x, y, x + r, y);
+  cx.closePath();
+}
+
+function addPopup(text, color, x, y) {
+  popups.push({ text, color, x, y: y || H / 2, life: 1.0 });
+}
+
+// === STATE MACHINE ===
+function startGame() {
+  phase      = 'barrel';
+  round      = 1;
+  score      = 0;
+  multiplier = 1.0;
+  energy     = 70;
+  popups     = [];
+  initBarrel();
+}
+
+function awardPoints(quality, baseP, bonusP) {
+  bonusP = bonusP || 0;
+  let pts = 0;
+  if (quality === 'perfect') {
+    pts = (baseP + bonusP) * multiplier;
+    multiplier = Math.min(MULTI_MAX, multiplier + MULTI_STEP);
+    energy = Math.min(100, energy + ENERGY_GAIN_PERFECT);
+    playCrowd();
+  } else if (quality === 'good') {
+    pts = baseP * multiplier;
+    energy = Math.min(100, energy + ENERGY_GAIN_GOOD);
+  } else {
+    multiplier = 1.0;
+    energy = Math.max(0, energy - ENERGY_DRAIN_MISS);
+  }
+  score += Math.round(pts);
+  return Math.round(pts);
+}
+
+function advanceToNextEvent() {
+  if (phase === 'barrel') {
+    initRope();
+  } else if (phase === 'rope') {
+    initTricks();
+  } else if (phase === 'tricks') {
+    if (round >= TOTAL_ROUNDS) {
+      phase = 'game_over';
+    } else {
+      round++;
+      roundEndTimer = 2.2;
+      phase = 'round_end';
+    }
+  }
+}
+
+// === BARREL LOGIC ===
+function updateBarrel(dt) {
+  if (bp.complete) return;
+
+  if (bp.advancing) {
+    bp.tapTimer -= dt;
+    if (bp.tapTimer <= 0) {
+      bp.tapResult = null;
+      bp.barrelIdx++;
+      bp.t = 0;
+      bp.advancing = false;
+      if (bp.barrelIdx >= BARREL_POS.length) {
+        bp.complete = true;
+        setTimeout(advanceToNextEvent, 500);
+      }
+    }
+    return;
+  }
+
+  bp.t += bp.speed * dt;
+
+  // Auto-miss if cursor passes barrel without tap
+  if (bp.t >= BARREL_AUTOMISS_T && bp.tapResult === null) {
+    bp.tapResult = 'miss';
+    const pos = BARREL_POS[bp.barrelIdx];
+    awardPoints('miss', BASE_BARREL_GOOD, 0);
+    addPopup('MISS', C_RED, pos.x, pos.y - 25);
+    bp.advancing = true;
+    bp.tapTimer  = BARREL_ADVANCE_TIMER;
+  }
+}
+
+function tapBarrel() {
+  if (bp.tapResult !== null || bp.advancing || bp.complete) return;
+  const diff = Math.abs(bp.t - 1.0);
+  let quality;
+  if (diff <= BARREL_WINDOW_PERFECT)      quality = 'perfect';
+  else if (diff <= BARREL_WINDOW_GOOD)    quality = 'good';
+  else                                    quality = 'miss';
+
+  bp.tapResult = quality;
+  const pos = BARREL_POS[bp.barrelIdx];
+  let pts = 0;
+  if (quality === 'perfect') {
+    pts = awardPoints('perfect', BASE_BARREL_GOOD, BASE_BARREL_PERFECT - BASE_BARREL_GOOD);
+    playCowbell(0.5);
+    addPopup('PERFECT!', C_GOLD,   pos.x, pos.y - 30);
+    addPopup('+' + pts,  C_ORANGE, pos.x + 15, pos.y - 58);
+  } else if (quality === 'good') {
+    pts = awardPoints('good', BASE_BARREL_GOOD, 0);
+    playCowbell(0.32);
+    addPopup('GOOD',     C_GREEN,  pos.x, pos.y - 30);
+    addPopup('+' + pts,  C_ORANGE, pos.x + 15, pos.y - 58);
+  } else {
+    awardPoints('miss', BASE_BARREL_GOOD, 0);
+    playCowbell(0.18);
+    addPopup('MISS',     C_RED,    pos.x, pos.y - 30);
+  }
+  bp.advancing = true;
+  bp.tapTimer  = BARREL_ADVANCE_TIMER;
+}
+
+// === ROPE LOGIC ===
+function updateRope(dt) {
+  if (rp.complete) return;
+
+  // Move calf
+  if (!rp.thrown) {
+    rp.calfX += rp.calfDir * rp.calfSpeed * dt;
+    if (rp.calfX < 55)  { rp.calfX = 55;  rp.calfDir =  1; }
+    if (rp.calfX > 305) { rp.calfX = 305; rp.calfDir = -1; }
+
+    // Spin visual
+    if (rp.totalTurns > 0 || rp.ready) {
+      rp.spinAngle += (2.5 + rp.totalTurns) * dt;
+    }
+  }
+
+  // Count down result timer
+  if (rp.result !== null) {
+    rp.resultTimer -= dt;
+    if (rp.resultTimer <= 0) {
+      rp.complete = true;
+      setTimeout(advanceToNextEvent, 300);
+    }
+  }
+}
+
+function ropeTrackAngle(x, y) {
+  if (rp.ready || rp.thrown) return;
+  const angle = Math.atan2(y - ROPE_CENTER_Y, x - ROPE_CENTER_X);
+  if (rp.lastAngle !== null) {
+    let delta = angle - rp.lastAngle;
+    while (delta >  Math.PI) delta -= 2 * Math.PI;
+    while (delta < -Math.PI) delta += 2 * Math.PI;
+    if (delta > 0) {  // clockwise only
+      rp.totalTurns += delta / (2 * Math.PI);
+    }
+    if (rp.totalTurns >= ROPE_TURNS_NEEDED && !rp.ready) {
+      rp.ready = true;
+      playTone(660, 0.15, 0.35);
+    }
+  }
+  rp.lastAngle = angle;
+}
+
+function throwRope() {
+  if (!rp.ready || rp.thrown) return;
+  rp.thrown = true;
+  playWhoosh();
+
+  const dist = Math.abs(rp.calfX - ROPE_CENTER_X);
+  let quality;
+  if (dist < 35)       quality = 'perfect';
+  else if (dist < 75)  quality = 'good';
+  else                 quality = 'miss';
+
+  rp.result      = quality;
+  rp.resultTimer = ROPE_RESULT_TIMER;
+
+  let pts = 0;
+  if (quality === 'perfect') {
+    pts = awardPoints('perfect', BASE_ROPE_GOOD, BASE_ROPE_PERFECT - BASE_ROPE_GOOD);
+    addPopup('LASSOED!', C_GOLD,   W / 2, 300);
+    addPopup('+' + pts,  C_ORANGE, W / 2, 268);
+  } else if (quality === 'good') {
+    pts = awardPoints('good', BASE_ROPE_GOOD, 0);
+    addPopup('CAUGHT',   C_GREEN,  W / 2, 300);
+    addPopup('+' + pts,  C_ORANGE, W / 2, 268);
+  } else {
+    awardPoints('miss', BASE_ROPE_GOOD, 0);
+    addPopup('MISSED',   C_RED,    W / 2, 300);
+  }
+}
+
+// === TRICKS LOGIC ===
+function updateTricks(dt) {
+  if (tp.complete) return;
+
+  // Gallop audio
+  tp.gallopTimer -= dt;
+  if (tp.gallopTimer <= 0) {
+    playGallop();
+    tp.gallopTimer = 0.28 - (round - 1) * 0.04;
+  }
+
+  tp.actionTimer -= dt;
+
+  const prevT = tp.barT;
+  tp.barT += tp.barSpeed * dt;
+
+  // Detect peak/valley via derivative sign change: derivative = cos(barT)
+  const prevCos = Math.cos(prevT);
+  const currCos = Math.cos(tp.barT);
+
+  // Peak: cos crosses from + to - (sin was rising, now falling - sin = +1 at top)
+  const isPeak   = prevCos > 0 && currCos <= 0;
+  // Valley: cos crosses from - to + (sin was falling, now rising - sin = -1 at bottom)
+  const isValley = prevCos < 0 && currCos >= 0;
+
+  if (isPeak) {
+    // Player should be HOLDING at peak
+    const quality = tp.holdActive ? 'perfect' : 'miss';
+    tp.lastAction  = quality;
+    tp.actionTimer = 0.55;
+    let pts = 0;
+    if (quality === 'perfect') {
+      pts = awardPoints('perfect', BASE_TRICKS_PERFECT, 0);
+      playTone(660, 0.12, 0.28);
+      addPopup('HOLD!', C_GOLD, W * 0.55, 185);
+      if (pts > 0) addPopup('+' + pts, C_ORANGE, W * 0.55 + 10, 158);
+    } else {
+      awardPoints('miss', BASE_TRICKS_PERFECT, 0);
+      addPopup('HOLD!', C_RED, W * 0.55, 185);
+    }
+  }
+
+  if (isValley) {
+    // Player should be RELEASING at valley
+    const quality = !tp.holdActive ? 'perfect' : 'miss';
+    tp.lastAction  = quality;
+    tp.actionTimer = 0.55;
+    let pts = 0;
+    if (quality === 'perfect') {
+      pts = awardPoints('perfect', BASE_TRICKS_PERFECT, 0);
+      playTone(880, 0.12, 0.22);
+      addPopup('FREE!', C_GOLD, W * 0.55, 430);
+      if (pts > 0) addPopup('+' + pts, C_ORANGE, W * 0.55 + 10, 402);
+    } else {
+      awardPoints('miss', BASE_TRICKS_PERFECT, 0);
+      addPopup('FREE!', C_RED, W * 0.55, 430);
+    }
+    tp.cyclesDone++;
+    if (tp.cyclesDone >= tp.totalCycles) {
+      tp.doneTimer = TRICKS_ADVANCE_TIMER;
+      tp.complete  = true;
+      setTimeout(advanceToNextEvent, Math.round(TRICKS_ADVANCE_TIMER * 1000));
+    }
+  }
+}
+
+// === DRAW HELPERS ===
+function drawBackground() {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.52);
+  sky.addColorStop(0, '#050208');
+  sky.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H * 0.52);
+
+  const dirt = ctx.createLinearGradient(0, H * 0.52, 0, H);
+  dirt.addColorStop(0, '#3a1f05');
+  dirt.addColorStop(1, '#1e0e00');
+  ctx.fillStyle = dirt;
+  ctx.fillRect(0, H * 0.52, W, H * 0.48);
+
+  // Arena fence rail
+  ctx.strokeStyle = '#6b3c10';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.52); ctx.lineTo(W, H * 0.52);
+  ctx.stroke();
+
+  // Arena oval suggestion
+  ctx.strokeStyle = 'rgba(200,160,74,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  ctx.ellipse(W / 2, H / 2, 148, 235, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.restore();
+}
+
+function drawCrowd() {
+  ctx.save();
+  ctx.fillStyle = '#0d0720';
+  for (let i = 0; i < 14; i++) {
+    const x = 5 + i * 26;
+    const y = 62 + Math.sin(i * 1.9) * 12;
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(x - 5, y + 6, 10, 16);
+  }
+  ctx.restore();
+}
+
+function drawRider(x, y, scale) {
+  scale = scale || 1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Horse body
+  ctx.fillStyle = C_DARK;
+  ctx.beginPath();
+  ctx.ellipse(0, 12, 24, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horse head
+  ctx.beginPath();
+  ctx.ellipse(22, 2, 13, 9, -0.25, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ear
+  ctx.beginPath();
+  ctx.moveTo(26, -4); ctx.lineTo(30, -11); ctx.lineTo(33, -4);
+  ctx.fill();
+
+  // Mane line
+  ctx.strokeStyle = '#2a0f30';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(14, -4); ctx.lineTo(4, -2);
+  ctx.stroke();
+
+  // Rider torso
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath();
+  ctx.ellipse(0, -10, 10, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Rider head
+  ctx.beginPath();
+  ctx.arc(0, -26, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hat brim
+  ctx.fillRect(-13, -33, 26, 5);
+  // Hat crown
+  ctx.fillRect(-7, -46, 14, 14);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(0, 28, 22, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  // Score pill
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(ctx, W / 2 - 62, 10, 124, 30, 8);
+  ctx.fill();
+  ctx.fillStyle = C_GOLD;
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText(score.toLocaleString(), W / 2, 30);
+
+  // Round pill (top-left)
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(ctx, 8, 10, 72, 26, 6);
+  ctx.fill();
+  ctx.fillStyle = C_ORANGE;
+  ctx.font = 'bold 12px Georgia,serif';
+  ctx.fillText('Rnd ' + round + '/' + TOTAL_ROUNDS, 44, 27);
+
+  // Multiplier (top-right)
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(ctx, W - 82, 10, 74, 26, 6);
+  ctx.fill();
+  const mc = multiplier >= 3 ? C_GOLD : multiplier >= 2 ? C_ORANGE : '#ccc';
+  ctx.fillStyle = mc;
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.fillText(multiplier.toFixed(1) + 'x', W - 45, 27);
+
+  // Energy bar
+  const ex = 20, ey = H - 28, ew = W - 40, eh = 12;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(ctx, ex - 2, ey - 2, ew + 4, eh + 4, 5);
+  ctx.fill();
+  const eRatio = energy / 100;
+  if (eRatio > 0) {
+    const ec = energy > 60 ? C_GREEN : energy > 30 ? C_ORANGE : C_RED;
+    ctx.fillStyle = ec;
+    roundRect(ctx, ex, ey, ew * eRatio, eh, 4);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(200,200,200,0.5)';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('CROWD ENERGY', ex, ey - 4);
+
+  ctx.restore();
+}
+
+function drawEventLabel() {
+  const labels = {
+    barrel: 'EVENT 1  BARREL RACING',
+    rope:   'EVENT 2  LASSO ROPING',
+    tricks: 'EVENT 3  TRICK RIDING',
+  };
+  const lbl = labels[phase];
+  if (!lbl) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, W / 2 - 128, 45, 256, 22, 5);
+  ctx.fill();
+  ctx.fillStyle = C_ORANGE;
+  ctx.font = 'bold 11px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(lbl, W / 2, 60);
+  ctx.restore();
+}
+
+function drawBarrelScene() {
+  ctx.save();
+
+  // Draw barrels
+  for (let i = 0; i < BARREL_POS.length; i++) {
+    const pos = BARREL_POS[i];
+    const isCurrent = (i === bp.barrelIdx && !bp.complete);
+    const isPast    = (i < bp.barrelIdx) || bp.complete;
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+
+    // Barrel body
+    ctx.fillStyle = isCurrent ? '#C8A04A' : (isPast ? '#3a3a3a' : '#6b3c1a');
+    ctx.strokeStyle = isCurrent ? C_GOLD : (isPast ? '#555' : '#8B5E3C');
+    ctx.lineWidth = 2;
+    roundRect(ctx, -14, -22, 28, 44, 5);
+    ctx.fill(); ctx.stroke();
+
+    // Stripes
+    ctx.strokeStyle = isCurrent ? '#8B5E3C' : '#333';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-14, -6); ctx.lineTo(14, -6);
+    ctx.moveTo(-14,  6); ctx.lineTo(14,  6);
+    ctx.stroke();
+
+    // Tap zone ring
+    if (isCurrent && !bp.advancing) {
+      const inZone = Math.abs(bp.t - 1.0) <= BARREL_WINDOW_GOOD;
+      const pulse  = 0.6 + 0.4 * Math.sin(Date.now() / 190);
+      ctx.strokeStyle = inZone
+        ? 'rgba(255,224,102,' + pulse + ')'
+        : 'rgba(255,159,67,' + (pulse * 0.45) + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, 34 + pulse * 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // Rider approaching current barrel
+  if (bp.barrelIdx < BARREL_POS.length && !bp.complete) {
+    const target = BARREL_POS[bp.barrelIdx];
+    const prev   = bp.barrelIdx > 0
+      ? BARREL_POS[bp.barrelIdx - 1]
+      : { x: W / 2, y: H - 70 };
+    const t  = Math.min(bp.t, 1.0);
+    const rx = prev.x + (target.x - prev.x) * t;
+    const ry = prev.y + (target.y - prev.y) * t;
+    drawRider(rx, ry);
+  }
+
+  // Tap result label under current barrel
+  if (bp.tapResult && bp.barrelIdx < BARREL_POS.length) {
+    const pos = BARREL_POS[Math.min(bp.barrelIdx, BARREL_POS.length - 1)];
+    const labelColor = { perfect: C_GOLD, good: C_GREEN, miss: C_RED }[bp.tapResult];
+    ctx.save();
+    ctx.fillStyle = labelColor;
+    ctx.font = 'bold 14px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(bp.tapResult.toUpperCase(), pos.x, pos.y + 45);
+    ctx.restore();
+  }
+
+  // Instruction
+  if (!bp.advancing && !bp.complete && bp.tapResult === null) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    ctx.font = '12px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TAP WHEN RIDER REACHES BARREL', W / 2, H - 48);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawRopeScene() {
+  ctx.save();
+
+  const cx = ROPE_CENTER_X;
+  const groundY = H * 0.52;
+
+  // Calf
+  ctx.save();
+  ctx.translate(rp.calfX, groundY + 28);
+  ctx.fillStyle = C_DARK;
+  ctx.beginPath(); ctx.ellipse(0, 0, 19, 11, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(rp.calfDir * 17, -4, 10, 8, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = -1; i <= 1; i += 2) {
+    ctx.fillRect(i * 10 - 2, 8, 4, 13);
+    ctx.fillRect(i *  4 - 2, 8, 4, 13);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(0, 22, 16, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Hit zone brackets
+  if (rp.ready && !rp.thrown) {
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 160);
+    ctx.strokeStyle = 'rgba(255,224,102,' + pulse + ')';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(cx - 35, groundY + 2); ctx.lineTo(cx - 35, groundY + 60);
+    ctx.moveTo(cx + 35, groundY + 2); ctx.lineTo(cx + 35, groundY + 60);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Rider
+  drawRider(cx, groundY - 32, 0.92);
+
+  // Lasso visual
+  if (rp.totalTurns > 0 || rp.ready) {
+    const alpha    = Math.min(1, rp.totalTurns / ROPE_TURNS_NEEDED);
+    const lassoR   = 30 + Math.min(rp.totalTurns * 12, 30);
+    const lx = cx + Math.cos(rp.spinAngle) * 18;
+    const ly = groundY - 55 + Math.sin(rp.spinAngle) * 12;
+    ctx.strokeStyle = 'rgba(200,160,74,' + (alpha * 0.85) + ')';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(lx, ly, lassoR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Spin progress dots
+    const steps = 8;
+    for (let i = 0; i < steps; i++) {
+      const ang  = (i / steps) * Math.PI * 2 + rp.spinAngle;
+      const done = rp.totalTurns / ROPE_TURNS_NEEDED;
+      const dotA = i / steps < done ? 0.85 : 0.18;
+      ctx.fillStyle = 'rgba(255,224,102,' + dotA + ')';
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(ang) * 60, groundY - 55 + Math.sin(ang) * 30, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Instructions
+  if (!rp.ready && !rp.thrown) {
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    ctx.font = '12px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('DRAG CIRCLES TO SPIN LASSO', cx, 165);
+  }
+  if (rp.ready && !rp.thrown) {
+    const pulse2 = 0.8 + 0.2 * Math.sin(Date.now() / 220);
+    ctx.globalAlpha = pulse2;
+    ctx.fillStyle = C_GOLD;
+    ctx.font = 'bold 20px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TAP TO THROW!', cx, 528);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawTricksScene() {
+  ctx.save();
+
+  const barVal  = Math.sin(tp.barT);  // +1 = top, -1 = bottom
+  const bounceY = barVal * 12;
+
+  // Rider on bouncing horse
+  drawRider(W * 0.35, H * 0.52 - 38 + bounceY * 0.35, 1.15);
+
+  // Rhythm bar track (right side)
+  const bx = W * 0.72;
+  const by = H * 0.22;
+  const bh = 200;
+  const bw = 28;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(ctx, bx - bw / 2, by, bw, bh, 8);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(200,160,74,0.25)';
+  ctx.lineWidth = 1;
+  roundRect(ctx, bx - bw / 2, by, bw, bh, 8);
+  ctx.stroke();
+
+  // HOLD zone (top 20%)
+  const holdH = bh * 0.2;
+  ctx.fillStyle = 'rgba(255,224,102,0.18)';
+  roundRect(ctx, bx - bw / 2, by, bw, holdH, 8);
+  ctx.fill();
+
+  // FREE zone (bottom 20%)
+  const freeH = bh * 0.2;
+  ctx.fillStyle = 'rgba(39,174,96,0.18)';
+  roundRect(ctx, bx - bw / 2, by + bh - freeH, bw, freeH, 8);
+  ctx.fill();
+
+  // Zone labels
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillStyle = C_GOLD;
+  ctx.fillText('HOLD', bx, by + 13);
+  ctx.fillStyle = C_GREEN;
+  ctx.fillText('FREE', bx, by + bh - 4);
+
+  // Moving indicator
+  const indY = by + bh / 2 - (barVal * bh * 0.45);
+  ctx.fillStyle = tp.holdActive ? C_GOLD : '#cccccc';
+  ctx.beginPath();
+  ctx.arc(bx, indY, 11, 0, Math.PI * 2);
+  ctx.fill();
+  if (tp.holdActive) {
+    ctx.strokeStyle = C_GOLD;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    ctx.arc(bx, indY, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Cycle progress
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, 12, 75, 210, 28, 6);
+  ctx.fill();
+  ctx.fillStyle = C_ORANGE;
+  ctx.font = 'bold 13px Georgia,serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Tricks: ' + tp.cyclesDone + ' / ' + tp.totalCycles, 22, 93);
+
+  // Hold/release instruction
+  const inTopZone = barVal > 0.6;
+  const inBotZone = barVal < -0.6;
+  ctx.fillStyle = 'rgba(255,255,255,0.38)';
+  ctx.font = '12px Georgia,serif';
+  ctx.textAlign = 'center';
+  if (inTopZone && !tp.holdActive) {
+    ctx.fillStyle = C_GOLD;
+    ctx.fillText('HOLD NOW!', W * 0.35, H * 0.52 - 85);
+  } else if (inBotZone && tp.holdActive) {
+    ctx.fillStyle = C_GREEN;
+    ctx.fillText('RELEASE NOW!', W * 0.35, H * 0.52 + 55);
+  } else {
+    ctx.fillText(tp.holdActive ? 'Release at bottom' : 'Hold at top', W * 0.35, H * 0.52 + 60);
+  }
+
+  ctx.restore();
+}
+
+function drawPopups(dt) {
+  ctx.save();
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.y   -= 38 * dt;
+    p.life -= 1.3 * dt;
+    if (p.life <= 0) { popups.splice(i, 1); continue; }
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 20px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBackground();
+  drawCrowd();
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.65)';
+  for (let i = 0; i < 32; i++) {
+    const sx = ((i * 131.7) % W);
+    const sy = ((i * 78.3)  % (H * 0.38));
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1 + (i % 3) * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Title glow
+  ctx.shadowColor = 'rgba(255,224,102,0.4)';
+  ctx.shadowBlur  = 24;
+  ctx.fillStyle   = C_GOLD;
+  ctx.font        = 'bold 50px Georgia,serif';
+  ctx.textAlign   = 'center';
+  ctx.fillText('RODEO', W / 2, H * 0.32);
+  ctx.fillText('QUEEN', W / 2, H * 0.32 + 58);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = C_ORANGE;
+  ctx.font = '14px Georgia,serif';
+  ctx.fillText('Barrel Racing  •  Lasso  •  Trick Riding', W / 2, H * 0.32 + 90);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '14px Georgia,serif';
+    ctx.fillText('BEST: ' + bestScore.toLocaleString(), W / 2, H * 0.32 + 116);
+  }
+
+  drawRider(W / 2 + 10, H * 0.62, 1.35);
+
+  const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 580);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = C_GOLD;
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText('TAP TO RIDE', W / 2, H * 0.86);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = 'rgba(200,160,74,0.35)';
+  ctx.font = '11px Georgia,serif';
+  ctx.fillText('BOB DAVIS', W / 2, H - 12);
+
+  ctx.restore();
+}
+
+function drawRoundEnd() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.68)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = C_GOLD;
+  ctx.font = 'bold 32px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ROUND ' + (round - 1) + ' DONE!', W / 2, H / 2 - 22);
+
+  ctx.fillStyle = C_ORANGE;
+  ctx.font = '18px Georgia,serif';
+  ctx.fillText(multiplier.toFixed(1) + 'x multiplier', W / 2, H / 2 + 18);
+  ctx.fillText('Score: ' + score.toLocaleString(), W / 2, H / 2 + 48);
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.78)';
+  ctx.fillRect(0, 0, W, H);
+
+  const isNew = score > bestScore && score > 0;
+  if (isNew) {
+    bestScore = score;
+    localStorage.setItem(GAME_SLUG + '_best', bestScore);
+  }
+
+  ctx.fillStyle = C_GOLD;
+  ctx.font = 'bold 36px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('RODEO DONE!', W / 2, H * 0.26);
+
+  if (isNew) {
+    const p = 0.8 + 0.2 * Math.sin(Date.now() / 290);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = C_ORANGE;
+    ctx.font = 'bold 22px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, H * 0.36);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 32px Georgia,serif';
+  ctx.fillText(score.toLocaleString(), W / 2, H * 0.46);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.48)';
+  ctx.font = '15px Georgia,serif';
+  ctx.fillText('BEST: ' + bestScore.toLocaleString(), W / 2, H * 0.54);
+
+  ctx.fillStyle = C_ORANGE;
+  ctx.font = '14px Georgia,serif';
+  ctx.fillText('Peak: ' + multiplier.toFixed(1) + 'x multiplier', W / 2, H * 0.60);
+
+  // Play Again
+  ctx.fillStyle = C_GOLD;
+  roundRect(ctx, W / 2 - 82, H * 0.67, 164, 44, 10);
+  ctx.fill();
+  ctx.fillStyle = C_DARK;
+  ctx.font = 'bold 17px Georgia,serif';
+  ctx.fillText('PLAY AGAIN', W / 2, H * 0.67 + 28);
+
+  // Feedback button
+  ctx.fillStyle = 'rgba(200,160,74,0.22)';
+  roundRect(ctx, W / 2 - 70, H * 0.76, 140, 36, 8);
+  ctx.fill();
+  ctx.strokeStyle = C_GOLD;
+  ctx.lineWidth = 1;
+  roundRect(ctx, W / 2 - 70, H * 0.76, 140, 36, 8);
+  ctx.stroke();
+  ctx.fillStyle = C_GOLD;
+  ctx.font = '14px Georgia,serif';
+  ctx.fillText('LEAVE FEEDBACK', W / 2, H * 0.76 + 23);
+
+  // Share
+  ctx.fillStyle = 'rgba(200,160,74,0.18)';
+  roundRect(ctx, W / 2 - 55, H * 0.835, 110, 30, 7);
+  ctx.fill();
+  roundRect(ctx, W / 2 - 55, H * 0.835, 110, 30, 7);
+  ctx.stroke();
+  ctx.fillStyle = C_GOLD;
+  ctx.font = '13px Georgia,serif';
+  ctx.fillText('SHARE', W / 2, H * 0.835 + 20);
+
+  ctx.restore();
+}
+
+// === MAIN LOOP ===
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - (lastTime || ts)) / 1000, 0.05);
+    lastTime = ts;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (phase === 'title') {
+      drawTitle();
+    } else if (phase === 'game_over') {
+      drawBackground(); drawCrowd(); drawGameOver(); drawPopups(dt);
+    } else if (phase === 'round_end') {
+      drawBackground(); drawCrowd(); drawRoundEnd();
+      roundEndTimer -= dt;
+      if (roundEndTimer <= 0) initBarrel();
+    } else {
+      drawBackground(); drawCrowd();
+      if (phase === 'barrel') { updateBarrel(dt); drawBarrelScene(); }
+      else if (phase === 'rope')   { updateRope(dt);   drawRopeScene();   }
+      else if (phase === 'tricks') { updateTricks(dt); drawTricksScene(); }
+      drawEventLabel(); drawHUD(); drawPopups(dt);
+    }
+  } catch (e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// === INPUT ===
+let pointerDown = false;
+
+function canvasXY(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx   = W / rect.width;
+  const sy   = H / rect.height;
+  const src  = e.touches ? e.touches[0] : e;
+  return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
+}
+
+function handleTap(x, y) {
+  ensureAudio();
+  if (phase === 'title') {
+    startGame();
+    return;
+  }
+  if (phase === 'game_over') {
+    const gy1 = H * 0.67, gh1 = 44;
+    if (x > W / 2 - 82 && x < W / 2 + 82 && y > gy1 && y < gy1 + gh1) {
+      startGame(); return;
+    }
+    const gy2 = H * 0.76, gh2 = 36;
+    if (x > W / 2 - 70 && x < W / 2 + 70 && y > gy2 && y < gy2 + gh2) {
+      document.getElementById('fb-overlay').classList.add('open'); return;
+    }
+    const gy3 = H * 0.835, gh3 = 30;
+    if (x > W / 2 - 55 && x < W / 2 + 55 && y > gy3 && y < gy3 + gh3) {
+      if (navigator.share) navigator.share({ title: 'Rodeo Queen', text: 'I scored ' + score.toLocaleString() + ' on Rodeo Queen by Bob Davis!' });
+      return;
+    }
+    return;
+  }
+  if (phase === 'barrel') { tapBarrel(); return; }
+  if (phase === 'rope' && rp.ready && !rp.thrown) { throwRope(); return; }
+}
+
+canvas.addEventListener('pointerdown', function(e) {
+  e.preventDefault();
+  pointerDown = true;
+  const { x, y } = canvasXY(e);
+  if (phase === 'tricks') {
+    tp.holdActive = true;
+    ensureAudio();
+  } else {
+    handleTap(x, y);
+  }
+  canvas.setPointerCapture(e.pointerId);
+});
+
+canvas.addEventListener('pointermove', function(e) {
+  e.preventDefault();
+  if (!pointerDown) return;
+  const { x, y } = canvasXY(e);
+  if (phase === 'rope') ropeTrackAngle(x, y);
+});
+
+canvas.addEventListener('pointerup', function(e) {
+  e.preventDefault();
+  pointerDown = false;
+  if (phase === 'tricks') tp.holdActive = false;
+  if (phase === 'rope') rp.lastAngle = null;
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.code === 'Space' || e.code === 'Enter') {
+    e.preventDefault();
+    ensureAudio();
+    if (phase === 'tricks') { tp.holdActive = true; return; }
+    handleTap(W / 2, H / 2);
+  }
+});
+
+document.addEventListener('keyup', function(e) {
+  if (e.code === 'Space' || e.code === 'Enter') {
+    if (phase === 'tricks') tp.holdActive = false;
+  }
+});
+
+// === FEEDBACK OVERLAY ===
+(function() {
+  let fbRating = 0;
+  const stars  = document.querySelectorAll('.fb-star');
+  stars.forEach(function(s) {
+    s.addEventListener('click', function() {
+      fbRating = parseInt(s.dataset.v);
+      stars.forEach(function(st) {
+        st.classList.toggle('lit', parseInt(st.dataset.v) <= fbRating);
+      });
+    });
+  });
+  document.getElementById('fb-close').addEventListener('click', function() {
+    document.getElementById('fb-overlay').classList.remove('open');
+  });
+  document.getElementById('fb-submit').addEventListener('click', function() {
+    const msg = document.getElementById('fb-text').value.trim();
+    const el  = document.getElementById('fb-msg');
+    el.style.color = C_GOLD;
+    el.textContent = 'Sending...';
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Rodeo Queen', rating: fbRating, message: msg, score }),
+    }).then(function() {
+      el.textContent = 'Thanks, partner!';
+      setTimeout(function() { document.getElementById('fb-overlay').classList.remove('open'); }, 1800);
+    }).catch(function() {
+      el.style.color = C_RED;
+      el.textContent = 'Could not send - try again';
+    });
+  });
+})();
+
+// === WINDOW EXPORTS (for testing) ===
+window.FEEDBACK_ENDPOINT   = FEEDBACK_ENDPOINT;
+window.GAME_SLUG           = GAME_SLUG;
+window.BARREL_POS          = BARREL_POS;
+window.ROPE_TURNS_NEEDED   = ROPE_TURNS_NEEDED;
+window.TRICKS_CYCLES       = TRICKS_CYCLES;
+window.TOTAL_ROUNDS        = TOTAL_ROUNDS;
+window.BARREL_WINDOW_PERFECT = BARREL_WINDOW_PERFECT;
+window.BARREL_WINDOW_GOOD    = BARREL_WINDOW_GOOD;
+window.BARREL_AUTOMISS_T     = BARREL_AUTOMISS_T;
+
+window.getPhase      = function() { return phase; };
+window.getRound      = function() { return round; };
+window.getScore      = function() { return score; };
+window.getMultiplier = function() { return multiplier; };
+window.getEnergy     = function() { return energy; };
+window.getPopups     = function() { return popups; };
+window.getBP         = function() { return bp; };
+window.getRP         = function() { return rp; };
+window.getTP         = function() { return tp; };
+
+window.startGame        = startGame;
+window.initBarrel       = initBarrel;
+window.initRope         = initRope;
+window.initTricks       = initTricks;
+window.tapBarrel        = tapBarrel;
+window.throwRope        = throwRope;
+window.ropeTrackAngle   = ropeTrackAngle;
+window.awardPoints      = awardPoints;
+window.addPopup         = addPopup;
+window.advanceToNextEvent = advanceToNextEvent;
+
+// Internal setters for test use
+window._setPhase      = function(v) { phase = v; };
+window._setRound      = function(v) { round = v; };
+window._setScore      = function(v) { score = v; };
+window._setMultiplier = function(v) { multiplier = v; };
+window._setEnergy     = function(v) { energy = v; };
+window._setBPT        = function(v) { bp.t = v; };
+window._setBPIdx      = function(v) { bp.barrelIdx = v; };
+window._setRPLastAngle = function(v) { rp.lastAngle = v; };
+window._setRPTotalTurns = function(v) { rp.totalTurns = v; };
+window._setRPReady    = function(v) { rp.ready = v; };
+window._setRPCalfX    = function(v) { rp.calfX = v; };
+window._setTPBarT     = function(v) { tp.barT = v; };
+window._setTPHold     = function(v) { tp.holdActive = v; };
+window._setTPCycles   = function(v) { tp.cyclesDone = v; };
+window.updateBarrel   = updateBarrel;
+window.updateTricks   = updateTricks;
+window.updateRope     = updateRope;
+
+// === START ===
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
