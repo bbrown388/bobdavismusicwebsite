@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Barbed Wire</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; }
+    #fb-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); z-index: 10; justify-content: center;
+      align-items: center; flex-direction: column;
+    }
+    #fb-overlay.active { display: flex; }
+    #fb-overlay select, #fb-overlay button, #fb-overlay textarea {
+      margin-top: 8px; width: 280px; background: #1a0520; color: #FFE066;
+      border: 1px solid #FFE066; font-size: 14px; border-radius: 4px;
+    }
+    #fb-overlay select, #fb-overlay button { padding: 8px; cursor: pointer; }
+    #fb-overlay textarea { padding: 8px; height: 80px; resize: none; }
+    #fb-overlay label { color: #FFE066; font-family: Georgia, serif; font-size: 13px; margin-top: 8px; }
+    #fb-close { background: #2a0f30 !important; margin-top: 16px; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <label>How was Barbed Wire?</label>
+  <select id="fb-rating">
+    <option value="5">5 stars - loved it</option>
+    <option value="4">4 stars - really good</option>
+    <option value="3">3 stars - it's alright</option>
+    <option value="2">2 stars - needs work</option>
+    <option value="1">1 star - not for me</option>
+  </select>
+  <label>Feedback (optional):</label>
+  <textarea id="fb-text" placeholder="What did you think?"></textarea>
+  <button id="fb-submit">Submit</button>
+  <button id="fb-close">Close</button>
+</div>
+<script>
+// === CONFIG ===
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+const CATTLE_X = 44;
+const SPAWN_X = 375;
+const POST_COLS = [76, 136, 196, 256, 316];
+const POST_ROWS = [112, 174, 236, 298, 360, 422];
+const MAX_CONN = 2;
+const WIRE_MAX_HP = 100;
+const WIRE_DMG_RATE = 22;    // hp/s per rustler touching wire
+const WIRE_KILL_RATE = 38;   // rustler hp/s drained per touching wire
+const WIRE_CATCH_DIST = 15;
+const RUSTLER_NORMAL = 48;   // px/s base movement
+const RUSTLER_SLOWED = 11;   // px/s while entangled
+
+const WAVE_CONFIG = [
+  { count: 5,  speed: 38, hp: 80,  interval: 2.4 },
+  { count: 6,  speed: 46, hp: 92,  interval: 2.1 },
+  { count: 8,  speed: 53, hp: 104, interval: 1.9 },
+  { count: 10, speed: 60, hp: 116, interval: 1.7 },
+  { count: 12, speed: 68, hp: 130, interval: 1.5 },
+];
+
+// roundRect polyfill for older browsers
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
+// === CANVAS ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// === AUDIO ===
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function tone(freq, type, vol, dur, when) {
+  try {
+    const ac = getAC(); const t = when || ac.currentTime;
+    const o = ac.createOscillator(); const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.05);
+  } catch(e) {}
+}
+function sfxWireLay() {
+  tone(920, 'triangle', 0.18, 0.09);
+  tone(700, 'triangle', 0.12, 0.07, (audioCtx || {currentTime:0}).currentTime + 0.05);
+}
+function sfxWireBreak() {
+  tone(210, 'sawtooth', 0.28, 0.13);
+  tone(155, 'sawtooth', 0.18, 0.18, (audioCtx || {currentTime:0}).currentTime + 0.08);
+}
+function sfxCattleLost() {
+  tone(110, 'sine', 0.38, 0.55);
+  tone(96,  'sine', 0.26, 0.65, (audioCtx || {currentTime:0}).currentTime + 0.3);
+}
+function sfxRustlerDie() {
+  tone(230, 'sawtooth', 0.18, 0.11);
+}
+function sfxWaveClear() {
+  try {
+    const ac = getAC(); const t = ac.currentTime;
+    [330, 440, 550, 660].forEach((f, i) => tone(f, 'sine', 0.22, 0.38, t + i * 0.09));
+  } catch(e) {}
+}
+
+// Ambient Am-F-C-G chord loop
+let ambientOn = false;
+let ambientIds = [];
+const CHORD_FREQS = [
+  [220, 261.6, 329.6],   // Am
+  [174.6, 220, 261.6],   // F
+  [130.8, 164.8, 196],   // C
+  [98,   123.5, 146.8],  // G
+];
+function startAmbient() {
+  if (ambientOn) return;
+  ambientOn = true;
+  playChord(0);
+}
+function stopAmbient() {
+  ambientOn = false;
+  ambientIds.forEach(n => { try { n.stop(); } catch(e) {} });
+  ambientIds = [];
+}
+function playChord(idx) {
+  if (!ambientOn) return;
+  try {
+    const ac = getAC(); const dur = 2.0;
+    CHORD_FREQS[idx % 4].forEach(f => {
+      const o = ac.createOscillator(); const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0, ac.currentTime);
+      g.gain.linearRampToValueAtTime(0.055, ac.currentTime + 0.12);
+      g.gain.linearRampToValueAtTime(0.055, ac.currentTime + dur - 0.12);
+      g.gain.linearRampToValueAtTime(0, ac.currentTime + dur);
+      o.start(ac.currentTime); o.stop(ac.currentTime + dur + 0.1);
+      ambientIds.push(o);
+    });
+    setTimeout(() => playChord(idx + 1), dur * 1000 - 60);
+  } catch(e) { ambientOn = false; }
+}
+
+// === STATE ===
+let gState = 'title';
+let posts = [], wires = [], rustlers = [], floats = [];
+let selectedPost = -1;
+let cattle = 5, wave = 1, score = 0, bestScore = 0;
+let spawnTimer = 0, spawnCount = 0, waveAllSpawned = false;
+let waveResultTimer = 0;
+let musicOn = true;
+let lastTime = 0;
+
+// === POSTS ===
+function initPosts() {
+  posts = [];
+  for (let r = 0; r < POST_ROWS.length; r++) {
+    for (let c = 0; c < POST_COLS.length; c++) {
+      posts.push({ id: r * POST_COLS.length + c, col: c, row: r, x: POST_COLS[c], y: POST_ROWS[r], connections: [] });
+    }
+  }
+}
+
+function getPost(col, row) {
+  return posts.find(p => p.col === col && p.row === row) || null;
+}
+
+function areAdjacent(pA, pB) {
+  const dc = Math.abs(pA.col - pB.col);
+  const dr = Math.abs(pA.row - pB.row);
+  return (dc === 1 && dr === 0) || (dc === 0 && dr === 1);
+}
+
+function getWire(pA, pB) {
+  return wires.find(w => (w.aId === pA.id && w.bId === pB.id) || (w.aId === pB.id && w.bId === pA.id)) || null;
+}
+
+function createWire(pA, pB) {
+  if (!areAdjacent(pA, pB)) return;
+  const existing = getWire(pA, pB);
+  if (existing) {
+    if (existing.broken) {
+      existing.broken = false;
+      existing.hp = WIRE_MAX_HP;
+      sfxWireLay();
+    }
+    return;
+  }
+  if (pA.connections.length >= MAX_CONN || pB.connections.length >= MAX_CONN) return;
+  wires.push({ id: wires.length, aId: pA.id, bId: pB.id, hp: WIRE_MAX_HP, broken: false });
+  pA.connections.push(pB.id);
+  pB.connections.push(pA.id);
+  sfxWireLay();
+}
+
+// === GEOMETRY ===
+function ptSegDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// === RUSTLERS ===
+function spawnRustler() {
+  const cfg = WAVE_CONFIG[wave - 1];
+  const yMin = POST_ROWS[0] - 20, yMax = POST_ROWS[POST_ROWS.length - 1] + 20;
+  const y = yMin + Math.random() * (yMax - yMin);
+  rustlers.push({
+    x: SPAWN_X, y,
+    speed: cfg.speed,
+    hp: cfg.hp, maxHp: cfg.hp,
+    alive: true, slowing: false,
+    animPhase: Math.random() * Math.PI * 2,
+  });
+}
+
+// === FLOATS ===
+function addFloat(x, y, text, color) {
+  floats.push({ x, y, text, color, life: 0.9 });
+}
+
+// === GAME LIFECYCLE ===
+function startGame() {
+  bestScore = parseInt(localStorage.getItem('barbed_wire_best') || '0');
+  gState = 'playing';
+  wave = 1; cattle = 5; score = 0;
+  posts = []; wires = []; rustlers = []; floats = [];
+  selectedPost = -1;
+  spawnTimer = 0; spawnCount = 0; waveAllSpawned = false;
+  waveResultTimer = 0;
+  initPosts();
+  if (musicOn) startAmbient();
+}
+
+function endGame(win) {
+  gState = win ? 'win' : 'gameover';
+  stopAmbient();
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('barbed_wire_best', bestScore);
+  }
+}
+
+// === UPDATE ===
+function update(dt) {
+  if (gState === 'wave_result') {
+    waveResultTimer -= dt;
+    if (waveResultTimer <= 0) {
+      wave++;
+      spawnCount = 0; waveAllSpawned = false; spawnTimer = 0;
+      rustlers = [];
+      gState = 'playing';
+    }
+    return;
+  }
+  if (gState !== 'playing') return;
+
+  const cfg = WAVE_CONFIG[wave - 1];
+
+  // Spawn
+  if (!waveAllSpawned) {
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnRustler();
+      spawnCount++;
+      spawnTimer = cfg.interval;
+      if (spawnCount >= cfg.count) waveAllSpawned = true;
+    }
+  }
+
+  // Rustlers
+  for (const r of rustlers) {
+    if (!r.alive) continue;
+    r.slowing = false;
+
+    for (const w of wires) {
+      if (w.broken) continue;
+      const pA = posts[w.aId] || posts.find(p => p.id === w.aId);
+      const pB = posts[w.bId] || posts.find(p => p.id === w.bId);
+      if (!pA || !pB) continue;
+      const dist = ptSegDist(r.x, r.y, pA.x, pA.y, pB.x, pB.y);
+      if (dist < WIRE_CATCH_DIST) {
+        r.slowing = true;
+        r.hp -= WIRE_KILL_RATE * dt;
+        w.hp -= WIRE_DMG_RATE * dt;
+        if (w.hp <= 0 && !w.broken) {
+          w.hp = 0;
+          w.broken = true;
+          sfxWireBreak();
+        }
+        break;
+      }
+    }
+
+    r.x -= (r.slowing ? RUSTLER_SLOWED : r.speed) * dt;
+
+    if (r.hp <= 0) {
+      r.alive = false;
+      score += 10;
+      addFloat(r.x, r.y, '+10', '#FF9F43');
+      sfxRustlerDie();
+      continue;
+    }
+    if (r.x < CATTLE_X) {
+      r.alive = false;
+      cattle = Math.max(0, cattle - 1);
+      addFloat(CATTLE_X + 20, 170 + Math.random() * 200, 'CATTLE LOST', '#E74C3C');
+      sfxCattleLost();
+      if (cattle <= 0) { endGame(false); return; }
+    }
+  }
+
+  // Floats
+  floats = floats.filter(f => {
+    f.life -= dt; f.y -= 28 * dt;
+    return f.life > 0;
+  });
+
+  // Wave complete check
+  if (waveAllSpawned && rustlers.every(r => !r.alive)) {
+    sfxWaveClear();
+    if (wave >= 5) { endGame(true); }
+    else { gState = 'wave_result'; waveResultTimer = 2.6; }
+  }
+}
+
+// === DRAW ===
+function drawBg() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#050208'); g.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // Ground strip
+  ctx.fillStyle = '#2a1500'; ctx.fillRect(0, H - 70, W, 70);
+  ctx.fillStyle = '#3a1f05'; ctx.fillRect(0, H - 76, W, 9);
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.5)';
+  for (let i = 0; i < 28; i++) {
+    const sx = (i * 137 + 20) % W;
+    const sy = (i * 97 + 10) % 80;
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+  ctx.restore();
+}
+
+function drawCattleZone() {
+  ctx.save();
+  // Fence boundary
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(CATTLE_X, 85); ctx.lineTo(CATTLE_X, H - 65); ctx.stroke();
+  ctx.setLineDash([]);
+  // Cattle
+  for (let i = 0; i < 5; i++) {
+    const cx = 20, cy = 120 + i * 58;
+    if (i < cattle) {
+      drawCow(cx, cy, '#C8A04A', 1.0);
+    } else {
+      drawCow(cx, cy, '#555', 0.3);
+    }
+  }
+  ctx.restore();
+}
+
+function drawCow(x, y, color, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.ellipse(x, y, 13, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 15, y - 4, 7, 5, -0.15, 0, Math.PI * 2); ctx.fill();
+  for (const lx of [-5, 0, 6, 11]) { ctx.fillRect(x + lx - 1, y + 7, 2, 7); }
+  ctx.restore();
+}
+
+function drawPosts() {
+  ctx.save();
+  for (const p of posts) {
+    const sel = p.id === selectedPost;
+    const full = p.connections.length >= MAX_CONN;
+    if (sel) { ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 14; }
+    ctx.fillStyle = sel ? '#FFE066' : '#8B5E3C';
+    ctx.roundRect(p.x - 5, p.y - 18, 10, 36, 2); ctx.fill();
+    ctx.fillStyle = sel ? '#FFD700' : '#A0724A';
+    ctx.roundRect(p.x - 6, p.y - 20, 12, 6, 1); ctx.fill();
+    ctx.shadowBlur = 0;
+    if (full && !sel) {
+      ctx.fillStyle = '#E74C3C';
+      ctx.beginPath(); ctx.arc(p.x + 6, p.y - 22, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+    if (sel) {
+      ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawBarbedWire(x1, y1, x2, y2, hp) {
+  ctx.save();
+  const ratio = Math.max(0, hp / WIRE_MAX_HP);
+  const r = Math.round(255 - ratio * 75);
+  const gv = Math.round(ratio * 200);
+  ctx.strokeStyle = hp <= 0 ? '#444' : `rgb(${r},${gv},20)`;
+  ctx.lineWidth = ratio > 0.4 ? 2 : 1;
+  if (hp <= 0) ctx.setLineDash([3, 5]);
+
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const segs = Math.max(3, Math.floor(len / 11));
+
+  ctx.beginPath(); ctx.moveTo(x1, y1);
+  for (let i = 1; i <= segs; i++) {
+    const t = i / segs;
+    const cx = x1 + t * dx, cy = y1 + t * dy;
+    const off = (i % 2 === 0 ? 1 : -1) * 4;
+    ctx.lineTo(cx + nx * off, cy + ny * off);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+
+  if (hp > 0) {
+    const barbs = Math.floor(len / 22);
+    ctx.lineWidth = 1.5;
+    for (let i = 1; i < barbs; i++) {
+      const t = i / barbs;
+      const bx = x1 + t * dx, by = y1 + t * dy;
+      ctx.beginPath();
+      ctx.moveTo(bx - nx * 5 - ux * 2, by - ny * 5 - uy * 2);
+      ctx.lineTo(bx + nx * 5 + ux * 2, by + ny * 5 + uy * 2);
+      ctx.stroke();
+    }
+  }
+
+  if (hp > 0 && hp < WIRE_MAX_HP) {
+    const mx = (x1 + x2) / 2 + nx * 11, my = (y1 + y2) / 2 + ny * 11;
+    ctx.fillStyle = '#333'; ctx.fillRect(mx - 12, my - 3, 24, 5);
+    ctx.fillStyle = ratio > 0.5 ? '#4CAF50' : '#FF9F43';
+    ctx.fillRect(mx - 12, my - 3, 24 * ratio, 5);
+  }
+  ctx.restore();
+}
+
+function drawWires() {
+  ctx.save();
+  for (const w of wires) {
+    const pA = posts.find(p => p.id === w.aId);
+    const pB = posts.find(p => p.id === w.bId);
+    if (pA && pB) drawBarbedWire(pA.x, pA.y, pB.x, pB.y, w.hp);
+  }
+  ctx.restore();
+}
+
+function drawRustler(r) {
+  ctx.save();
+  const t = Date.now() * 0.007 + r.animPhase;
+  const legA = Math.sin(t) * 5, legB = -legA;
+  ctx.fillStyle = '#1a0520';
+  // Shadow
+  ctx.globalAlpha = 0.25; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(r.x, r.y + 22, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1; ctx.fillStyle = '#1a0520';
+  // Body
+  ctx.roundRect(r.x - 7, r.y - 10, 14, 20, 3); ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.arc(r.x, r.y - 17, 8, 0, Math.PI * 2); ctx.fill();
+  // Hat brim
+  ctx.fillRect(r.x - 11, r.y - 22, 22, 4);
+  // Hat crown
+  ctx.roundRect(r.x - 7, r.y - 32, 14, 13, 2); ctx.fill();
+  // Legs
+  ctx.fillRect(r.x - 5, r.y + 10, 4, 11 + legA);
+  ctx.fillRect(r.x + 1, r.y + 10, 4, 11 + legB);
+  // HP bar
+  if (r.hp < r.maxHp) {
+    const rt = r.hp / r.maxHp;
+    ctx.fillStyle = '#333'; ctx.fillRect(r.x - 13, r.y - 40, 26, 4);
+    ctx.fillStyle = '#E74C3C'; ctx.fillRect(r.x - 13, r.y - 40, 26 * rt, 4);
+  }
+  // Entangle glow
+  if (r.slowing) {
+    ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1; ctx.globalAlpha = 0.55;
+    ctx.beginPath(); ctx.arc(r.x, r.y, 16, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRustlers() {
+  ctx.save();
+  for (const r of rustlers) { if (r.alive) drawRustler(r); }
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Score
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 24px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 42);
+  // Wave pill
+  ctx.fillStyle = '#1a0520'; ctx.roundRect(W/2 - 36, 49, 72, 22, 11); ctx.fill();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia, serif';
+  ctx.fillText('WAVE ' + wave + '/5', W / 2, 65);
+  // Cattle pill
+  ctx.fillStyle = '#1a0520'; ctx.roundRect(6, 10, 86, 26, 13); ctx.fill();
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 12px Georgia, serif'; ctx.textAlign = 'left';
+  ctx.fillText('CATTLE  ' + cattle, 14, 28);
+  // Hint (first wave, before spawn)
+  if (wave === 1 && spawnCount === 0) {
+    ctx.fillStyle = 'rgba(255,224,102,0.7)'; ctx.font = '11px Georgia, serif'; ctx.textAlign = 'center';
+    ctx.fillText('Tap two posts to string wire', W / 2, H - 92);
+    ctx.fillText('Block the rustlers!', W / 2, H - 76);
+  }
+  // Music toggle
+  ctx.fillStyle = musicOn ? '#FFE066' : '#555'; ctx.font = '20px Georgia, serif'; ctx.textAlign = 'right';
+  ctx.fillText(musicOn ? '♪' : '♫', W - 10, H - 8);
+  ctx.restore();
+}
+
+function drawFloats() {
+  ctx.save();
+  for (const f of floats) {
+    ctx.globalAlpha = Math.max(0, f.life / 0.9);
+    ctx.fillStyle = f.color; ctx.font = 'bold 15px Georgia, serif'; ctx.textAlign = 'center';
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#050208'); g.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.5)';
+  for (let i = 0; i < 36; i++) {
+    ctx.fillRect((i * 137 + 20) % W, (i * 97 + 10) % 120, 1, 1);
+  }
+  // Decorative barbed wire
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  for (let wx = 0; wx < W; wx += 30) {
+    ctx.beginPath(); ctx.moveTo(wx, 62); ctx.lineTo(wx + 15, 56); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wx + 7, 63); ctx.lineTo(wx + 7, 53); ctx.stroke();
+  }
+  // Title
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 52px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 18;
+  ctx.fillText('BARBED', W / 2, 178); ctx.fillText('WIRE', W / 2, 238);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A'; ctx.font = '15px Georgia, serif';
+  ctx.fillText('Protect your herd', W / 2, 284);
+  ctx.fillText('String wire between posts', W / 2, 308);
+  ctx.fillText('Stop the rustlers before they', W / 2, 332);
+  ctx.fillText('reach your cattle', W / 2, 352);
+  if (bestScore > 0) {
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillText('BEST: ' + bestScore, W / 2, 386);
+  }
+  // Play button
+  ctx.fillStyle = '#FFE066';
+  ctx.roundRect(W / 2 - 62, 418, 124, 46, 23); ctx.fill();
+  ctx.fillStyle = '#1a0520'; ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText('PLAY', W / 2, 448);
+  ctx.fillStyle = '#555'; ctx.font = '11px Georgia, serif';
+  ctx.fillText('tap anywhere to start', W / 2, 488);
+  ctx.restore();
+}
+
+function drawWaveResult() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.72)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 32px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('WAVE ' + wave + ' CLEAR', W / 2, H / 2 - 44);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '18px Georgia, serif';
+  ctx.fillText('Score: ' + score, W / 2, H / 2 + 8);
+  ctx.fillText('Cattle: ' + cattle, W / 2, H / 2 + 36);
+  if (wave < 5) {
+    const nxt = WAVE_CONFIG[wave];
+    ctx.fillStyle = '#FF9F43'; ctx.font = '13px Georgia, serif';
+    ctx.fillText('Wave ' + (wave + 1) + ': ' + nxt.count + ' rustlers incoming...', W / 2, H / 2 + 74);
+  }
+  ctx.restore();
+}
+
+function drawEndScreen(win) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.86)'; ctx.fillRect(0, 0, W, H);
+  const pulse = 0.85 + 0.15 * Math.sin(Date.now() * 0.005);
+  ctx.fillStyle = win ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 40px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.shadowColor = win ? '#FFD700' : '#E74C3C'; ctx.shadowBlur = 22;
+  ctx.fillText(win ? 'HERD SAVED!' : 'HERD LOST', W / 2, H / 2 - 82);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 28px Georgia, serif';
+  ctx.fillText('Score: ' + score, W / 2, H / 2 - 22);
+  if (score > 0 && score >= bestScore) {
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 18px Georgia, serif';
+    ctx.globalAlpha = pulse; ctx.fillText('NEW RECORD!', W / 2, H / 2 + 18); ctx.globalAlpha = 1;
+  } else if (bestScore > 0) {
+    ctx.fillStyle = '#C8A04A'; ctx.font = '16px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore, W / 2, H / 2 + 18);
+  }
+  // Play again
+  ctx.fillStyle = '#FFE066';
+  ctx.roundRect(W / 2 - 82, H / 2 + 56, 164, 46, 23); ctx.fill();
+  ctx.fillStyle = '#1a0520'; ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W / 2, H / 2 + 85);
+  // Share
+  ctx.fillStyle = '#2a0f30';
+  ctx.roundRect(W / 2 - 62, H / 2 + 116, 124, 36, 18); ctx.fill();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('SHARE', W / 2, H / 2 + 140);
+  // Feedback
+  ctx.fillStyle = '#555'; ctx.font = '12px Georgia, serif';
+  ctx.fillText('Leave feedback', W / 2, H / 2 + 190);
+  ctx.restore();
+}
+
+// === LOOP ===
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+    update(dt);
+    drawBg();
+    if (gState === 'title') {
+      drawTitle();
+    } else if (gState === 'playing' || gState === 'wave_result') {
+      drawCattleZone(); drawWires(); drawPosts(); drawRustlers(); drawHUD(); drawFloats();
+      if (gState === 'wave_result') drawWaveResult();
+    } else {
+      drawCattleZone(); drawWires(); drawPosts();
+      if (gState === 'gameover') drawRustlers();
+      drawHUD(); drawFloats();
+      drawEndScreen(gState === 'win');
+    }
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+
+// === INPUT ===
+function postAt(cx, cy) {
+  let best = -1, bestD = Infinity;
+  for (const p of posts) {
+    const d = Math.hypot(p.x - cx, p.y - cy);
+    if (d < 24 && d < bestD) { best = p.id; bestD = d; }
+  }
+  return best;
+}
+
+function handleTap(cx, cy) {
+  if (gState === 'title') { startGame(); return; }
+  if (gState === 'win' || gState === 'gameover') {
+    const bx = W / 2, by = H / 2;
+    if (cx > bx - 82 && cx < bx + 82 && cy > by + 56 && cy < by + 102) { startGame(); return; }
+    if (cx > bx - 62 && cx < bx + 62 && cy > by + 116 && cy < by + 152) {
+      if (navigator.share) navigator.share({ title: 'Barbed Wire', text: 'I scored ' + score + ' in Barbed Wire! Play at bobdavismusic.com' });
+      return;
+    }
+    if (cy > by + 178 && cy < by + 202) { document.getElementById('fb-overlay').classList.add('active'); return; }
+    return;
+  }
+  if (gState === 'wave_result') return;
+  // Music toggle
+  if (cx > W - 32 && cy > H - 32) {
+    musicOn = !musicOn;
+    musicOn ? startAmbient() : stopAmbient();
+    return;
+  }
+  if (gState !== 'playing') return;
+
+  const id = postAt(cx, cy);
+  if (id === -1) { selectedPost = -1; return; }
+  if (selectedPost === -1) { selectedPost = id; return; }
+  if (selectedPost === id) { selectedPost = -1; return; }
+
+  const pA = posts.find(p => p.id === selectedPost);
+  const pB = posts.find(p => p.id === id);
+  if (pA && pB) {
+    if (areAdjacent(pA, pB)) { createWire(pA, pB); selectedPost = -1; }
+    else { selectedPost = id; }
+  }
+}
+
+function canvasCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  return [(e.clientX - rect.left) * W / rect.width, (e.clientY - rect.top) * H / rect.height];
+}
+canvas.addEventListener('click', e => { const [x, y] = canvasCoords(e); handleTap(x, y); });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const [x, y] = canvasCoords(e.touches[0]);
+  handleTap(x, y);
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if ((e.code === 'Space' || e.code === 'Enter') && gState === 'title') startGame();
+  if (e.code === 'Escape') selectedPost = -1;
+});
+
+// Feedback form
+document.getElementById('fb-submit').addEventListener('click', async () => {
+  const rating = parseInt(document.getElementById('fb-rating').value);
+  const message = document.getElementById('fb-text').value;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Barbed Wire', rating, message, score }),
+    });
+  } catch(e) {}
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+
+// === TEST HOOKS ===
+window.__test = {
+  get phase()     { return gState; },
+  get score()     { return score; },
+  get wave()      { return wave; },
+  get cattle()    { return cattle; },
+  get posts()     { return posts; },
+  get wires()     { return wires; },
+  get rustlers()  { return rustlers; },
+  get selectedPost() { return selectedPost; },
+  get spawnCount()   { return spawnCount; },
+  get waveAllSpawned() { return waveAllSpawned; },
+  get spawnTimer()   { return spawnTimer; },
+  get waveResultTimer() { return waveResultTimer; },
+  POST_COLS, POST_ROWS, MAX_CONN, WIRE_MAX_HP, WIRE_DMG_RATE, WIRE_KILL_RATE,
+  RUSTLER_NORMAL, RUSTLER_SLOWED, WAVE_CONFIG, CATTLE_X, SPAWN_X,
+  initPosts, startGame, update, spawnRustler, createWire, getWire,
+  areAdjacent, getPost, ptSegDist, addFloat, handleTap, endGame,
+  setPhase(p) { gState = p; },
+  setScore(s) { score = s; },
+  setWave(w)  { wave = w; },
+  setCattle(c) { cattle = c; },
+  setSelectedPost(id) { selectedPost = id; },
+  setWaveAllSpawned(v) { waveAllSpawned = v; },
+  setSpawnCount(n) { spawnCount = n; },
+  clearRustlers() { rustlers = []; },
+  clearWires() { wires = []; },
+  FEEDBACK_ENDPOINT,
+};
+
+// === INIT ===
+bestScore = parseInt(localStorage.getItem('barbed_wire_best') || '0');
+initPosts();
+lastTime = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
