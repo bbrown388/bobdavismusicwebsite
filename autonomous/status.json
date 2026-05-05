@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-05T12:00:00.000Z",
+  "lastRunAt": "2026-05-05T14:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 33 tests pass - 25 suites / 75 tests",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 33: Cattle Auction - tests passing, committing"
-  },
-  "gamesBuilt": 32,
-  "lastGameTitle": "Barbed Wire",
-  "lastGameFile": "barbed-wire.html",
+  "lastRunSummary": "Built Game 33: Cattle Auction - economic bidding simulation, 6-buyer behavioral AI, going-once call mechanic, 75 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 33,
+  "lastGameTitle": "Cattle Auction",
+  "lastGameFile": "cattle-auction.html",
   "gameQueue": [
-    {
-      "num": 33,
-      "title": "Cattle Auction",
-      "concept": "Economic bidding game: player is the auctioneer at a frontier cattle sale. Six buyers with distinct wealth and desire levels bid in real time. Read buyer patterns, call escalating bids, and drop the hammer at peak price. Buyer desperation, budget limits, and auction momentum all affect the final tally across 8 lots.",
-      "raisesBarOn": "First economic/bidding simulation in series, first game where reading multiple simultaneous behavioral patterns drives scoring, deepest social-reading mechanic since Boot Hill Bluff",
-      "status": "planned"
-    },
     {
       "num": 34,
       "title": "Dust Devil Dance",
@@ -30,17 +20,16 @@
       "concept": "First-person maze-crawl: navigate a procedurally-tiled canyon network by torch, with a rattlesnake that can hear your footsteps. Move silently by tapping slowly and deliberately; rush and it strikes. Dynamic audio cue system - snake rattle volume and direction reveal proximity before visibility does.",
       "raisesBarOn": "First procedurally-generated level layout in series, first game where audio is the primary navigation sense (not vision), deepest audio-spatial design since Moonshine Run",
       "status": "planned"
+    },
+    {
+      "num": 36,
+      "title": "Rodeo Queen",
+      "concept": "Skill-chain combo game: player performs barrel racing, roping, and trick riding events in sequence. Each event uses a different gesture pattern; chaining events without errors builds a multiplier. Live crowd-energy meter rises and falls based on combo streaks. First combo-chain structure in the series.",
+      "raisesBarOn": "First multi-discipline skill-chain structure in series, deepest combo/streak system since Pony Express, first game with distinct sub-game phases sharing a single energy meter",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-04-30T08:30:00Z",
-      "action": "fix",
-      "game": "Midnight Rodeo",
-      "result": "success",
-      "summary": "Fixed Midnight Rodeo: taps now register at any time during play, not just the 0.7s telegraph window.",
-      "commitHash": "e6cf348"
-    },
     {
       "runAt": "2026-04-30T09:15:00Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 32: Barbed Wire - strategic wire-laying tower defense, post-node graph mechanic, MAX_CONN=2 constraint, 5 waves, 50 tests pass.",
       "commitHash": "07acb6d"
+    },
+    {
+      "runAt": "2026-05-05T14:00:00.000Z",
+      "action": "new_game",
+      "game": "Cattle Auction",
+      "result": "success",
+      "summary": "Built Game 33: Cattle Auction - economic bidding simulation, 6-buyer behavioral AI, going-once call mechanic, heat-bar urgency, 8 lots, 75 tests pass.",
+      "commitHash": "632669a"
     }
   ]
 }
