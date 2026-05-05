@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Cattle Auction</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; }
+    #fb-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); z-index: 10; justify-content: center;
+      align-items: center; flex-direction: column;
+    }
+    #fb-overlay.active { display: flex; }
+    #fb-overlay select, #fb-overlay button, #fb-overlay textarea {
+      margin-top: 8px; width: 280px; background: #1a0520; color: #FFE066;
+      border: 1px solid #FFE066; font-size: 14px; border-radius: 4px;
+    }
+    #fb-overlay select, #fb-overlay button { padding: 8px; cursor: pointer; }
+    #fb-overlay textarea { padding: 8px; height: 80px; resize: none; }
+    #fb-overlay label { color: #FFE066; font-family: Georgia, serif; font-size: 13px; margin-top: 8px; }
+    #fb-close { background: #2a0f30 !important; margin-top: 16px; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <label>How was Cattle Auction?</label>
+  <select id="fb-rating">
+    <option value="5">5 stars - loved it</option>
+    <option value="4">4 stars - really good</option>
+    <option value="3">3 stars - it's alright</option>
+    <option value="2">2 stars - needs work</option>
+    <option value="1">1 star - not for me</option>
+  </select>
+  <label>Feedback (optional):</label>
+  <textarea id="fb-text" placeholder="What did you think?"></textarea>
+  <button id="fb-submit">Submit</button>
+  <button id="fb-close">Close</button>
+</div>
+<script>
+// === CONFIG ===
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+const NUM_BUYERS = 6;
+const NUM_LOTS = 8;
+const HEAT_DECAY = 1.4;       // %/s of interest lost
+const HEAT_BID_BOOST = 9;     // % heat per bid
+const CALL_WINDOW = 2.8;      // s per going-once/going-twice stage
+const LOT_START_DELAY = 1.5;  // s before bidding starts
+const LOT_RESULT_DELAY = 2.2; // s to show result before next lot
+
+// Buyer personalities affect bid frequency and bluffing
+const BUYER_DEFS = [
+  { name: 'Hank',  budget: 800,  baseDesire: 0.65, personality: 'steady',    x: 55,  y: 370 },
+  { name: 'Mae',   budget: 420,  baseDesire: 0.60, personality: 'cautious',  x: 180, y: 418 },
+  { name: 'Colt',  budget: 980,  baseDesire: 0.70, personality: 'bluffer',   x: 305, y: 370 },
+  { name: 'Rosa',  budget: 600,  baseDesire: 0.60, personality: 'patient',   x: 60,  y: 250 },
+  { name: 'Doc',   budget: 1200, baseDesire: 0.50, personality: 'selective', x: 300, y: 250 },
+  { name: 'Billy', budget: 280,  baseDesire: 0.80, personality: 'eager',     x: 180, y: 200 },
+];
+
+// Base seconds between bid attempts per personality
+const BID_INTERVALS = { steady: 1.8, cautious: 2.8, bluffer: 1.1, patient: 3.2, selective: 2.2, eager: 0.9 };
+
+// === CANVAS ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// === AUDIO ===
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playGavel() {
+  try {
+    const ac = getAC();
+    const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * 0.15), ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const t = i / ac.sampleRate;
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-t * 30) * 0.8;
+    }
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.6, ac.currentTime);
+    src.connect(g); g.connect(ac.destination);
+    src.start();
+  } catch(_) {}
+}
+function playBid() {
+  try {
+    const ac = getAC();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(880, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(660, ac.currentTime + 0.08);
+    g.gain.setValueAtTime(0.12, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.12);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.12);
+  } catch(_) {}
+}
+function playNoSale() {
+  try {
+    const ac = getAC();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(110, ac.currentTime + 0.4);
+    g.gain.setValueAtTime(0.2, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.4);
+  } catch(_) {}
+}
+function playChord() {
+  try {
+    const ac = getAC();
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0.0, ac.currentTime);
+      g.gain.linearRampToValueAtTime(0.08, ac.currentTime + 0.03 + i * 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.7);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(); osc.stop(ac.currentTime + 0.8);
+    });
+  } catch(_) {}
+}
+
+// roundRect polyfill
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
+// === STATE ===
+let gameState = 'title'; // title | lot_start | bidding | calling | sold | no_sale | gameover
+let callStage = 0;       // 0=none, 1=going once, 2=going twice
+let callTimer = 0;
+let lotStartTimer = 0;
+let lotResultTimer = 0;
+let currentLot = 0;
+let totalScore = 0;
+let lots = [];
+let buyers = [];
+let heat = 100;
+let currentBidPrice = 0;
+let lastBidderIdx = -1;
+let bidPopups = [];
+let lotResults = [];
+
+// === LOT LOGIC ===
+function initLots() {
+  const grades = ['A', 'A', 'A', 'B', 'B', 'B', 'C', 'C'];
+  for (let i = grades.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [grades[i], grades[j]] = [grades[j], grades[i]];
+  }
+  const BASE = { A: 320, B: 190, C: 95 };
+  lots = grades.map((g, i) => ({
+    grade: g,
+    basePrice: Math.max(60, BASE[g] + ((Math.random() * 60) | 0) - 30),
+    num: i + 1,
+  }));
+}
+
+function desireForGrade(def, grade) {
+  if (def.personality === 'selective') {
+    return grade === 'A' ? 0.88 : grade === 'B' ? 0.22 : 0.05;
+  }
+  if (def.personality === 'eager') {
+    return grade === 'A' ? 0.90 : grade === 'B' ? 0.82 : 0.62;
+  }
+  const base = def.baseDesire;
+  if (grade === 'A') return Math.min(0.94, base + 0.12);
+  if (grade === 'B') return base;
+  return Math.max(0.05, base - 0.16);
+}
+
+function lotIncrement() {
+  if (currentBidPrice < 200) return 10;
+  if (currentBidPrice < 400) return 20;
+  if (currentBidPrice < 700) return 25;
+  return 50;
+}
+
+// === BUYER LOGIC ===
+function initBuyers() {
+  buyers = BUYER_DEFS.map((def, i) => ({
+    ...def,
+    idx: i,
+    dropped: false,
+    desire: 0,
+    bidNextAt: 1.0 + Math.random() * 2.0,
+    bidCount: 0,
+    raiseTimer: 0,
+  }));
+}
+
+function setLotDesires() {
+  const grade = lots[currentLot].grade;
+  buyers.forEach(b => {
+    const def = BUYER_DEFS[b.idx];
+    b.desire = desireForGrade(def, grade);
+    b.dropped = false;
+    b.bidNextAt = 0.5 + Math.random() * 2.5;
+    b.bidCount = 0;
+    b.raiseTimer = 0;
+  });
+}
+
+function placeBid(buyerIdx, price) {
+  currentBidPrice = price;
+  lastBidderIdx = buyerIdx;
+  heat = Math.min(100, heat + HEAT_BID_BOOST);
+  if (callStage > 0) {
+    callStage = 0;
+    callTimer = 0;
+    gameState = 'bidding';
+  }
+  buyers[buyerIdx].raiseTimer = 0.9;
+  buyers[buyerIdx].bidCount++;
+  bidPopups.push({
+    text: '$' + price,
+    x: buyers[buyerIdx].x,
+    y: buyers[buyerIdx].y - 30,
+    alpha: 1.0,
+    vy: -38,
+  });
+  playBid();
+}
+
+function tryBuyerBid(b, dt) {
+  if (b.dropped) return;
+  if (gameState !== 'bidding' && gameState !== 'calling') return;
+  if (b.idx === lastBidderIdx) return;
+
+  b.bidNextAt -= dt;
+  if (b.bidNextAt > 0) return;
+
+  const base = BID_INTERVALS[b.personality] || 2.0;
+  b.bidNextAt = base * (0.6 + Math.random() * 0.8) * (1 + (1 - heat / 100) * 1.2);
+
+  const inc = lotIncrement();
+  const nextPrice = currentBidPrice + inc;
+
+  if (nextPrice > b.budget) { b.dropped = true; return; }
+
+  const bluffMult = (b.personality === 'bluffer' && Math.random() < 0.28) ? 1.30 : 1.0;
+  const maxWilling = b.desire * b.budget * bluffMult;
+
+  if (nextPrice > maxWilling) return;
+
+  placeBid(b.idx, nextPrice);
+}
+
+function getActiveBuyerCount() {
+  return buyers.filter(b => !b.dropped).length;
+}
+
+// === CALL MECHANIC ===
+function advanceCall() {
+  if (gameState === 'bidding') {
+    gameState = 'calling';
+    callStage = 1;
+    callTimer = CALL_WINDOW;
+  } else if (gameState === 'calling' && callStage === 1) {
+    callStage = 2;
+    callTimer = CALL_WINDOW;
+  } else if (gameState === 'calling' && callStage === 2) {
+    sellLot();
+  }
+}
+
+function sellLot() {
+  lotResults.push({ grade: lots[currentLot].grade, price: currentBidPrice, sold: true });
+  totalScore += currentBidPrice;
+  gameState = 'sold';
+  lotResultTimer = LOT_RESULT_DELAY;
+  playGavel();
+  playChord();
+}
+
+function noSale() {
+  lotResults.push({ grade: lots[currentLot].grade, price: 0, sold: false });
+  gameState = 'no_sale';
+  lotResultTimer = LOT_RESULT_DELAY;
+  playNoSale();
+}
+
+function startLot() {
+  heat = 100;
+  callStage = 0;
+  callTimer = 0;
+  lastBidderIdx = -1;
+  bidPopups = [];
+  setLotDesires();
+  currentBidPrice = lots[currentLot].basePrice;
+  gameState = 'lot_start';
+  lotStartTimer = LOT_START_DELAY;
+}
+
+function advanceLot() {
+  currentLot++;
+  if (currentLot >= NUM_LOTS) {
+    finishGame();
+  } else {
+    startLot();
+  }
+}
+
+function finishGame() {
+  const prev = parseInt(localStorage.getItem('cattle-auction_best') || '0');
+  if (totalScore > prev) localStorage.setItem('cattle-auction_best', String(totalScore));
+  gameState = 'gameover';
+}
+
+// === START GAME ===
+function startGame() {
+  callStage = 0;
+  callTimer = 0;
+  lotStartTimer = LOT_START_DELAY;
+  lotResultTimer = 0;
+  currentLot = 0;
+  totalScore = 0;
+  lotResults = [];
+  bidPopups = [];
+  initLots();
+  initBuyers();
+  startLot();
+}
+
+// === UPDATE ===
+function tickUpdate(dt) {
+  if (gameState === 'lot_start') {
+    lotStartTimer -= dt;
+    if (lotStartTimer <= 0) gameState = 'bidding';
+    return;
+  }
+  if (gameState === 'sold' || gameState === 'no_sale') {
+    lotResultTimer -= dt;
+    if (lotResultTimer <= 0) advanceLot();
+    return;
+  }
+  if (gameState !== 'bidding' && gameState !== 'calling') return;
+
+  heat -= HEAT_DECAY * dt;
+  if (heat < 0) heat = 0;
+  if (heat === 0) { noSale(); return; }
+
+  buyers.forEach(b => tryBuyerBid(b, dt));
+
+  if (gameState === 'calling') {
+    callTimer -= dt;
+    if (callTimer <= 0) {
+      if (callStage === 1) { callStage = 2; callTimer = CALL_WINDOW; }
+      else if (callStage === 2) { sellLot(); }
+    }
+  }
+
+  buyers.forEach(b => { if (b.raiseTimer > 0) b.raiseTimer -= dt; });
+
+  bidPopups.forEach(p => {
+    p.y += p.vy * dt;
+    p.alpha -= dt * 1.1;
+  });
+  bidPopups = bidPopups.filter(p => p.alpha > 0);
+}
+
+// === DRAWING ===
+const GRADE_COLOR = { A: '#4CAF50', B: '#FFE066', C: '#FF9F43' };
+const ARENA_CX = 180, ARENA_CY = 310;
+const ARENA_RX = 126, ARENA_RY = 86;
+
+function drawBackground() {
+  ctx.save();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0d0805');
+  grad.addColorStop(1, '#1a0d05');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawArena() {
+  ctx.save();
+  const g = ctx.createRadialGradient(ARENA_CX, ARENA_CY, 20, ARENA_CX, ARENA_CY, 145);
+  g.addColorStop(0, '#3a1f05');
+  g.addColorStop(1, '#221200');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(ARENA_CX, ARENA_CY, ARENA_RX + 14, ARENA_RY + 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Outer fence
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(ARENA_CX, ARENA_CY, ARENA_RX + 10, ARENA_RY + 6, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Inner dashed ring
+  ctx.strokeStyle = '#5a3a10';
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.ellipse(ARENA_CX, ARENA_CY, ARENA_RX - 12, ARENA_RY - 8, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 8 fence posts
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2 - Math.PI / 8;
+    const px = ARENA_CX + (ARENA_RX + 12) * Math.cos(angle);
+    const py = ARENA_CY + (ARENA_RY + 8) * Math.sin(angle);
+    ctx.fillStyle = '#C8A04A';
+    ctx.beginPath();
+    ctx.roundRect(px - 4, py - 9, 8, 18, 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCattle(grade) {
+  ctx.save();
+  const count = grade === 'A' ? 3 : grade === 'B' ? 2 : 1;
+  const configs = [
+    [[-32, 8], [0, -10], [32, 8]],
+    [[-20, 0], [20, 0]],
+    [[0, 0]],
+  ];
+  const offsets = configs[count - 1];
+  offsets.forEach(([ox, oy]) => {
+    const cx = ARENA_CX + ox, cy = ARENA_CY + oy;
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 16, 22, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Body
+    ctx.fillStyle = '#1a0520';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 20, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Head (facing right)
+    ctx.beginPath();
+    ctx.ellipse(cx + 18, cy - 4, 11, 8, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Horns
+    ctx.strokeStyle = '#1a0520';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx + 22, cy - 10);
+    ctx.quadraticCurveTo(cx + 30, cy - 18, cx + 27, cy - 22);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 15, cy - 12);
+    ctx.quadraticCurveTo(cx + 20, cy - 20, ctx.moveTo, cy - 24);
+    ctx.moveTo(cx + 15, cy - 12);
+    ctx.quadraticCurveTo(cx + 18, cy - 22, ctx.moveTo, cy - 25);
+    ctx.moveTo(cx + 16, cy - 11);
+    ctx.quadraticCurveTo(cx + 21, cy - 19, cx + 18, cy - 23);
+    ctx.stroke();
+    // Legs
+    ctx.lineWidth = 4;
+    [[-12, 0], [-4, 0], [4, 0], [12, 0]].forEach(([lx]) => {
+      ctx.beginPath();
+      ctx.moveTo(cx + lx, cy + 10);
+      ctx.lineTo(cx + lx, cy + 20);
+      ctx.stroke();
+    });
+  });
+  ctx.restore();
+}
+
+function drawBuyer(b) {
+  ctx.save();
+  const { x, y, dropped, raiseTimer, name, idx } = b;
+  const isLastBidder = idx === lastBidderIdx;
+  const isRaising = raiseTimer > 0 && !dropped;
+
+  if (isLastBidder && !dropped) {
+    ctx.shadowColor = '#FFE066';
+    ctx.shadowBlur = 18;
+  }
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 34, 18, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const bodyCol = dropped ? '#2a2a2a' : '#1a0520';
+  ctx.shadowBlur = (isLastBidder && !dropped) ? 18 : 0;
+  ctx.shadowColor = '#FFE066';
+
+  // Body
+  ctx.fillStyle = bodyCol;
+  ctx.beginPath();
+  ctx.roundRect(x - 13, y + 8, 26, 28, 8);
+  ctx.fill();
+  // Head
+  ctx.beginPath();
+  ctx.arc(x, y - 1, 13, 0, Math.PI * 2);
+  ctx.fill();
+  // Hat brim
+  ctx.beginPath();
+  ctx.roundRect(x - 16, y - 16, 32, 10, 3);
+  ctx.fill();
+  // Hat crown
+  ctx.beginPath();
+  ctx.roundRect(x - 10, y - 30, 20, 16, 4);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  // Raised arm
+  if (isRaising) {
+    ctx.strokeStyle = '#1a0520';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 11, y + 16);
+    ctx.lineTo(x + 25, y - 7);
+    ctx.stroke();
+    ctx.fillStyle = '#1a0520';
+    ctx.beginPath();
+    ctx.arc(x + 26, y - 10, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Name label
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = dropped ? '#555' : (isLastBidder ? '#FFE066' : '#C8A04A');
+  ctx.fillText(name, x, y + 50);
+  if (dropped) {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('OUT', x, y + 61);
+  }
+  ctx.restore();
+}
+
+function drawHeatBar() {
+  ctx.save();
+  const bx = 30, by = 498, bw = W - 60, bh = 18, br = 9;
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.textAlign = 'left';
+  ctx.fillText('INTEREST', bx, by - 5);
+  const pct = heat / 100;
+  ctx.textAlign = 'right';
+  ctx.fillStyle = pct > 0.5 ? '#FFE066' : pct > 0.2 ? '#FF9F43' : '#E74C3C';
+  ctx.fillText(Math.ceil(heat) + '%', bx + bw, by - 5);
+  // Track
+  ctx.fillStyle = '#1a0d05';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, br); ctx.fill();
+  // Fill
+  if (heat > 0) {
+    const fillGrad = ctx.createLinearGradient(bx, 0, bx + bw * pct, 0);
+    fillGrad.addColorStop(0, '#8B2200');
+    fillGrad.addColorStop(0.5, '#FF9F43');
+    fillGrad.addColorStop(1, '#FFE066');
+    ctx.fillStyle = fillGrad;
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, br); ctx.clip();
+    ctx.fillRect(bx, by, bw * pct, bh);
+    ctx.restore();
+  }
+  ctx.strokeStyle = '#5a3a10';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, br); ctx.stroke();
+  ctx.restore();
+}
+
+function drawCurrentBid() {
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 36px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur = 8;
+  ctx.fillText('$' + currentBidPrice, ARENA_CX, ARENA_CY + 8);
+  if (lastBidderIdx >= 0 && buyers[lastBidderIdx]) {
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = '#C8A04A';
+    ctx.shadowBlur = 4;
+    ctx.fillText(buyers[lastBidderIdx].name + ' bid', ARENA_CX, ARENA_CY + 27);
+  }
+  ctx.restore();
+}
+
+function drawCallStatus() {
+  ctx.save();
+  const callText = callStage === 1 ? 'GOING ONCE...' : callStage === 2 ? 'GOING TWICE...' : '';
+  if (callText) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.roundRect(W / 2 - 115, 528, 230, 34, 10); ctx.fill();
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.fillStyle = '#FFE066';
+    ctx.textAlign = 'center';
+    ctx.fillText(callText, W / 2, 551);
+    const frac = Math.max(0, callTimer / CALL_WINDOW);
+    ctx.fillStyle = '#FFE066';
+    ctx.fillRect(W / 2 - 80, 570, 160 * frac, 3);
+  } else if (gameState === 'bidding') {
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#5a3a10';
+    ctx.textAlign = 'center';
+    ctx.fillText('TAP TO CALL GOING ONCE', W / 2, 550);
+  }
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(0, 0, W, 74);
+
+  // Lot number
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.textAlign = 'left';
+  ctx.fillText('LOT', 16, 22);
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText((currentLot + 1) + ' / ' + NUM_LOTS, 16, 48);
+
+  // Grade badge
+  const grade = lots[currentLot] ? lots[currentLot].grade : 'A';
+  const col = GRADE_COLOR[grade];
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.roundRect(W / 2 - 40, 16, 80, 34, 8); ctx.fill();
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'center';
+  ctx.fillText('GRADE ' + grade, W / 2, 38);
+
+  // Running total
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.textAlign = 'right';
+  ctx.fillText('TOTAL', W - 16, 22);
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('$' + totalScore, W - 16, 46);
+  ctx.restore();
+}
+
+function drawBidPopups() {
+  ctx.save();
+  bidPopups.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.alpha);
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillStyle = '#FFE066';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 4;
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawLotResult(sold) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  if (sold) {
+    const result = lotResults[lotResults.length - 1];
+    ctx.font = 'bold 44px Georgia, serif';
+    ctx.fillStyle = '#FFE066';
+    ctx.shadowColor = '#FF9F43';
+    ctx.shadowBlur = 22;
+    ctx.fillText('SOLD!', W / 2, 280);
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 32px Georgia, serif';
+    ctx.fillStyle = '#FFE066';
+    ctx.fillText('$' + result.price, W / 2, 330);
+    if (lastBidderIdx >= 0 && buyers[lastBidderIdx]) {
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = '#C8A04A';
+      ctx.fillText('to ' + buyers[lastBidderIdx].name, W / 2, 362);
+    }
+  } else {
+    ctx.font = 'bold 38px Georgia, serif';
+    ctx.fillStyle = '#E74C3C';
+    ctx.shadowColor = '#E74C3C';
+    ctx.shadowBlur = 16;
+    ctx.fillText('NO SALE', W / 2, 290);
+    ctx.shadowBlur = 0;
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = '#C8A04A';
+    ctx.fillText('Interest dried up', W / 2, 328);
+  }
+  ctx.restore();
+}
+
+function drawLotStart() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+  const lot = lots[currentLot];
+  if (!lot) { ctx.restore(); return; }
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('LOT ' + (currentLot + 1) + ' OF ' + NUM_LOTS, W / 2, 268);
+  ctx.fillStyle = GRADE_COLOR[lot.grade];
+  ctx.font = 'bold 48px Georgia, serif';
+  ctx.shadowColor = GRADE_COLOR[lot.grade];
+  ctx.shadowBlur = 16;
+  ctx.fillText('GRADE ' + lot.grade, W / 2, 326);
+  ctx.shadowBlur = 0;
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#8B6914';
+  ctx.fillText('Starting bid: $' + lot.basePrice, W / 2, 362);
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBackground();
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.18)';
+  for (let i = 0; i < 38; i++) {
+    const sx = (i * 137.5) % W;
+    const sy = (i * 97.3) % (H * 0.52);
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1 + (i % 3) * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Gavel silhouette
+  ctx.save();
+  ctx.translate(W / 2, 192);
+  ctx.rotate(-0.38);
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.roundRect(-7, -38, 14, 76, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-14, -52, 28, 24, 5); ctx.fill();
+  ctx.restore();
+  // Title
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 42px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = '#FF9F43';
+  ctx.shadowBlur = 20;
+  ctx.fillText('CATTLE', W / 2, 292);
+  ctx.fillText('AUCTION', W / 2, 342);
+  ctx.shadowBlur = 0;
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Read the room. Call the bid.', W / 2, 372);
+  const best = parseInt(localStorage.getItem('cattle-auction_best') || '0');
+  if (best > 0) {
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#8B6914';
+    ctx.fillText('Best: $' + best, W / 2, 400);
+  }
+  const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 420);
+  ctx.globalAlpha = pulse;
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('TAP TO START', W / 2, 454);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  drawBackground();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 34px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = '#FF9F43';
+  ctx.shadowBlur = 16;
+  ctx.fillText('GAVEL DOWN', W / 2, 112);
+  ctx.shadowBlur = 0;
+
+  ctx.font = 'bold 54px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('$' + totalScore, W / 2, 196);
+
+  const sold = lotResults.filter(r => r.sold).length;
+  ctx.font = '15px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText(sold + ' of ' + NUM_LOTS + ' lots sold', W / 2, 228);
+
+  const maxPossible = lots.reduce((s, l) => s + l.basePrice * 1.8, 0);
+  const pct = maxPossible > 0 ? totalScore / maxPossible : 0;
+  const rating = pct >= 0.70 ? 'Cattle Baron' : pct >= 0.45 ? 'Trail Boss' : 'Cowhand';
+  ctx.font = 'bold 24px Georgia, serif';
+  ctx.fillStyle = pct >= 0.70 ? '#FFE066' : pct >= 0.45 ? '#FF9F43' : '#C8A04A';
+  ctx.fillText(rating, W / 2, 268);
+
+  const best = parseInt(localStorage.getItem('cattle-auction_best') || '0');
+  if (totalScore > 0 && totalScore >= best) {
+    const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 360);
+    ctx.globalAlpha = pulse;
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillStyle = '#FFE066';
+    ctx.fillText('NEW RECORD!', W / 2, 300);
+    ctx.globalAlpha = 1;
+  }
+
+  // Lot results grid
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#5a3a10';
+  ctx.fillText('LOT RESULTS', W / 2, 326);
+  lotResults.forEach((r, i) => {
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    const lx = 30 + col * 76 + 38;
+    const ly = 344 + row * 24;
+    ctx.fillStyle = r.sold ? '#C8A04A' : '#444';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('L' + (i + 1) + ': ' + (r.sold ? '$' + r.price : 'NS'), lx, ly);
+  });
+
+  // Play Again button
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 80, 408, 160, 44, 10); ctx.fill();
+  ctx.font = 'bold 17px Georgia, serif';
+  ctx.fillStyle = '#1a0520';
+  ctx.fillText('PLAY AGAIN', W / 2, 436);
+
+  // Share button
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 70, 462, 140, 38, 10); ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('Share', W / 2, 486);
+
+  // Feedback button
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 70, 510, 140, 36, 10); ctx.fill();
+  ctx.strokeStyle = '#5a3a10';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Leave Feedback', W / 2, 533);
+  ctx.restore();
+}
+
+// === GAME LOOP ===
+let lastTime = 0;
+function loop(ts) {
+  const dt = Math.min((ts - lastTime) / 1000, 0.1);
+  lastTime = ts;
+  try {
+    if (gameState === 'title') {
+      drawTitle();
+      requestAnimationFrame(loop);
+      return;
+    }
+    if (gameState === 'gameover') {
+      drawGameOver();
+      requestAnimationFrame(loop);
+      return;
+    }
+    tickUpdate(dt);
+    drawBackground();
+    drawArena();
+    if (lots[currentLot]) drawCattle(lots[currentLot].grade);
+    buyers.forEach(drawBuyer);
+    drawCurrentBid();
+    drawHeatBar();
+    drawHUD();
+    drawBidPopups();
+    if (gameState === 'lot_start') {
+      drawLotStart();
+    } else if (gameState === 'calling' || gameState === 'bidding') {
+      drawCallStatus();
+    } else if (gameState === 'sold') {
+      drawLotResult(true);
+    } else if (gameState === 'no_sale') {
+      drawLotResult(false);
+    }
+  } catch (e) {
+    console.error('Game loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// === INPUT ===
+function onTap(x, y) {
+  if (gameState === 'title') { startGame(); return; }
+  if (gameState === 'gameover') {
+    if (y >= 408 && y <= 452 && x >= W / 2 - 80 && x <= W / 2 + 80) {
+      startGame(); return;
+    }
+    if (y >= 462 && y <= 500) {
+      if (navigator.share) navigator.share({ title: 'Cattle Auction', text: 'I earned $' + totalScore + ' at the Cattle Auction!' }).catch(() => {});
+      return;
+    }
+    if (y >= 510 && y <= 546) {
+      document.getElementById('fb-overlay').classList.add('active'); return;
+    }
+    return;
+  }
+  if (gameState === 'bidding' || gameState === 'calling') advanceCall();
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  onTap((e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  const t = e.touches[0];
+  onTap((t.clientX - rect.left) * sx, (t.clientY - rect.top) * sy);
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); onTap(W / 2, H / 2); }
+});
+
+// Feedback form
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const rating = document.getElementById('fb-rating').value;
+  const text = document.getElementById('fb-text').value.trim();
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game: 'Cattle Auction', rating: parseInt(rating), message: text }),
+  }).catch(() => {});
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+
+// Music
+if (MUSIC_SRC) {
+  const aud = new Audio(MUSIC_SRC);
+  aud.loop = true; aud.volume = 0.4;
+  document.addEventListener('click', () => aud.play().catch(() => {}), { once: true });
+}
+
+// === TEST EXPORTS ===
+window.__test = {
+  NUM_BUYERS, NUM_LOTS, HEAT_DECAY, HEAT_BID_BOOST, CALL_WINDOW,
+  LOT_START_DELAY, LOT_RESULT_DELAY, BUYER_DEFS, BID_INTERVALS,
+  FEEDBACK_ENDPOINT,
+  get phase() { return gameState; },
+  set phase(v) { gameState = v; },
+  get buyers() { return buyers; },
+  set buyers(v) { buyers = v; },
+  get lots() { return lots; },
+  set lots(v) { lots = v; },
+  get totalScore() { return totalScore; },
+  set totalScore(v) { totalScore = v; },
+  get currentLot() { return currentLot; },
+  set currentLot(v) { currentLot = v; },
+  get heat() { return heat; },
+  set heat(v) { heat = v; },
+  get currentBidPrice() { return currentBidPrice; },
+  set currentBidPrice(v) { currentBidPrice = v; },
+  get lastBidderIdx() { return lastBidderIdx; },
+  set lastBidderIdx(v) { lastBidderIdx = v; },
+  get callStage() { return callStage; },
+  set callStage(v) { callStage = v; },
+  get callTimer() { return callTimer; },
+  set callTimer(v) { callTimer = v; },
+  get lotResults() { return lotResults; },
+  startGame, initLots, initBuyers, setLotDesires, startLot,
+  placeBid, tryBuyerBid, advanceCall, sellLot, noSale,
+  tickUpdate, desireForGrade, lotIncrement, getActiveBuyerCount,
+  finishGame, advanceLot,
+};
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
