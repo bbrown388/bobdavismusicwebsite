@@ -93,30 +93,6 @@ body {
 }
 .product-img.fading { opacity: 0; }
 
-/* ── Thumbnails ───────────────────── */
-.product-thumbs {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-  flex-wrap: wrap;
-}
-.thumb {
-  width: 40px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 5px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  opacity: 0.55;
-  transition: opacity 0.15s, border-color 0.15s;
-  flex-shrink: 0;
-}
-.thumb:hover { opacity: 0.85; }
-.thumb.active {
-  border-color: #FFD700;
-  opacity: 1;
-}
-
 /* ── Product text ─────────────────── */
 .product-name {
   font-size: 15px;
@@ -467,7 +443,6 @@ async function loadProducts() {
           node {
             id title
             priceRange { minVariantPrice { amount currencyCode } }
-            images(first: 10) { edges { node { url altText } } }
             variants(first: 20) {
               edges {
                 node {
@@ -503,39 +478,16 @@ function renderProducts(products) {
 
 function buildCard(p) {
   const sid = safeId(p.id);
-  const images = p.images.edges.map(e => e.node);
   const variants = p.variants.edges.map(e => e.node);
   const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
   const multiVariant = variants.length > 1;
-
-  // Main image: first variant image if available, else first product image
   const firstVariant = variants[0];
-  const mainImg = (firstVariant?.image) || images[0] || null;
-
-  // Thumbnail strip: collect unique image URLs across product images + variant images
-  const seen = new Set();
-  const thumbs = [];
-  images.forEach(img => {
-    if (!seen.has(img.url)) { seen.add(img.url); thumbs.push(img); }
-  });
-  variants.forEach(v => {
-    if (v.image && !seen.has(v.image.url)) { seen.add(v.image.url); thumbs.push(v.image); }
-  });
+  const mainImg = firstVariant?.image || null;
 
   const mainImgHtml = mainImg
     ? `<img class="product-img" id="img-${sid}" src="${mainImg.url}" alt="${mainImg.altText || p.title}" loading="lazy">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
-
-  const thumbsHtml = thumbs.length > 1
-    ? `<div class="product-thumbs" id="thumbs-${sid}">
-        ${thumbs.map((t, i) => `
-          <img class="thumb${i === 0 ? ' active' : ''}"
-            src="${t.url}" alt="${t.altText || ''}"
-            onclick="selectThumb(this,'${sid}')">`
-        ).join('')}
-      </div>`
-    : '';
 
   const variantHtml = multiVariant
     ? `<div class="variant-label">Style</div>
@@ -552,18 +504,15 @@ function buildCard(p) {
        </div>`
     : '';
 
-  const currentVariant = firstVariant?.id || '';
-
   return `
     <div class="product-card">
       <div class="product-img-wrap">${mainImgHtml}</div>
-      ${thumbsHtml}
       <div class="product-name">${p.title}</div>
       <div class="product-price">${price}</div>
       ${variantHtml}
       <button class="add-btn" id="add-${sid}"
         data-sid="${sid}"
-        data-vid="${currentVariant}"
+        data-vid="${firstVariant?.id || ''}"
         onclick="handleAdd(this)"
         ${!available ? 'disabled' : ''}>
         ${available ? 'Add to Cart' : 'Sold Out'}
@@ -579,16 +528,9 @@ function selectVariant(btn, sid) {
   // Update add button's variant target
   document.getElementById(`add-${sid}`).dataset.vid = btn.dataset.vid;
 
-  // Swap main image if this variant has one
   if (btn.dataset.imgUrl) {
     swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
-    setActiveThumb(sid, btn.dataset.imgUrl);
   }
-}
-
-function selectThumb(thumb, sid) {
-  swapMainImage(sid, thumb.src, thumb.alt);
-  setActiveThumb(sid, thumb.src);
 }
 
 function swapMainImage(sid, url, alt) {
@@ -602,11 +544,6 @@ function swapMainImage(sid, url, alt) {
   }, 150);
 }
 
-function setActiveThumb(sid, url) {
-  document.querySelectorAll(`#thumbs-${sid} .thumb`).forEach(t => {
-    t.classList.toggle('active', t.src === url);
-  });
-}
 
 // ── Cart ──────────────────────────────────────────────────
 
