@@ -42,6 +42,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 32 | Barbed Wire | `barbed-wire.html` | Strategic tower defense / post-node wire-edge graph mechanic / MAX_CONN=2 constraint / ptSegDist collision / wire HP drain + repair / 5 wave escalation / first tower-defense in series | 2026-05-05 |
 | 33 | Cattle Auction | `cattle-auction.html` | Economic bidding simulation / 6-buyer behavioral AI (steady/cautious/bluffer/patient/selective/eager) / desire-per-grade scaling / going-once call mechanic / heat-bar urgency / 8 sequential lots / first economic simulation in series | 2026-05-05 |
 | 34 | Dust Devil Dance | `dust-devil-dance.html` | Generative music sandbox / draw paths for dust devils / pentatonic-scale oscillators / vibrato LFO per devil / landmark proximity detuning (mesa -850¢, waterhole vibrato x6, barn +1000¢) / resonance meter + sparks / 60s storm timer / first aesthetic win condition in series | 2026-05-05 |
+| 35 | Snake Canyon | `snake-canyon.html` | First-person dungeon-crawler maze / DFS procedural 11x7 level / audio-spatial rattlesnake (bandpass noise + LFO tremolo + StereoPannerNode) / loud/quiet footstep timing mechanic / BFS snake chase AI / perspective trapezoid FP renderer / first procedural level in series | 2026-05-05 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -86,6 +87,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Barbed Wire](retrospectives/32-barbed-wire.md) — session lessons, action items for Game 33
 - [Retrospective: Cattle Auction](retrospectives/33-cattle-auction.md) — session lessons, action items for Game 34
 - [Retrospective: Dust Devil Dance](retrospectives/34-dust-devil-dance.md) — session lessons, action items for Game 35
+- [Retrospective: Snake Canyon](retrospectives/35-snake-canyon.md) — session lessons, action items for Game 36
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
