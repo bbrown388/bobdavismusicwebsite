@@ -110,13 +110,14 @@ body {
 
 /* ── Variant buttons ──────────────── */
 .variant-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   width: 100%;
 }
 .variant-btn {
-  padding: 6px 10px;
+  width: 100%;
+  padding: 7px 12px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 6px;
@@ -126,12 +127,6 @@ body {
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
   text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.variant-btn:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
 }
 .variant-btn:hover:not(:disabled) {
   background: rgba(255,215,0,0.08);
