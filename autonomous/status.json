@@ -1,19 +1,12 @@
 {
-  "lastRunAt": "2026-05-05T09:34:14.449Z",
+  "lastRunAt": "2026-05-05T10:12:02.662Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 35: Snake Canyon - first-person procedural maze, DFS canyon generation, audio-spatial rattlesnake (stereo panning + distance attenuation), footstep timing mechanic, 26 tests pass.",
+  "lastRunSummary": "Built Game 36: Rodeo Queen - skill-chain combo, 3 events (barrel timing, lasso circular-drag, trick riding hold/release), shared crowd energy, 5x multiplier, 37 tests pass.",
   "currentTask": null,
-  "gamesBuilt": 35,
-  "lastGameTitle": "Snake Canyon",
-  "lastGameFile": "snake-canyon.html",
+  "gamesBuilt": 36,
+  "lastGameTitle": "Rodeo Queen",
+  "lastGameFile": "rodeo-queen.html",
   "gameQueue": [
-    {
-      "num": 36,
-      "title": "Rodeo Queen",
-      "concept": "Skill-chain combo game: player performs barrel racing, roping, and trick riding events in sequence. Each event uses a different gesture pattern; chaining events without errors builds a multiplier. Live crowd-energy meter rises and falls based on combo streaks. First combo-chain structure in the series.",
-      "raisesBarOn": "First multi-discipline skill-chain structure in series, deepest combo/streak system since Pony Express, first game with distinct sub-game phases sharing a single energy meter",
-      "status": "planned"
-    },
     {
       "num": 37,
       "title": "Tumbledown Town",
@@ -27,17 +20,16 @@
       "concept": "First racing game in the series: top-down oval circuit, 3 AI rivals with rubber-band difficulty scaling, slipstream mechanic (draft behind leading car for speed boost), dust cloud visibility penalty when off-line. 5 laps, position-based scoring. First racing/driving mechanic in the series.",
       "raisesBarOn": "First real-time racing AI in series, first positional-scoring loop structure (not survival or accumulation), first slipstream/draft mechanic",
       "status": "planned"
+    },
+    {
+      "num": 39,
+      "title": "Last Rope Standing",
+      "concept": "Grappling hook survival: the last outlaw standing swings between fence posts on a rope lasso as floodwaters rise. Tap to latch onto the nearest post, pendulum-swing to gain height, release to fly to the next anchor point. Miss an anchor and you drop. First grapple-physics mechanic in the series.",
+      "raisesBarOn": "First pendulum-swing grapple physics in series, first vertical survival structure with rising threat, first game where spatial awareness and swing momentum are the primary skills",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-02T03:52:45Z",
-      "action": "new_game",
-      "game": "Rope Trick",
-      "result": "success",
-      "summary": "Built Game 17: Rope Trick - oscillating aim cursor, parabolic arc, wind drift, 5 rounds, 40 tests pass.",
-      "commitHash": "e0cf5fb"
-    },
     {
       "runAt": "2026-05-02T09:00:00Z",
       "action": "new_game",
@@ -189,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 35: Snake Canyon - first-person procedural maze, DFS canyon generation, audio-spatial rattlesnake, footstep timing mechanic, 26 tests pass.",
       "commitHash": "4cc2d03"
+    },
+    {
+      "runAt": "2026-05-05T10:12:02.662Z",
+      "action": "new_game",
+      "game": "Rodeo Queen",
+      "result": "success",
+      "summary": "Built Game 36: Rodeo Queen - skill-chain combo, 3 distinct events, 5x multiplier, 37 tests pass.",
+      "commitHash": "64c16c0"
     }
   ]
 }
