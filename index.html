@@ -182,6 +182,21 @@ section {
   gap: 12px;
 }
 
+.game-cards .game-card:nth-child(n+4) { display: none; }
+
+.all-games-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 13px;
+  color: #907860;
+  text-decoration: none;
+  letter-spacing: 1px;
+  font-style: italic;
+  transition: color 0.15s;
+}
+.all-games-link:hover { color: #FFD700; }
+
 .game-card {
   background: rgba(255,255,255,0.03);
   border: 1px solid rgba(255,215,0,0.15);
@@ -618,6 +633,7 @@ footer {
     </a>
 
   </div>
+  <a class="all-games-link" href="games.html">View all 36 games &#8594;</a>
 </section>
 
 <footer>

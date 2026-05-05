@@ -90,7 +90,7 @@ Read that output and act on it per the instructions below.
 8. Run tests — fix all failures before proceeding
    **→ Status checkpoint:** after all tests pass, run:
    `node autonomous/update-status.js "{\"currentTask\":{\"action\":\"new_game\",\"context\":\"Game NN: Title — tests passing, committing\"},\"lastRunSummary\":\"Game NN tests pass\"}"`
-9. Add a game card to `index.html` (above the previous newest game)
+9. Add a game card to **both** `index.html` and `games.html` (above the previous newest game in each file). `index.html` uses CSS to show only the 3 most recent — adding at the top is still required so the newest game is always visible. Also update the "View all N games" link text in `index.html` to reflect the new total count.
 10. Commit: `git commit -m "feat: add Game NN <Title> — <one-line description>"`
 11. Push
 12. Write retrospective to `docs/game-dev-knowledge/retrospectives/NN-<slug>.md`
