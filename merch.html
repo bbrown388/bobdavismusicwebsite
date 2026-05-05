@@ -109,13 +109,6 @@ body {
 }
 
 /* ── Variant buttons ──────────────── */
-.variant-label {
-  font-size: 10px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #555;
-  width: 100%;
-}
 .variant-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -165,7 +158,7 @@ body {
   text-transform: uppercase;
   cursor: pointer;
   transition: background 0.15s, filter 0.15s;
-  margin-top: 4px;
+  margin-top: auto;
 }
 .add-btn:hover:not(:disabled) {
   background: rgba(255,215,0,0.18);
@@ -490,8 +483,7 @@ function buildCard(p) {
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
   const variantHtml = multiVariant
-    ? `<div class="variant-label">Style</div>
-       <div class="variant-buttons" id="vbtns-${sid}">
+    ? `<div class="variant-buttons" id="vbtns-${sid}">
          ${variants.map((v, i) => `
            <button class="variant-btn${i === 0 ? ' active' : ''}"
              data-vid="${v.id}"
@@ -679,7 +671,21 @@ function closeCart() {
   document.getElementById('cart-overlay').classList.remove('visible');
 }
 
+async function restoreCart() {
+  if (!cartId) return;
+  try {
+    const data = await shopify(`
+      query($id: ID!) { cart(id: $id) { ${CART_FIELDS} } }
+    `, { id: cartId });
+    if (data.cart) updateCartUI(data.cart);
+    else { cartId = null; localStorage.removeItem('bd_cart_id'); }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 loadProducts();
+restoreCart();
 </script>
 </body>
 </html>
