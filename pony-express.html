@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Pony Express</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100dvh; overflow:hidden; touch-action:none; }
+canvas { display:block; image-rendering:crisp-edges; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>'use strict';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = s * W + 'px'; canvas.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize); resize();
+
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    const rr = Math.min(r, w/2, h/2);
+    this.moveTo(x+rr, y); this.arcTo(x+w,y,x+w,y+h,rr);
+    this.arcTo(x+w,y+h,x,y+h,rr); this.arcTo(x,y+h,x,y,rr);
+    this.arcTo(x,y,x+w,y,rr); this.closePath();
+  };
+}
+
+// ===== AUDIO =====
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+
+function playHoof() {
+  try {
+    const len = AC.sampleRate * 0.09;
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.exp(-i/(len*0.1));
+    const src = AC.createBufferSource(), g = AC.createGain(), f = AC.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 160;
+    src.buffer = buf; src.connect(f); f.connect(g); g.connect(AC.destination);
+    g.gain.value = 0.38; src.start(AC.currentTime);
+  } catch(e) {}
+}
+
+function playBeatCue() {
+  try {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sine'; o.connect(g); g.connect(AC.destination);
+    o.frequency.value = 330;
+    g.gain.setValueAtTime(0.08, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.04);
+    o.start(AC.currentTime); o.stop(AC.currentTime + 0.04);
+  } catch(e) {}
+}
+
+function playPerfect() {
+  try {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'triangle'; o.connect(g); g.connect(AC.destination);
+    o.frequency.setValueAtTime(660, AC.currentTime);
+    o.frequency.setValueAtTime(880, AC.currentTime + 0.06);
+    g.gain.setValueAtTime(0.22, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.22);
+    o.start(AC.currentTime); o.stop(AC.currentTime + 0.22);
+  } catch(e) {}
+}
+
+function playGood() {
+  try {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'triangle'; o.connect(g); g.connect(AC.destination);
+    o.frequency.value = 550;
+    g.gain.setValueAtTime(0.16, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.14);
+    o.start(AC.currentTime); o.stop(AC.currentTime + 0.14);
+  } catch(e) {}
+}
+
+function playMiss() {
+  try {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sawtooth'; o.connect(g); g.connect(AC.destination);
+    o.frequency.setValueAtTime(200, AC.currentTime);
+    o.frequency.exponentialRampToValueAtTime(80, AC.currentTime + 0.18);
+    g.gain.setValueAtTime(0.16, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.18);
+    o.start(AC.currentTime); o.stop(AC.currentTime + 0.18);
+  } catch(e) {}
+}
+
+function playWin() {
+  try {
+    [440, 550, 660, 880].forEach((f, i) => {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = 'triangle'; o.connect(g); g.connect(AC.destination);
+      o.frequency.value = f;
+      const t = AC.currentTime + i * 0.13;
+      g.gain.setValueAtTime(0.2, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+      o.start(t); o.stop(t + 0.38);
+    });
+  } catch(e) {}
+}
+
+// ===== CONSTANTS =====
+// 5 terrain sections. pattern = array of 16th-note positions (0..15) that should fire per bar.
+const SECTIONS = [
+  { name: 'TROT',    bpm: 72,  pattern: [0, 4, 8, 12],                  label: 'Keep the steady beat' },
+  { name: 'CANTER',  bpm: 90,  pattern: [0, 3, 6, 9, 12, 15],          label: 'Three-beat canter rhythm' },
+  { name: 'GALLOP',  bpm: 110, pattern: [0, 2, 4, 6, 8, 10, 12, 14],   label: 'Full gallop -- stay on beat!' },
+  { name: 'SPRINT',  bpm: 130, pattern: [0, 2, 3, 5, 7, 8, 10, 12, 14],label: 'Syncopated sprint rhythm' },
+  { name: 'FINALE',  bpm: 150, pattern: [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15], label: 'Ride like the wind!' },
+];
+const BARS_PER_SECTION = 3;  // full pattern loops per section
+const HIT_X = 78;            // x of the tap target on the beat rail
+const RAIL_Y = 492;          // center y of beat rail strip
+const RAIL_H = 56;
+const PERFECT_WIN = 0.07;    // seconds half-window for PERFECT
+const GOOD_WIN    = 0.16;    // seconds half-window for GOOD
+const RAIL_SPEED_BASE = 175; // px/s at speed=1.0
+
+// ===== STATE =====
+let phase = 'title'; // 'title' | 'playing' | 'win'
+let score = 0;
+let streak = 0;
+let bestStreak = 0;
+let sectionIdx = 0;
+let sectionProgress = 0; // 0..1
+let speed = 1.0;         // 0.4..1.5
+let sync = 1.0;          // 0..1 quality meter
+let beats = [];          // {x, hit, missed, flash, flashColor}
+let subDiv = 0;          // current 16th-note index within bar (0..15)
+let barCount = 0;        // bars completed this section
+let beatTimer = 0;       // time until next subdivision fires
+let beatInterval = 0;    // seconds per 16th note
+let popups = [];         // {text, color, x, y, life}
+let legPhase = 0;
+let bgScroll = 0;
+let cactiArr = [];
+let sectionScores = [0, 0, 0, 0, 0];
+let tapFlash = 0;
+let missFlash = 0;
+let sectionEndTimer = 0; // pause before advancing section
+let sectionLabelTimer = 0;
+let totalScore = 0;
+let feedbackSent = false;
+let bestScore = 0;
+
+function seededRand(seed) {
+  let s = seed | 0;
+  return function() { s = (Math.imul(1664525, s) + 1013904223) | 0; return (s >>> 0) / 0xFFFFFFFF; };
+}
+
+function getBest() {
+  try { return parseInt(localStorage.getItem('pony_express_best') || '0'); } catch { return 0; }
+}
+function saveBest(v) { try { localStorage.setItem('pony_express_best', v); } catch {} }
+
+function startGame() {
+  phase = 'playing';
+  score = 0; streak = 0; bestStreak = 0;
+  sectionIdx = 0; sectionProgress = 0;
+  speed = 1.0; sync = 1.0;
+  beats = []; popups = [];
+  sectionScores = [0, 0, 0, 0, 0];
+  tapFlash = 0; missFlash = 0;
+  sectionEndTimer = 0; sectionLabelTimer = 0;
+  legPhase = 0; bgScroll = 0;
+  totalScore = 0; feedbackSent = false;
+  bestScore = getBest();
+  initSection(0);
+}
+
+function initSection(idx) {
+  const sec = SECTIONS[idx];
+  beatInterval = 60 / (sec.bpm * 4); // seconds per 16th note
+  subDiv = 0; barCount = 0;
+  beatTimer = 0; // fire first subdivision immediately
+  beats = [];
+  sectionLabelTimer = 2.2;
+  const rng = seededRand(idx * 9973 + 31337);
+  cactiArr = [];
+  for (let i = 0; i < 7; i++) {
+    cactiArr.push({ relX: i / 7 + rng() * 0.08, h: 22 + rng() * 28 });
+  }
+}
+
+function spawnBeat() {
+  beats.push({ x: W + 18, hit: false, missed: false, flash: 0, flashColor: '#FFE066' });
+}
+
+function addPopup(text, color, x, y) {
+  popups.push({ text, color, x, y, life: 1.0 });
+}
+
+function resolveHit(b) {
+  // Pixel distance from hit zone -> time error via rail speed
+  const railSpeed = speed * RAIL_SPEED_BASE;
+  const timeErr = Math.abs(b.x - HIT_X) / railSpeed;
+  return timeErr;
+}
+
+function onTap() {
+  if (phase !== 'playing') return;
+  if (AC.state === 'suspended') AC.resume();
+  tapFlash = 0.28;
+
+  // Find nearest unhit beat to hit zone
+  let best = null, bestDist = Infinity;
+  for (const b of beats) {
+    if (b.hit || b.missed) continue;
+    const d = Math.abs(b.x - HIT_X);
+    if (d < bestDist) { bestDist = d; best = b; }
+  }
+
+  const railSpeed = speed * RAIL_SPEED_BASE;
+  const timeErr = best ? bestDist / railSpeed : Infinity;
+
+  if (best && timeErr <= GOOD_WIN) {
+    best.hit = true;
+    if (timeErr <= PERFECT_WIN) {
+      const pts = 100 * (1 + Math.floor(streak / 5));
+      score += pts; sectionScores[sectionIdx] += pts;
+      streak++; if (streak > bestStreak) bestStreak = streak;
+      sync = Math.min(1, sync + 0.12);
+      speed = Math.min(1.5, speed + 0.045);
+      best.flash = 0.55; best.flashColor = '#FFE066';
+      addPopup('PERFECT', '#FFE066', HIT_X, RAIL_Y - 28);
+      playPerfect();
+    } else {
+      score += 50; sectionScores[sectionIdx] += 50;
+      streak++; if (streak > bestStreak) bestStreak = streak;
+      sync = Math.min(1, sync + 0.06);
+      speed = Math.min(1.5, speed + 0.02);
+      best.flash = 0.4; best.flashColor = '#FF9F43';
+      addPopup('GOOD', '#FF9F43', HIT_X, RAIL_Y - 28);
+      playGood();
+    }
+  } else {
+    // Tap with no nearby beat
+    streak = 0;
+    sync = Math.max(0, sync - 0.08);
+    speed = Math.max(0.4, speed - 0.03);
+    missFlash = 0.32;
+    addPopup('EARLY', '#E74C3C', HIT_X, RAIL_Y - 28);
+    playMiss();
+  }
+}
+
+function update(dt) {
+  if (phase !== 'playing') return;
+
+  if (sectionLabelTimer > 0) sectionLabelTimer = Math.max(0, sectionLabelTimer - dt);
+
+  // Section end transition
+  if (sectionEndTimer > 0) {
+    sectionEndTimer -= dt;
+    if (sectionEndTimer <= 0) {
+      sectionIdx++;
+      if (sectionIdx >= SECTIONS.length) {
+        phase = 'win';
+        totalScore = score;
+        if (score > getBest()) saveBest(score);
+        bestScore = getBest();
+        playWin();
+        return;
+      }
+      initSection(sectionIdx);
+      addPopup('SECTION ' + (sectionIdx + 1) + '!', '#FF9F43', W / 2, 320);
+    }
+    sectionProgress = 1;
+    return;
+  }
+
+  // Beat timer: advance 16th-note grid
+  beatTimer -= dt;
+  while (beatTimer <= 0) {
+    const pat = SECTIONS[sectionIdx].pattern;
+    if (barCount < BARS_PER_SECTION && pat.includes(subDiv)) {
+      spawnBeat();
+      playBeatCue();
+    }
+    subDiv++;
+    if (subDiv >= 16) {
+      subDiv = 0;
+      barCount++;
+      if (barCount >= BARS_PER_SECTION && sectionEndTimer <= 0) {
+        sectionEndTimer = 0.75;
+      }
+    }
+    beatTimer += beatInterval;
+  }
+
+  // Section progress: fraction of total beats scheduled
+  const totalSubDivs = BARS_PER_SECTION * 16;
+  const completedSubDivs = barCount * 16 + subDiv;
+  sectionProgress = Math.min(1, completedSubDivs / totalSubDivs);
+
+  // Scroll beats left
+  const railSpeed = speed * RAIL_SPEED_BASE;
+  for (const b of beats) {
+    b.x -= railSpeed * dt;
+    b.flash = Math.max(0, b.flash - dt * 2.2);
+    if (!b.hit && !b.missed && b.x < HIT_X - 28) {
+      b.missed = true;
+      streak = 0;
+      sync = Math.max(0, sync - 0.11);
+      speed = Math.max(0.4, speed - 0.05);
+      missFlash = 0.35;
+      addPopup('MISS', '#E74C3C', HIT_X, RAIL_Y - 28);
+      playMiss();
+    }
+  }
+  beats = beats.filter(b => b.x > -35);
+
+  legPhase += dt * speed * 9;
+  bgScroll -= dt * speed * 55;
+  sync = Math.max(0.05, sync - dt * 0.008);
+  tapFlash = Math.max(0, tapFlash - dt * 3.5);
+  missFlash = Math.max(0, missFlash - dt * 3.5);
+  for (const p of popups) p.life -= dt * 1.3;
+  popups = popups.filter(p => p.life > 0);
+}
+
+// ===== DRAW =====
+
+function drawBg() {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.54);
+  sky.addColorStop(0, '#050208'); sky.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,200,0.75)';
+  for (let i = 0; i < 38; i++) {
+    ctx.fillRect((i * 137 + 17) % W, (i * 211 + 43) % Math.floor(H * 0.38), 1.3, 1.3);
+  }
+
+  // Crescent moon
+  ctx.save();
+  ctx.fillStyle = '#FFE066'; ctx.shadowColor = 'rgba(255,220,100,0.4)'; ctx.shadowBlur = 20;
+  ctx.beginPath(); ctx.arc(308, 58, 21, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#050208'; ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(298, 50, 17, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Distant hills (parallax 0.25x)
+  const hOff = ((bgScroll * 0.25) % 300 + 300) % 300;
+  ctx.fillStyle = '#120838';
+  for (let i = -1; i < 3; i++) {
+    const hx = i * 300 + hOff;
+    ctx.beginPath();
+    ctx.moveTo(hx, H * 0.52);
+    ctx.bezierCurveTo(hx + 50, H * 0.36, hx + 120, H * 0.34, hx + 150, H * 0.44);
+    ctx.bezierCurveTo(hx + 200, H * 0.55, hx + 260, H * 0.38, hx + 300, H * 0.52);
+    ctx.lineTo(hx + 300, H * 0.56); ctx.lineTo(hx, H * 0.56);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Ground
+  const gnd = ctx.createLinearGradient(0, H * 0.52, 0, H * 0.72);
+  gnd.addColorStop(0, '#3a1f05'); gnd.addColorStop(1, '#2a1500');
+  ctx.fillStyle = gnd; ctx.fillRect(0, H * 0.52, W, H * 0.5);
+
+  // Ground line
+  ctx.fillStyle = '#4a2808'; ctx.fillRect(0, H * 0.52, W, 3);
+
+  // Dust trail behind horse
+  for (let i = 0; i < 5; i++) {
+    const dx = 58 - i * 20;
+    const a = (0.18 - i * 0.032) * speed;
+    ctx.fillStyle = `rgba(200,160,74,${Math.max(0, a)})`;
+    ctx.beginPath(); ctx.ellipse(dx, H * 0.56 + i, 16 + i * 5, 4 + i * 2, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawCacti() {
+  ctx.save();
+  ctx.fillStyle = '#1a0520';
+  const groundY = H * 0.52;
+  // Cacti positions scroll at 0.8x bgScroll
+  for (const c of cactiArr) {
+    const rawX = c.relX * (W + 400) + ((bgScroll * 0.8) % (W + 400) + (W + 400)) % (W + 400) - 200;
+    const cx = ((rawX % (W + 300)) + (W + 300)) % (W + 300) - 40;
+    if (cx < -20 || cx > W + 10) continue;
+    const ch = c.h;
+    ctx.fillRect(cx - 4, groundY - ch, 8, ch);
+    // Left arm
+    ctx.fillRect(cx - 16, groundY - ch * 0.58, 12, 5);
+    ctx.fillRect(cx - 16, groundY - ch * 0.58 - 13, 4, 14);
+    // Right arm
+    ctx.fillRect(cx + 4, groundY - ch * 0.68, 12, 5);
+    ctx.fillRect(cx + 12, groundY - ch * 0.68 - 10, 4, 12);
+  }
+  ctx.restore();
+}
+
+function drawHorse() {
+  ctx.save();
+  const hx = 92, hy = H * 0.52;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(20,5,30,0.42)';
+  ctx.beginPath(); ctx.ellipse(hx, hy + 3, 30, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#1a0520';
+  ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 6;
+
+  // Body
+  ctx.beginPath(); ctx.ellipse(hx, hy - 27, 29, 15, -0.1, 0, Math.PI * 2); ctx.fill();
+
+  // Neck
+  ctx.beginPath();
+  ctx.moveTo(hx + 16, hy - 37);
+  ctx.quadraticCurveTo(hx + 30, hy - 50, hx + 24, hy - 62);
+  ctx.lineTo(hx + 14, hy - 60);
+  ctx.quadraticCurveTo(hx + 20, hy - 50, hx + 6, hy - 37);
+  ctx.closePath(); ctx.fill();
+
+  // Head
+  ctx.beginPath(); ctx.ellipse(hx + 21, hy - 67, 11, 8, 0.55, 0, Math.PI * 2); ctx.fill();
+
+  // Nostril
+  ctx.fillStyle = '#2a1535';
+  ctx.beginPath(); ctx.arc(hx + 28, hy - 64, 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a0520';
+
+  // Mane
+  ctx.fillStyle = '#2a0f30';
+  ctx.beginPath();
+  ctx.moveTo(hx + 12, hy - 62); ctx.quadraticCurveTo(hx + 7, hy - 54, hx + 9, hy - 44);
+  ctx.lineTo(hx + 16, hy - 44); ctx.quadraticCurveTo(hx + 14, hy - 54, hx + 20, hy - 62);
+  ctx.closePath(); ctx.fill();
+
+  // Tail
+  ctx.beginPath();
+  ctx.moveTo(hx - 28, hy - 33); ctx.quadraticCurveTo(hx - 46, hy - 20, hx - 44, hy - 5);
+  ctx.lineTo(hx - 39, hy - 7); ctx.quadraticCurveTo(hx - 41, hy - 20, hx - 24, hy - 33);
+  ctx.closePath(); ctx.fill();
+
+  // Four legs (gallop animation)
+  ctx.fillStyle = '#1a0520';
+  const legOffsets = [
+    { bx: hx - 19, phase: 0 },
+    { bx: hx - 7,  phase: Math.PI * 0.75 },
+    { bx: hx + 5,  phase: Math.PI },
+    { bx: hx + 17, phase: Math.PI * 1.75 },
+  ];
+  for (const lg of legOffsets) {
+    const swing = Math.sin(legPhase + lg.phase) * 10;
+    ctx.fillRect(lg.bx - 3, hy - 12, 6, 15);
+    // Hoof
+    ctx.beginPath(); ctx.ellipse(lg.bx + swing * 0.35, hy + 4 + Math.abs(swing) * 0.2, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Rider
+  ctx.fillStyle = '#1a0520'; ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.ellipse(hx + 5, hy - 52, 8, 11, -0.18, 0, Math.PI * 2); ctx.fill(); // torso
+  ctx.beginPath(); ctx.arc(hx + 7, hy - 67, 7, 0, Math.PI * 2); ctx.fill(); // head
+  ctx.fillRect(hx - 2, hy - 74, 19, 3); // hat brim
+  ctx.fillRect(hx + 1, hy - 85, 12, 13); // hat crown
+
+  ctx.restore();
+}
+
+function drawBeatRail() {
+  ctx.save();
+
+  // Rail background
+  const rg = ctx.createLinearGradient(0, RAIL_Y - RAIL_H / 2, 0, RAIL_Y + RAIL_H / 2);
+  rg.addColorStop(0, 'rgba(10,4,28,0.92)');
+  rg.addColorStop(0.5, 'rgba(30,10,40,0.96)');
+  rg.addColorStop(1, 'rgba(10,4,28,0.92)');
+  ctx.fillStyle = rg;
+  ctx.fillRect(0, RAIL_Y - RAIL_H / 2, W, RAIL_H);
+
+  // Center guide line
+  ctx.strokeStyle = 'rgba(200,160,74,0.2)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath(); ctx.moveTo(HIT_X + 22, RAIL_Y); ctx.lineTo(W, RAIL_Y); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Hit zone ring
+  ctx.save();
+  const ringAlpha = 0.45 + tapFlash * 0.55;
+  const ringColor = missFlash > 0
+    ? `rgba(231,76,60,${Math.min(1, 0.45 + missFlash * 0.55)})`
+    : `rgba(255,224,102,${ringAlpha})`;
+  if (tapFlash > 0) { ctx.shadowColor = 'rgba(255,224,102,0.9)'; ctx.shadowBlur = 18 * tapFlash; }
+  ctx.strokeStyle = ringColor; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(HIT_X, RAIL_Y, 16, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = ringColor.replace(/[\d.]+\)$/, `${(tapFlash * 0.5).toFixed(2)})`);
+  ctx.beginPath(); ctx.arc(HIT_X, RAIL_Y, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Beat circles
+  for (const b of beats) {
+    if (b.x < 8) continue;
+    ctx.save();
+    const dist = Math.max(0, b.x - HIT_X);
+    const prox = Math.max(0, 1 - dist / 90);
+    if (b.hit) {
+      ctx.fillStyle = `rgba(255,224,102,${Math.max(0, b.flash)})`;
+      if (b.flash > 0) { ctx.shadowColor = b.flashColor; ctx.shadowBlur = 20 * b.flash; }
+    } else if (b.missed) {
+      ctx.fillStyle = 'rgba(231,76,60,0.28)';
+    } else {
+      ctx.fillStyle = `rgba(255,224,102,${0.28 + prox * 0.65})`;
+      if (prox > 0.55) { ctx.shadowColor = 'rgba(255,220,100,0.7)'; ctx.shadowBlur = 14 * prox; }
+    }
+    ctx.beginPath(); ctx.arc(b.x, RAIL_Y, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Rail label
+  ctx.fillStyle = 'rgba(200,160,74,0.5)';
+  ctx.font = '9px Georgia, serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('TAP THE BEAT', HIT_X + 26, RAIL_Y - 18);
+
+  ctx.restore();
+}
+
+function drawSyncMeter() {
+  ctx.save();
+  const mx = 20, my = H - 40, mw = W - 40, mh = 13;
+
+  ctx.fillStyle = 'rgba(10,4,28,0.8)';
+  ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 6); ctx.fill();
+
+  if (sync > 0) {
+    const fw = mw * sync;
+    const fg = ctx.createLinearGradient(mx, 0, mx + fw, 0);
+    fg.addColorStop(0, '#C8A04A'); fg.addColorStop(0.6, '#FFD700'); fg.addColorStop(1, '#FF9F43');
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.roundRect(mx, my, fw, mh, 6); ctx.fill();
+  }
+
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(200,160,74,0.55)'; ctx.font = '9px Georgia, serif';
+  ctx.textAlign = 'left'; ctx.fillText('SYNC', mx, my - 8);
+  ctx.textAlign = 'right';
+  const lbl = sync >= 0.75 ? 'ON FIRE' : sync >= 0.45 ? 'STEADY' : 'LOSING IT';
+  ctx.fillStyle = sync >= 0.75 ? '#FF9F43' : sync >= 0.45 ? '#C8A04A' : '#E74C3C';
+  ctx.fillText(lbl, mx + mw, my - 8);
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  // Score
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 22px Georgia, serif';
+  ctx.shadowColor = 'rgba(255,224,102,0.55)'; ctx.shadowBlur = 10;
+  ctx.fillText(score, W / 2, 24); ctx.shadowBlur = 0;
+
+  // Streak badge
+  if (streak > 0) {
+    ctx.textAlign = 'right'; ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillText('x' + streak, W - 16, 24);
+  }
+
+  // Section dots
+  const dotGap = 16;
+  const dotRow = W / 2 - (SECTIONS.length - 1) * dotGap / 2;
+  for (let i = 0; i < SECTIONS.length; i++) {
+    const dx = dotRow + i * dotGap;
+    if (i < sectionIdx) {
+      ctx.fillStyle = '#C8A04A';
+    } else if (i === sectionIdx) {
+      ctx.fillStyle = '#FFE066'; ctx.shadowColor = 'rgba(255,224,102,0.6)'; ctx.shadowBlur = 9;
+    } else {
+      ctx.fillStyle = 'rgba(80,50,10,0.45)';
+    }
+    ctx.textAlign = 'center';
+    ctx.beginPath(); ctx.arc(dx, 48, i === sectionIdx ? 5.5 : 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Section name + label
+  const sec = SECTIONS[Math.min(sectionIdx, SECTIONS.length - 1)];
+  const nameAlpha = sectionLabelTimer > 1.6 ? 1 : sectionLabelTimer > 0 ? sectionLabelTimer / 1.6 : 0.4;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = `rgba(200,160,74,${nameAlpha})`; ctx.font = 'bold 13px Georgia, serif';
+  ctx.fillText(sec.name, W / 2, 68);
+  if (sectionLabelTimer > 0) {
+    ctx.fillStyle = `rgba(140,100,40,${nameAlpha * 0.75})`; ctx.font = '11px Georgia, serif';
+    ctx.fillText(sec.label, W / 2, 86);
+  }
+
+  // Section progress bar
+  const pbx = 20, pby = 100, pbw = W - 40, pbh = 5;
+  ctx.fillStyle = 'rgba(42,21,0,0.65)';
+  ctx.beginPath(); ctx.roundRect(pbx, pby, pbw, pbh, 2); ctx.fill();
+  if (sectionProgress > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.beginPath(); ctx.roundRect(pbx, pby, pbw * sectionProgress, pbh, 2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const p of popups) {
+    const a = Math.min(1, p.life * 1.6);
+    const rise = (1 - Math.min(1, p.life)) * 44;
+    let fc = p.color;
+    if (fc.startsWith('#')) {
+      const r = parseInt(fc.slice(1,3),16), g2 = parseInt(fc.slice(3,5),16), b = parseInt(fc.slice(5,7),16);
+      fc = `rgba(${r},${g2},${b},${a})`;
+    }
+    ctx.fillStyle = fc; ctx.font = 'bold 17px Georgia, serif';
+    ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 5;
+    ctx.fillText(p.text, p.x, p.y - rise);
+  }
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#050208'); sky.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(255,255,200,0.7)';
+  for (let i = 0; i < 40; i++) ctx.fillRect((i*137+17)%W, (i*211+43)%(H*0.48), 1.3, 1.3);
+
+  ctx.fillStyle = '#FFE066'; ctx.shadowColor = 'rgba(255,220,100,0.4)'; ctx.shadowBlur = 22;
+  ctx.beginPath(); ctx.arc(310, 62, 22, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#050208'; ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(299, 53, 18, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#2a1500'; ctx.fillRect(0, H*0.62, W, H*0.38);
+  ctx.fillStyle = '#3a1f05'; ctx.fillRect(0, H*0.62, W, 7);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFE066'; ctx.shadowColor = 'rgba(255,224,102,0.65)'; ctx.shadowBlur = 26;
+  ctx.font = 'bold 52px Georgia, serif'; ctx.fillText('PONY', W/2, 210);
+  ctx.font = 'bold 42px Georgia, serif'; ctx.fillText('EXPRESS', W/2, 265);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = '15px Georgia, serif';
+  ctx.fillText('Ride the rhythm across 5 terrains', W/2, 308);
+  ctx.fillStyle = 'rgba(200,160,74,0.65)'; ctx.font = '13px Georgia, serif';
+  ctx.fillText('TAP when the beat hits the circle', W/2, 348);
+  ctx.fillText('Stay in sync -- ride faster!', W/2, 368);
+
+  const best = getBest();
+  if (best > 0) { ctx.fillStyle = '#6a4410'; ctx.font = '14px Georgia, serif'; ctx.fillText('BEST: ' + best, W/2, 396); }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.roundRect(W/2-86, 428, 172, 52, 26); ctx.fill();
+  ctx.fillStyle = '#1a0d05'; ctx.font = 'bold 22px Georgia, serif'; ctx.shadowBlur = 0;
+  ctx.fillText('RIDE OUT', W/2, 454);
+  ctx.restore();
+}
+
+function drawWin() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.88)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = '#FFE066'; ctx.shadowColor = 'rgba(255,224,102,0.6)'; ctx.shadowBlur = 22;
+  ctx.font = 'bold 36px Georgia, serif'; ctx.fillText('DELIVERY', W/2, 178);
+  ctx.fillText('COMPLETE!', W/2, 222);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = '24px Georgia, serif';
+  ctx.fillText('SCORE: ' + totalScore, W/2, 272);
+
+  if (totalScore > 0 && totalScore >= bestScore) {
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 18px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W/2, 308);
+  } else if (bestScore > 0) {
+    ctx.fillStyle = '#6a4410'; ctx.font = '14px Georgia, serif';
+    ctx.fillText('BEST: ' + bestScore, W/2, 308);
+  }
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('BEST STREAK: x' + bestStreak, W/2, 338);
+
+  ctx.fillStyle = 'rgba(200,160,74,0.55)'; ctx.font = '11px Georgia, serif';
+  for (let i = 0; i < SECTIONS.length; i++) {
+    ctx.fillText(SECTIONS[i].name + ': ' + sectionScores[i], W/2, 362 + i * 17);
+  }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.roundRect(W/2-84, 490, 168, 50, 25); ctx.fill();
+  ctx.fillStyle = '#1a0d05'; ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('RIDE AGAIN', W/2, 515);
+
+  ctx.fillStyle = 'rgba(200,160,74,0.22)';
+  ctx.beginPath(); ctx.roundRect(W/2-68, 556, 136, 38, 19); ctx.fill();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '13px Georgia, serif';
+  ctx.fillText('SHARE SCORE', W/2, 575);
+
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (phase === 'title') { drawTitle(); return; }
+  if (phase === 'win')   { drawWin();   return; }
+  drawBg(); drawCacti(); drawHorse(); drawBeatRail(); drawSyncMeter(); drawHUD(); drawPopups();
+}
+
+// ===== INPUT =====
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (AC.state === 'suspended') AC.resume();
+  if (phase === 'title') { startGame(); return; }
+  if (phase === 'win') {
+    const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    const ox = (window.innerWidth - W * s) / 2, oy = (window.innerHeight - H * s) / 2;
+    const cy = (e.clientY - oy) / s;
+    if (cy > 553 && cy < 597) {
+      try { navigator.share({ title: 'Pony Express', text: 'I scored ' + totalScore + ' on Pony Express!', url: location.href }); } catch {}
+      return;
+    }
+    startGame(); return;
+  }
+  onTap();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    if (phase === 'title') { startGame(); return; }
+    onTap();
+  }
+});
+
+// ===== FEEDBACK OVERLAY =====
+let fbOpen = false;
+function openFeedback() {
+  if (fbOpen) return; fbOpen = true;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:100;font-family:Georgia,serif;';
+  ov.innerHTML = `<div style="background:#1a0d35;border:1px solid #C8A04A;border-radius:16px;padding:28px 24px;width:316px;color:#E8DCC8;">
+    <div style="font-size:18px;font-weight:bold;color:#FFE066;margin-bottom:14px;text-align:center;">RATE THIS RIDE</div>
+    <div style="display:flex;justify-content:center;gap:10px;margin-bottom:14px;" id="fb-stars">
+      ${[1,2,3,4,5].map(i=>`<span data-r="${i}" style="font-size:28px;cursor:pointer;opacity:0.38;">&#9733;</span>`).join('')}
+    </div>
+    <textarea id="fb-msg" placeholder="What did you think?" style="width:100%;height:68px;background:#0d0618;border:1px solid #6a4410;border-radius:8px;color:#E8DCC8;padding:8px;font-family:Georgia,serif;font-size:13px;resize:none;"></textarea>
+    <div style="display:flex;gap:10px;margin-top:12px;">
+      <button id="fb-send" style="flex:1;background:#FFE066;color:#1a0d05;border:none;border-radius:20px;padding:10px;font-weight:bold;font-family:Georgia,serif;cursor:pointer;">SEND</button>
+      <button id="fb-cancel" style="flex:1;background:transparent;color:#C8A04A;border:1px solid #C8A04A;border-radius:20px;padding:10px;font-family:Georgia,serif;cursor:pointer;">CLOSE</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  let rating = 0;
+  ov.querySelectorAll('#fb-stars span').forEach(s => {
+    s.addEventListener('click', () => {
+      rating = +s.dataset.r;
+      ov.querySelectorAll('#fb-stars span').forEach((x, i) => x.style.opacity = i < rating ? '1' : '0.3');
+    });
+  });
+  ov.querySelector('#fb-cancel').addEventListener('click', () => { document.body.removeChild(ov); fbOpen = false; });
+  ov.querySelector('#fb-send').addEventListener('click', async () => {
+    const msg = ov.querySelector('#fb-msg').value.trim();
+    if (!rating && !msg) { document.body.removeChild(ov); fbOpen = false; return; }
+    try {
+      await fetch(FEEDBACK_ENDPOINT, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ game: 'Pony Express', rating, message: msg, score: totalScore }) });
+    } catch {}
+    document.body.removeChild(ov); fbOpen = false;
+  });
+}
+
+// ===== GAME LOOP =====
+let last = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - last) / 1000, 0.05);
+    last = ts;
+    update(dt);
+    draw();
+    if (phase === 'win' && !feedbackSent) { feedbackSent = true; setTimeout(openFeedback, 1900); }
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ===== TEST HOOKS =====
+window.__test = {
+  get phase()           { return phase; },
+  get score()           { return score; },
+  get streak()          { return streak; },
+  get bestStreak()      { return bestStreak; },
+  get sectionIdx()      { return sectionIdx; },
+  get sectionProgress() { return sectionProgress; },
+  get speed()           { return speed; },
+  get sync()            { return sync; },
+  get beats()           { return beats; },
+  get subDiv()          { return subDiv; },
+  get barCount()        { return barCount; },
+  get beatInterval()    { return beatInterval; },
+  get sectionScores()   { return sectionScores; },
+  get totalScore()      { return totalScore; },
+  get SECTIONS()        { return SECTIONS; },
+  get HIT_X()           { return HIT_X; },
+  get PERFECT_WIN()     { return PERFECT_WIN; },
+  get GOOD_WIN()        { return GOOD_WIN; },
+  get BARS_PER_SECTION(){ return BARS_PER_SECTION; },
+  get RAIL_SPEED_BASE() { return RAIL_SPEED_BASE; },
+  startGame, onTap, update, spawnBeat, initSection,
+  setScore(v)     { score = v; },
+  setStreak(v)    { streak = v; },
+  setSync(v)      { sync = v; },
+  setSpeed(v)     { speed = v; },
+  setPhase(v)     { phase = v; },
+  setBarCount(v)  { barCount = v; },
+  setSubDiv(v)    { subDiv = v; },
+  setBeatTimer(v) { beatTimer = v; },
+  setSectionIdx(v){ sectionIdx = v; },
+  getBest,
+};
+</script>
+</body>
+</html>
