@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-05T09:19:03.807Z",
+  "lastRunAt": "2026-05-05T09:34:14.449Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 35 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 35: Snake Canyon - tests passing, committing"
-  },
-  "gamesBuilt": 34,
-  "lastGameTitle": "Dust Devil Dance",
-  "lastGameFile": "dust-devil-dance.html",
+  "lastRunSummary": "Built Game 35: Snake Canyon - first-person procedural maze, DFS canyon generation, audio-spatial rattlesnake (stereo panning + distance attenuation), footstep timing mechanic, 26 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 35,
+  "lastGameTitle": "Snake Canyon",
+  "lastGameFile": "snake-canyon.html",
   "gameQueue": [
-    {
-      "num": 35,
-      "title": "Snake Canyon",
-      "concept": "First-person maze-crawl: navigate a procedurally-tiled canyon network by torch, with a rattlesnake that can hear your footsteps. Move silently by tapping slowly and deliberately; rush and it strikes. Dynamic audio cue system - snake rattle volume and direction reveal proximity before visibility does.",
-      "raisesBarOn": "First procedurally-generated level layout in series, first game where audio is the primary navigation sense (not vision), deepest audio-spatial design since Moonshine Run",
-      "status": "planned"
-    },
     {
       "num": 36,
       "title": "Rodeo Queen",
@@ -30,17 +20,16 @@
       "concept": "Physics demolition puzzle: a corrupt sheriff's crooked saloon is propped up by rickety supports. Tap to knock out supports one at a time, guiding the collapse to crush the wanted targets below while sparing the innocents. First physics-based demolition puzzle in the series.",
       "raisesBarOn": "First Verlet/impulse physics structure simulation in series, first demolition puzzle mechanic, first game where the goal is controlled collapse rather than survival or construction",
       "status": "planned"
+    },
+    {
+      "num": 38,
+      "title": "Dust Road Derby",
+      "concept": "First racing game in the series: top-down oval circuit, 3 AI rivals with rubber-band difficulty scaling, slipstream mechanic (draft behind leading car for speed boost), dust cloud visibility penalty when off-line. 5 laps, position-based scoring. First racing/driving mechanic in the series.",
+      "raisesBarOn": "First real-time racing AI in series, first positional-scoring loop structure (not survival or accumulation), first slipstream/draft mechanic",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-02T08:00:34Z",
-      "action": "new_game",
-      "game": "Moonshine Run",
-      "result": "success",
-      "summary": "Built Game 16: Moonshine Run - stealth + 3-gauge resource management, revenuer lantern cone detection, 40 tests pass.",
-      "commitHash": "153863c"
-    },
     {
       "runAt": "2026-05-02T03:52:45Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 34: Dust Devil Dance - generative music sandbox, draw paths for dust devils, pentatonic oscillators, landmark audio effects, resonance meter, 25 tests pass.",
       "commitHash": "51c0850"
+    },
+    {
+      "runAt": "2026-05-05T09:34:14.449Z",
+      "action": "new_game",
+      "game": "Snake Canyon",
+      "result": "success",
+      "summary": "Built Game 35: Snake Canyon - first-person procedural maze, DFS canyon generation, audio-spatial rattlesnake, footstep timing mechanic, 26 tests pass.",
+      "commitHash": "4cc2d03"
     }
   ]
 }
