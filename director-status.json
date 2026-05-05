@@ -2,21 +2,11 @@
   "lastRunAt": "2026-05-05T12:00:00.000Z",
   "lastRunResult": "success",
   "lastRunSummary": "Game 32 tests pass - 50/50",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 32: Barbed Wire - tests passing, committing"
-  },
-  "gamesBuilt": 31,
-  "lastGameTitle": "Pony Express",
-  "lastGameFile": "pony-express.html",
+  "currentTask": null,
+  "gamesBuilt": 32,
+  "lastGameTitle": "Barbed Wire",
+  "lastGameFile": "barbed-wire.html",
   "gameQueue": [
-    {
-      "num": 32,
-      "title": "Barbed Wire",
-      "concept": "Strategic wire-laying tower defense: stretch barbed wire between fence posts to slow and redirect rustlers heading for the herd. Posts have limited wire capacity; rustlers cut through over time. Upgrade posts, repair wire, protect the cattle across 5 waves.",
-      "raisesBarOn": "First tower-defense structure, first wire/graph edge mechanic, first upgrade system in series",
-      "status": "planned"
-    },
     {
       "num": 33,
       "title": "Cattle Auction",
@@ -29,6 +19,13 @@
       "title": "Dust Devil Dance",
       "concept": "Generative music sandbox: player draws paths for dust devils across a desert basin. Each dust devil plays a looping melodic phrase; overlapping paths create harmonics; proximity to landmarks modulates timbre and tempo. Goal is to compose a satisfying loop before the storm timer expires.",
       "raisesBarOn": "First generative music composition mechanic in series, first game where the win condition is aesthetic rather than competitive, deepest Web Audio use since Honky Tonk",
+      "status": "planned"
+    },
+    {
+      "num": 35,
+      "title": "Snake Canyon",
+      "concept": "First-person maze-crawl: navigate a procedurally-tiled canyon network by torch, with a rattlesnake that can hear your footsteps. Move silently by tapping slowly and deliberately; rush and it strikes. Dynamic audio cue system - snake rattle volume and direction reveal proximity before visibility does.",
+      "raisesBarOn": "First procedurally-generated level layout in series, first game where audio is the primary navigation sense (not vision), deepest audio-spatial design since Moonshine Run",
       "status": "planned"
     }
   ],
@@ -184,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 31: Pony Express - action-rhythm horse riding, 5 escalating BPM sections, 16th-note beat grid, speed-sync feedback loop, 50 tests pass.",
       "commitHash": "6f90e9c"
+    },
+    {
+      "runAt": "2026-05-05T09:30:00.000Z",
+      "action": "new_game",
+      "game": "Barbed Wire",
+      "result": "success",
+      "summary": "Built Game 32: Barbed Wire - strategic wire-laying tower defense, post-node graph mechanic, MAX_CONN=2 constraint, 5 waves, 50 tests pass.",
+      "commitHash": "07acb6d"
     }
   ]
 }
