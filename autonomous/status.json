@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-05T08:30:00.000Z",
+  "lastRunAt": "2026-05-05T12:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 31 tests pass - 50/50",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 31: Pony Express - tests passing, committing"
-  },
-  "gamesBuilt": 30,
-  "lastGameTitle": "Tumbleweed Pinball",
-  "lastGameFile": "tumbleweed-pinball.html",
+  "lastRunSummary": "Built Game 31: Pony Express - action-rhythm horse riding, 5 escalating BPM sections, 16th-note beat grid, speed-sync feedback loop, 50 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 31,
+  "lastGameTitle": "Pony Express",
+  "lastGameFile": "pony-express.html",
   "gameQueue": [
-    {
-      "num": 31,
-      "title": "Pony Express",
-      "concept": "Rhythm-based horse riding: tap in sync with hoofbeat patterns to maintain gallop speed across 5 terrain sections. Pattern complexity escalates. Miss the beat and the horse slows; nail a streak and earn a burst of speed. First pure rhythm game since Honky Tonk but built around action rather than notes.",
-      "raisesBarOn": "First action-rhythm hybrid, first procedurally-generated beat pattern, first gait simulation mechanic",
-      "status": "planned"
-    },
     {
       "num": 32,
       "title": "Barbed Wire",
@@ -29,6 +19,13 @@
       "title": "Cattle Auction",
       "concept": "Economic bidding game: player is the auctioneer at a frontier cattle sale. Six buyers with distinct wealth and desire levels bid in real time. Read buyer patterns, call escalating bids, and drop the hammer at peak price. Buyer desperation, budget limits, and auction momentum all affect the final tally across 8 lots.",
       "raisesBarOn": "First economic/bidding simulation in series, first game where reading multiple simultaneous behavioral patterns drives scoring, deepest social-reading mechanic since Boot Hill Bluff",
+      "status": "planned"
+    },
+    {
+      "num": 34,
+      "title": "Dust Devil Dance",
+      "concept": "Generative music sandbox: player draws paths for dust devils across a desert basin. Each dust devil plays a looping melodic phrase; overlapping paths create harmonics; proximity to landmarks modulates timbre and tempo. Goal is to compose a satisfying loop before the storm timer expires.",
+      "raisesBarOn": "First generative music composition mechanic in series, first game where the win condition is aesthetic rather than competitive, deepest Web Audio use since Honky Tonk",
       "status": "planned"
     }
   ],
@@ -168,6 +165,22 @@
       "result": "success",
       "summary": "Built Game 30: Tumbleweed Pinball - physics pinball engine, cactus bumpers, WANTED poster targets, chain multiplier (1x-8x), drain post, 50 tests pass.",
       "commitHash": "b111fa8"
+    },
+    {
+      "runAt": "2026-05-05T08:30:00.000Z",
+      "action": "new_game",
+      "game": "Tumbleweed Pinball",
+      "result": "success",
+      "summary": "Built Game 30: Tumbleweed Pinball - physics pinball engine, cactus bumpers, WANTED poster targets, chain multiplier (1x-8x), drain post deflector, 50 tests pass.",
+      "commitHash": "b111fa8"
+    },
+    {
+      "runAt": "2026-05-05T12:00:00.000Z",
+      "action": "new_game",
+      "game": "Pony Express",
+      "result": "success",
+      "summary": "Built Game 31: Pony Express - action-rhythm horse riding, 5 escalating BPM sections, 16th-note beat grid, speed-sync feedback loop, 50 tests pass.",
+      "commitHash": "6f90e9c"
     }
   ]
 }
