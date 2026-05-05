@@ -1,10 +1,10 @@
 {
   "lastRunAt": "2026-05-05T08:00:02Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw, shadow zones, 50 tests pass.",
+  "lastRunSummary": "Building Game 30: Tumbleweed Pinball",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Designing Game 30: Tumbleweed Pinball - physics pinball with cactus bumpers, wanted-poster targets, frontier saloon flippers"
   },
   "gamesBuilt": 29,
   "lastGameTitle": "Jail Break",
