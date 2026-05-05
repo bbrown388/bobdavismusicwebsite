@@ -38,6 +38,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 28 | Brand Iron | `brand-iron.html` | Path-tracing drag mechanic / heat sweet-zone dual-threshold gauge / arc-length progress system / 5 escalating brand shapes / highpass sizzle audio / canvas-rendered hide texture | 2026-05-04 |
 | 29 | Jail Break | `jail-break.html` | Turn-based stealth grid / guard vision-cone ray-cast / pick-lock adjacent interaction / object-throw alert distraction / shadow tile concealment / 5 escalating layouts | 2026-05-04 |
 | 30 | Tumbleweed Pinball | `tumbleweed-pinball.html` | Physics pinball engine / circle-segment collision / cactus bumpers / WANTED poster targets / chain multiplier (1x-8x) / left-right flipper dual input / drain post deflector | 2026-05-05 |
+| 31 | Pony Express | `pony-express.html` | Action-rhythm hybrid / 16th-note subdivision beat grid / 5 escalating BPM sections (trot→finale) / proximity-gated PERFECT/GOOD windows / speed-sync feedback loop / streak multiplier | 2026-05-05 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -78,6 +79,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Brand Iron](retrospectives/28-brand-iron.md) — session lessons, action items for Game 29
 - [Retrospective: Jail Break](retrospectives/29-jail-break.md) — session lessons, action items for Game 30
 - [Retrospective: Tumbleweed Pinball](retrospectives/30-tumbleweed-pinball.md) — session lessons, action items for Game 31
+- [Retrospective: Pony Express](retrospectives/31-pony-express.md) — session lessons, action items for Game 32
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
