@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-05T08:00:02Z",
+  "lastRunAt": "2026-05-05T08:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 30 tests pass - 50/50",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 30: Tumbleweed Pinball - tests passing, committing"
-  },
-  "gamesBuilt": 29,
-  "lastGameTitle": "Jail Break",
-  "lastGameFile": "jail-break.html",
+  "lastRunSummary": "Built Game 30: Tumbleweed Pinball - physics pinball engine, cactus bumpers, WANTED poster targets, chain multiplier, 50 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 30,
+  "lastGameTitle": "Tumbleweed Pinball",
+  "lastGameFile": "tumbleweed-pinball.html",
   "gameQueue": [
-    {
-      "num": 30,
-      "title": "Tumbleweed Pinball",
-      "concept": "Physics-based pinball on a frontier table: tumbleweeds as balls, cactus bumpers, wanted-poster targets, saloon flippers. First physics simulation with multiple simultaneous objects and bumper scoring chains.",
-      "raisesBarOn": "First full physics simulation, first multi-object simultaneous play, first bumper chain scoring",
-      "status": "planned"
-    },
     {
       "num": 31,
       "title": "Pony Express",
@@ -30,17 +20,16 @@
       "concept": "Strategic wire-laying tower defense: stretch barbed wire between fence posts to slow and redirect rustlers heading for the herd. Posts have limited wire capacity; rustlers cut through over time. Upgrade posts, repair wire, protect the cattle across 5 waves.",
       "raisesBarOn": "First tower-defense structure, first wire/graph edge mechanic, first upgrade system in series",
       "status": "planned"
+    },
+    {
+      "num": 33,
+      "title": "Cattle Auction",
+      "concept": "Economic bidding game: player is the auctioneer at a frontier cattle sale. Six buyers with distinct wealth and desire levels bid in real time. Read buyer patterns, call escalating bids, and drop the hammer at peak price. Buyer desperation, budget limits, and auction momentum all affect the final tally across 8 lots.",
+      "raisesBarOn": "First economic/bidding simulation in series, first game where reading multiple simultaneous behavioral patterns drives scoring, deepest social-reading mechanic since Boot Hill Bluff",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-04-29T08:00:00Z",
-      "action": "new_game",
-      "game": "Midnight Rodeo",
-      "result": "success",
-      "summary": "Built Game 14: Midnight Rodeo - bareback bull-riding, directional tap-match, crowd energy multiplier, 31 tests pass.",
-      "commitHash": "6408129"
-    },
     {
       "runAt": "2026-04-30T08:30:00Z",
       "action": "fix",
@@ -168,6 +157,14 @@
       "result": "success",
       "summary": "Built Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw, shadow zones, 50 tests pass.",
       "commitHash": "9a691f5"
+    },
+    {
+      "runAt": "2026-05-05T08:30:00.000Z",
+      "action": "new_game",
+      "game": "Tumbleweed Pinball",
+      "result": "success",
+      "summary": "Built Game 30: Tumbleweed Pinball - physics pinball engine, cactus bumpers, WANTED poster targets, chain multiplier (1x-8x), drain post, 50 tests pass.",
+      "commitHash": "b111fa8"
     }
   ]
 }

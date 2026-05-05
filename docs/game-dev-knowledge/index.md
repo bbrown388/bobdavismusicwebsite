@@ -37,6 +37,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 27 | River Run | `river-run.html` | White-water raft / velocity/inertia steering model / predictive current swirl indicators / steer+brake dual input / laterally-drifting logs + stationary boulders / speed-responsive audio / 5 rounds | 2026-05-03 |
 | 28 | Brand Iron | `brand-iron.html` | Path-tracing drag mechanic / heat sweet-zone dual-threshold gauge / arc-length progress system / 5 escalating brand shapes / highpass sizzle audio / canvas-rendered hide texture | 2026-05-04 |
 | 29 | Jail Break | `jail-break.html` | Turn-based stealth grid / guard vision-cone ray-cast / pick-lock adjacent interaction / object-throw alert distraction / shadow tile concealment / 5 escalating layouts | 2026-05-04 |
+| 30 | Tumbleweed Pinball | `tumbleweed-pinball.html` | Physics pinball engine / circle-segment collision / cactus bumpers / WANTED poster targets / chain multiplier (1x-8x) / left-right flipper dual input / drain post deflector | 2026-05-05 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -76,6 +77,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: River Run](retrospectives/27-river-run.md) — session lessons, action items for Game 28
 - [Retrospective: Brand Iron](retrospectives/28-brand-iron.md) — session lessons, action items for Game 29
 - [Retrospective: Jail Break](retrospectives/29-jail-break.md) — session lessons, action items for Game 30
+- [Retrospective: Tumbleweed Pinball](retrospectives/30-tumbleweed-pinball.md) — session lessons, action items for Game 31
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
