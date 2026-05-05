@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Merch — Bob Davis Music</title>
+<meta name="description" content="Bob Davis merch — hats, tees, and more.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0d0608;
+  color: #E8DCC8;
+  font-family: Georgia, serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 100px;
+}
+
+/* Back nav */
+.back-nav {
+  width: 100%;
+  max-width: 480px;
+  margin-bottom: 28px;
+}
+
+.back-link {
+  font-size: 13px;
+  color: #907860;
+  text-decoration: none;
+  letter-spacing: 1px;
+  font-style: italic;
+  transition: color 0.15s;
+}
+
+.back-link:hover { color: #FFD700; }
+
+/* Section label */
+.section-label {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #555;
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+/* Product grid */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 20px;
+  width: 100%;
+  max-width: 480px;
+  margin-bottom: 16px;
+}
+
+.product-grid.single {
+  grid-template-columns: 1fr;
+  max-width: 260px;
+}
+
+/* Product card */
+.product-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,215,0,0.15);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.product-card:hover {
+  background: rgba(255,215,0,0.04);
+  border-color: rgba(255,215,0,0.35);
+}
+
+.product-img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
+.product-img-placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: rgba(255,215,0,0.05);
+  border: 1px solid rgba(255,215,0,0.1);
+}
+
+.product-name {
+  font-size: 15px;
+  color: #FFD700;
+  text-align: center;
+  letter-spacing: 0.3px;
+  line-height: 1.3;
+}
+
+.product-price {
+  font-size: 14px;
+  color: #907860;
+  font-style: italic;
+}
+
+/* Variant select */
+.variant-select {
+  width: 100%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,215,0,0.2);
+  border-radius: 6px;
+  color: #E8DCC8;
+  font-family: Georgia, serif;
+  font-size: 13px;
+  padding: 7px 10px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23907860'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.variant-select:focus {
+  outline: none;
+  border-color: rgba(255,215,0,0.4);
+}
+
+/* Add to cart button */
+.add-btn {
+  width: 100%;
+  padding: 11px 16px;
+  background: rgba(255,215,0,0.1);
+  border: 1px solid rgba(255,215,0,0.35);
+  border-radius: 8px;
+  color: #FFD700;
+  font-family: Georgia, serif;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, filter 0.15s;
+}
+
+.add-btn:hover:not(:disabled) {
+  background: rgba(255,215,0,0.18);
+  filter: brightness(1.1);
+}
+
+.add-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Loading / error */
+.status-msg {
+  color: #555;
+  font-style: italic;
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
+  grid-column: 1 / -1;
+}
+
+.error-msg {
+  color: #907860;
+  font-style: italic;
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* Cart toggle (fixed bottom-right) */
+.cart-toggle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,215,0,0.12);
+  border: 1px solid rgba(255,215,0,0.4);
+  border-radius: 24px;
+  color: #FFD700;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  padding: 10px 18px;
+  cursor: pointer;
+  transition: background 0.15s;
+  z-index: 100;
+}
+
+.cart-toggle:hover { background: rgba(255,215,0,0.2); }
+
+.cart-count {
+  background: #FFD700;
+  color: #0d0608;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Cart overlay */
+.cart-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 200;
+}
+
+.cart-overlay.visible { display: block; }
+
+/* Cart drawer */
+.cart-drawer {
+  position: fixed;
+  top: 0;
+  right: -360px;
+  width: 320px;
+  height: 100%;
+  background: #140a0c;
+  border-left: 1px solid rgba(255,215,0,0.15);
+  display: flex;
+  flex-direction: column;
+  z-index: 300;
+  transition: right 0.3s ease;
+  padding: 24px 20px;
+}
+
+.cart-drawer.open { right: 0; }
+
+.cart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,215,0,0.1);
+}
+
+.cart-header span {
+  font-size: 13px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #555;
+}
+
+.cart-close {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.15s;
+}
+
+.cart-close:hover { color: #FFD700; }
+
+.cart-empty {
+  color: #555;
+  font-style: italic;
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* Cart items */
+.cart-items {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cart-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.cart-item-info { flex: 1; }
+
+.cart-item-name {
+  font-size: 14px;
+  color: #E8DCC8;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.cart-item-price {
+  font-size: 12px;
+  color: #907860;
+  font-style: italic;
+}
+
+.cart-item-remove {
+  background: none;
+  border: none;
+  color: #444;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.cart-item-remove:hover { color: #907860; }
+
+/* Cart footer */
+.cart-footer {
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,215,0,0.1);
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cart-subtotal {
+  font-size: 14px;
+  color: #C8B89A;
+  text-align: right;
+}
+
+.checkout-btn {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  background: rgba(255,215,0,0.15);
+  border: 1px solid rgba(255,215,0,0.5);
+  border-radius: 8px;
+  color: #FFD700;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  transition: background 0.15s, filter 0.15s;
+}
+
+.checkout-btn:hover {
+  background: rgba(255,215,0,0.25);
+  filter: brightness(1.1);
+}
+
+/* Footer */
+footer {
+  margin-top: 40px;
+  text-align: center;
+  color: #2a1a14;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+@media (max-width: 400px) {
+  .cart-drawer { width: 100%; right: -100%; }
+  .product-grid { grid-template-columns: 1fr; }
+  .product-grid.single { max-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<nav class="back-nav">
+  <a class="back-link" href="index.html">&#8592; Bob Davis</a>
+</nav>
+
+<p class="section-label">Merch</p>
+
+<div class="product-grid" id="product-grid">
+  <p class="status-msg">Loading...</p>
+</div>
+
+<p class="error-msg" id="error-msg" hidden>
+  Something went wrong loading the store. Try refreshing.
+</p>
+
+<!-- Cart overlay -->
+<div class="cart-overlay" id="cart-overlay" onclick="closeCart()"></div>
+
+<!-- Cart drawer -->
+<div class="cart-drawer" id="cart-drawer">
+  <div class="cart-header">
+    <span>Your Cart</span>
+    <button class="cart-close" onclick="closeCart()">&#10005;</button>
+  </div>
+  <div class="cart-items" id="cart-items"></div>
+  <p class="cart-empty" id="cart-empty">Your cart is empty.</p>
+  <div class="cart-footer" id="cart-footer" hidden>
+    <div class="cart-subtotal" id="cart-subtotal"></div>
+    <a class="checkout-btn" id="checkout-btn" href="#" target="_blank">Checkout</a>
+  </div>
+</div>
+
+<!-- Cart toggle -->
+<button class="cart-toggle" id="cart-toggle" hidden onclick="openCart()">
+  Cart <span class="cart-count" id="cart-count">0</span>
+</button>
+
+<footer>&#169; Bob Davis Music</footer>
+
+<script>
+const SHOP_DOMAIN = '6anqxb-rt.myshopify.com';
+const STOREFRONT_TOKEN = '2a7e0382b6e5915658809f9549bb28a7';
+const GQL = `https://${SHOP_DOMAIN}/api/2024-01/graphql.json`;
+
+let cartId = localStorage.getItem('bd_cart_id');
+let checkoutUrl = '#';
+
+async function shopify(query, variables = {}) {
+  const res = await fetch(GQL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Storefront-Access-Token': STOREFRONT_TOKEN,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors[0].message);
+  return json.data;
+}
+
+function formatPrice(amount, currency) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+}
+
+// ── Products ──────────────────────────────────────────────
+
+async function loadProducts() {
+  try {
+    const data = await shopify(`{
+      products(first: 20, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id title description
+            priceRange { minVariantPrice { amount currencyCode } }
+            images(first: 1) { edges { node { url altText } } }
+            variants(first: 10) {
+              edges {
+                node { id title availableForSale priceV2 { amount currencyCode } }
+              }
+            }
+          }
+        }
+      }
+    }`);
+
+    const products = data.products.edges.map(e => e.node);
+    renderProducts(products);
+  } catch (err) {
+    console.error(err);
+    document.getElementById('product-grid').innerHTML = '';
+    document.getElementById('error-msg').hidden = false;
+  }
+}
+
+function renderProducts(products) {
+  const grid = document.getElementById('product-grid');
+
+  if (!products.length) {
+    grid.innerHTML = '<p class="status-msg">No products yet — check back soon.</p>';
+    return;
+  }
+
+  if (products.length === 1) grid.classList.add('single');
+
+  grid.innerHTML = products.map(p => {
+    const img = p.images.edges[0]?.node;
+    const variants = p.variants.edges.map(e => e.node);
+    const price = formatPrice(
+      p.priceRange.minVariantPrice.amount,
+      p.priceRange.minVariantPrice.currencyCode
+    );
+    const multiVariant = variants.length > 1;
+    const available = variants.some(v => v.availableForSale);
+    const safeId = p.id.replace(/[^a-z0-9]/gi, '');
+
+    const selectEl = multiVariant ? `
+      <select class="variant-select" id="vs-${safeId}">
+        ${variants.map(v => `
+          <option value="${v.id}" ${!v.availableForSale ? 'disabled' : ''}>
+            ${v.title}${!v.availableForSale ? ' — Sold Out' : ''}
+          </option>`).join('')}
+      </select>` : '';
+
+    const singleVariantId = !multiVariant ? (variants[0]?.id ?? '') : '';
+
+    return `
+      <div class="product-card">
+        ${img
+          ? `<img class="product-img" src="${img.url}" alt="${img.altText || p.title}" loading="lazy">`
+          : '<div class="product-img-placeholder"></div>'}
+        <div class="product-name">${p.title}</div>
+        <div class="product-price">${price}</div>
+        ${selectEl}
+        <button class="add-btn"
+          data-product="${safeId}"
+          data-variant="${singleVariantId}"
+          onclick="handleAdd(this)"
+          ${!available ? 'disabled' : ''}>
+          ${available ? 'Add to Cart' : 'Sold Out'}
+        </button>
+      </div>`;
+  }).join('');
+}
+
+// ── Cart ──────────────────────────────────────────────────
+
+const CART_FIELDS = `
+  id checkoutUrl totalQuantity
+  lines(first: 20) {
+    edges {
+      node {
+        id quantity
+        merchandise {
+          ... on ProductVariant {
+            id title
+            product { title }
+            priceV2 { amount currencyCode }
+          }
+        }
+      }
+    }
+  }
+  estimatedCost { subtotalAmount { amount currencyCode } }
+`;
+
+async function createCartWith(variantId) {
+  const data = await shopify(`
+    mutation($lines: [CartLineInput!]) {
+      cartCreate(input: { lines: $lines }) { cart { ${CART_FIELDS} } }
+    }`, { lines: [{ merchandiseId: variantId, quantity: 1 }] });
+  return data.cartCreate.cart;
+}
+
+async function addLineToCart(variantId) {
+  const data = await shopify(`
+    mutation($cartId: ID!, $lines: [CartLineInput!]!) {
+      cartLinesAdd(cartId: $cartId, lines: $lines) { cart { ${CART_FIELDS} } }
+    }`, { cartId, lines: [{ merchandiseId: variantId, quantity: 1 }] });
+  return data.cartLinesAdd.cart;
+}
+
+async function removeLineFromCart(lineId) {
+  const data = await shopify(`
+    mutation($cartId: ID!, $lineIds: [ID!]!) {
+      cartLinesRemove(cartId: $cartId, lineIds: $lineIds) { cart { ${CART_FIELDS} } }
+    }`, { cartId, lineIds: [lineId] });
+  return data.cartLinesRemove.cart;
+}
+
+async function handleAdd(btn) {
+  const safeId = btn.dataset.product;
+  const selectEl = document.getElementById(`vs-${safeId}`);
+  const variantId = selectEl ? selectEl.value : btn.dataset.variant;
+  if (!variantId) return;
+
+  const original = btn.textContent;
+  btn.textContent = 'Adding…';
+  btn.disabled = true;
+
+  try {
+    let cart;
+    if (!cartId) {
+      cart = await createCartWith(variantId);
+      cartId = cart.id;
+      localStorage.setItem('bd_cart_id', cartId);
+    } else {
+      try {
+        cart = await addLineToCart(variantId);
+        if (!cart) throw new Error('cart null');
+      } catch {
+        // Cart expired — create fresh
+        cartId = null;
+        localStorage.removeItem('bd_cart_id');
+        cart = await createCartWith(variantId);
+        cartId = cart.id;
+        localStorage.setItem('bd_cart_id', cartId);
+      }
+    }
+    updateCartUI(cart);
+    btn.textContent = 'Added!';
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.disabled = false;
+    }, 1400);
+    openCart();
+  } catch (err) {
+    console.error(err);
+    btn.textContent = 'Try Again';
+    btn.disabled = false;
+  }
+}
+
+async function removeLine(lineId) {
+  try {
+    const cart = await removeLineFromCart(lineId);
+    updateCartUI(cart);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function updateCartUI(cart) {
+  checkoutUrl = cart.checkoutUrl;
+  const qty = cart.totalQuantity;
+  const lines = cart.lines.edges.map(e => e.node);
+
+  document.getElementById('cart-toggle').hidden = qty === 0;
+  document.getElementById('cart-count').textContent = qty;
+  document.getElementById('checkout-btn').href = checkoutUrl;
+
+  const emptyEl = document.getElementById('cart-empty');
+  const footerEl = document.getElementById('cart-footer');
+  const itemsEl = document.getElementById('cart-items');
+
+  if (!lines.length) {
+    itemsEl.innerHTML = '';
+    emptyEl.hidden = false;
+    footerEl.hidden = true;
+    return;
+  }
+
+  emptyEl.hidden = true;
+  footerEl.hidden = false;
+
+  const subtotal = formatPrice(
+    cart.estimatedCost.subtotalAmount.amount,
+    cart.estimatedCost.subtotalAmount.currencyCode
+  );
+  document.getElementById('cart-subtotal').textContent = `Subtotal: ${subtotal}`;
+
+  itemsEl.innerHTML = lines.map(line => {
+    const m = line.merchandise;
+    const variantLabel = m.title !== 'Default Title' ? ` — ${m.title}` : '';
+    const linePrice = formatPrice(m.priceV2.amount, m.priceV2.currencyCode);
+    return `
+      <div class="cart-item">
+        <div class="cart-item-info">
+          <div class="cart-item-name">${m.product.title}${variantLabel}</div>
+          <div class="cart-item-price">Qty ${line.quantity} &times; ${linePrice}</div>
+        </div>
+        <button class="cart-item-remove" onclick="removeLine('${line.id}')" aria-label="Remove">&#10005;</button>
+      </div>`;
+  }).join('');
+}
+
+function openCart() {
+  document.getElementById('cart-drawer').classList.add('open');
+  document.getElementById('cart-overlay').classList.add('visible');
+}
+
+function closeCart() {
+  document.getElementById('cart-drawer').classList.remove('open');
+  document.getElementById('cart-overlay').classList.remove('visible');
+}
+
+loadProducts();
+</script>
+</body>
+</html>
