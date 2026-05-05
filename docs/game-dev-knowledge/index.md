@@ -39,6 +39,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 29 | Jail Break | `jail-break.html` | Turn-based stealth grid / guard vision-cone ray-cast / pick-lock adjacent interaction / object-throw alert distraction / shadow tile concealment / 5 escalating layouts | 2026-05-04 |
 | 30 | Tumbleweed Pinball | `tumbleweed-pinball.html` | Physics pinball engine / circle-segment collision / cactus bumpers / WANTED poster targets / chain multiplier (1x-8x) / left-right flipper dual input / drain post deflector | 2026-05-05 |
 | 31 | Pony Express | `pony-express.html` | Action-rhythm hybrid / 16th-note subdivision beat grid / 5 escalating BPM sections (trot→finale) / proximity-gated PERFECT/GOOD windows / speed-sync feedback loop / streak multiplier | 2026-05-05 |
+| 32 | Barbed Wire | `barbed-wire.html` | Strategic tower defense / post-node wire-edge graph mechanic / MAX_CONN=2 constraint / ptSegDist collision / wire HP drain + repair / 5 wave escalation / first tower-defense in series | 2026-05-05 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -80,6 +81,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Jail Break](retrospectives/29-jail-break.md) — session lessons, action items for Game 30
 - [Retrospective: Tumbleweed Pinball](retrospectives/30-tumbleweed-pinball.md) — session lessons, action items for Game 31
 - [Retrospective: Pony Express](retrospectives/31-pony-express.md) — session lessons, action items for Game 32
+- [Retrospective: Barbed Wire](retrospectives/32-barbed-wire.md) — session lessons, action items for Game 33
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
