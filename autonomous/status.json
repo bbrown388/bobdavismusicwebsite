@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-06T08:00:02Z",
+  "lastRunAt": "2026-05-06T08:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 37: Tumbledown Town",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Designing Game 37: Tumbledown Town - Verlet physics demolition puzzle"
-  },
-  "gamesBuilt": 36,
-  "lastGameTitle": "Rodeo Queen",
-  "lastGameFile": "rodeo-queen.html",
+  "lastRunSummary": "Built Game 37: Tumbledown Town - Verlet physics demolition puzzle, diagonal brace coupling, 5 levels, 50 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 37,
+  "lastGameTitle": "Tumbledown Town",
+  "lastGameFile": "tumbledown-town.html",
   "gameQueue": [
-    {
-      "num": 37,
-      "title": "Tumbledown Town",
-      "concept": "Physics demolition puzzle: a corrupt sheriff's crooked saloon is propped up by rickety supports. Tap to knock out supports one at a time, guiding the collapse to crush the wanted targets below while sparing the innocents. First physics-based demolition puzzle in the series.",
-      "raisesBarOn": "First Verlet/impulse physics structure simulation in series, first demolition puzzle mechanic, first game where the goal is controlled collapse rather than survival or construction",
-      "status": "planned"
-    },
     {
       "num": 38,
       "title": "Dust Road Derby",
@@ -30,17 +20,16 @@
       "concept": "Grappling hook survival: the last outlaw standing swings between fence posts on a rope lasso as floodwaters rise. Tap to latch onto the nearest post, pendulum-swing to gain height, release to fly to the next anchor point. Miss an anchor and you drop. First grapple-physics mechanic in the series.",
       "raisesBarOn": "First pendulum-swing grapple physics in series, first vertical survival structure with rising threat, first game where spatial awareness and swing momentum are the primary skills",
       "status": "planned"
+    },
+    {
+      "num": 40,
+      "title": "Wire Tap",
+      "concept": "Telegraph Morse code decoder: intercept incoming messages from the outlaw gang. Each message is a sequence of short/long audio pulses (dots and dashes). Tap to mark dots vs dashes in real time, decode the letter, then identify the outlaw's destination on a frontier map. Race against the clock before the signal cuts out.",
+      "raisesBarOn": "First temporal pattern-decoding mechanic in series, first Morse code / telegraph communication game, first game where listening and timing decode information rather than react to threats",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-02T09:00:00Z",
-      "action": "new_game",
-      "game": "Dead Man's Hand",
-      "result": "success",
-      "summary": "Built Game 18: Dead Man's Hand - Texas Hold'em vs 3 AI outlaws with bluffing tells, full hand evaluator, 44 tests pass.",
-      "commitHash": "9afae30"
-    },
     {
       "runAt": "2026-05-02T09:18:46Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 36: Rodeo Queen - skill-chain combo, 3 distinct events, 5x multiplier, 37 tests pass.",
       "commitHash": "64c16c0"
+    },
+    {
+      "runAt": "2026-05-06T08:30:00.000Z",
+      "action": "new_game",
+      "game": "Tumbledown Town",
+      "result": "success",
+      "summary": "Built Game 37: Tumbledown Town - Verlet physics demolition puzzle, diagonal brace coupling, 5 levels, 50 tests pass.",
+      "commitHash": "b929c79"
     }
   ]
 }
