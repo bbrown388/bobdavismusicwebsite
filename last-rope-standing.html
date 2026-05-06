@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Last Rope Standing — Bob Davis</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+canvas { display: block; image-rendering: pixelated; touch-action: none; }
+#fb-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  justify-content: center; align-items: center; z-index: 100;
+}
+#fb-overlay.show { display: flex; }
+#fb-box {
+  background: #1a0d35; border: 2px solid #FFE066; border-radius: 12px;
+  padding: 24px; width: 300px; font-family: Georgia, serif; color: #FFE066;
+}
+#fb-box h3 { margin-bottom: 12px; font-size: 18px; }
+#fb-box select, #fb-box textarea {
+  width: 100%; margin-bottom: 10px; padding: 8px; border-radius: 6px;
+  background: #2a1500; color: #FFE066; border: 1px solid #FFE066; font-family: Georgia, serif;
+}
+#fb-box textarea { height: 80px; resize: none; }
+#fb-row { display: flex; gap: 10px; }
+#fb-row button {
+  flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer;
+  font-family: Georgia, serif; font-size: 14px; font-weight: bold;
+}
+#fb-send { background: #FFE066; color: #1a0d35; }
+#fb-cancel { background: #3a1f05; color: #FFE066; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="fb-overlay">
+  <div id="fb-box">
+    <h3>Leave Feedback</h3>
+    <select id="fb-target">
+      <option value="general">General / next game</option>
+      <option value="Last Rope Standing" selected>Last Rope Standing</option>
+    </select>
+    <textarea id="fb-text" placeholder="What do you think?"></textarea>
+    <div id="fb-row">
+      <button id="fb-send">Send</button>
+      <button id="fb-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- Audio ----
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playTone(freq, type, dur, vol = 0.3, delay = 0) {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = type; osc.frequency.value = freq;
+    const t = ac.currentTime + delay;
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur + 0.01);
+  } catch(e) {}
+}
+function playLatch() { playTone(330, 'square', 0.08, 0.4); playTone(660, 'sine', 0.12, 0.2, 0.05); }
+function playRelease() { playTone(220, 'sawtooth', 0.1, 0.3); }
+function playSplash() {
+  try {
+    const ac = getAudio();
+    const buf = ac.createBuffer(1, ac.sampleRate * 0.4, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ac.createBufferSource();
+    const filt = ac.createBiquadFilter();
+    const gain = ac.createGain();
+    filt.type = 'lowpass'; filt.frequency.value = 800;
+    src.buffer = buf; src.connect(filt); filt.connect(gain); gain.connect(ac.destination);
+    gain.gain.setValueAtTime(0.5, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.35);
+    src.start();
+  } catch(e) {}
+}
+function playWin() {
+  [392, 523, 659, 784].forEach((f, i) => playTone(f, 'sine', 0.25, 0.35, i * 0.12));
+}
+function playSwingWhoosh(speed) {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sine';
+    const baseFreq = 80 + Math.abs(speed) * 30;
+    osc.frequency.setValueAtTime(baseFreq * 1.5, ac.currentTime);
+    osc.frequency.linearRampToValueAtTime(baseFreq, ac.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.08, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.1);
+    osc.start(); osc.stop(ac.currentTime + 0.12);
+  } catch(e) {}
+}
+
+// ---- Game constants ----
+const GRAVITY = 1100;      // px/s^2
+const POST_RADIUS = 10;
+const PLAYER_RADIUS = 12;
+const LATCH_RADIUS = 90;   // tap-to-latch snap radius
+const WATER_RISE_RATE = 18; // px/s base
+const POST_COLS = 3;
+const POST_ROWS = 8;
+const COL_SPACING = W / (POST_COLS + 1);
+const ROW_SPACING = 70;
+const BASE_Y = 80;         // topmost row y
+
+// ---- State ----
+let state = 'title'; // title | playing | dead | win
+let score = 0, best = parseInt(localStorage.getItem('last_rope_best') || '0');
+let px, py, pvx, pvy;       // player pos/vel
+let anchorIdx = -1;         // which post is active (-1 = airborne)
+let ropeLen = 0;            // constraint distance
+let waterY = 0;             // current water surface y
+let waterSpeedMult = 1;
+let posts = [];             // {x, y, active}
+let highestY = 0;           // lowest canvas Y (highest physical point) player reached
+let lastLatchT = 0;         // time of last latch for whoosh throttle
+let scoreTimer = 0;         // accumulates time survived
+let popups = [];            // floating text
+let particles = [];         // water splash particles
+let lastT = 0;
+let lastSwingSpeed = 0;
+
+// ---- Popup ----
+function addPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, life: 1 });
+}
+
+// ---- Post layout ----
+function generatePosts() {
+  posts = [];
+  for (let r = 0; r < POST_ROWS; r++) {
+    for (let c = 0; c < POST_COLS; c++) {
+      const x = COL_SPACING * (c + 1) + (r % 2 === 0 ? 0 : COL_SPACING * 0.5 - COL_SPACING * 0.25);
+      const y = BASE_Y + r * ROW_SPACING;
+      posts.push({ x: Math.max(30, Math.min(W - 30, x)), y, active: true });
+    }
+  }
+}
+
+// ---- Game setup ----
+function startGame() {
+  generatePosts();
+  // Start player near the bottom-center post
+  const startPost = posts[posts.length - 2]; // bottom middle
+  px = startPost.x; py = startPost.y - 30;
+  pvx = 80; pvy = -200;
+  anchorIdx = -1;
+  ropeLen = 0;
+  waterY = H + 30;
+  waterSpeedMult = 1;
+  score = 0;
+  scoreTimer = 0;
+  highestY = py;
+  popups = [];
+  particles = [];
+  lastLatchT = 0;
+  lastSwingSpeed = 0;
+  state = 'playing';
+}
+
+// ---- Find nearest post within latch radius ----
+function nearestPost(x, y, excludeIdx) {
+  let best = -1, bestDist = LATCH_RADIUS;
+  for (let i = 0; i < posts.length; i++) {
+    if (i === excludeIdx || !posts[i].active) continue;
+    const d = Math.hypot(posts[i].x - x, posts[i].y - y);
+    if (d < bestDist) { bestDist = d; best = i; }
+  }
+  return best;
+}
+
+// ---- Latch onto a post ----
+function latch(postIdx) {
+  anchorIdx = postIdx;
+  ropeLen = Math.hypot(px - posts[postIdx].x, py - posts[postIdx].y);
+  ropeLen = Math.max(30, ropeLen);
+  playLatch();
+  lastLatchT = performance.now();
+  addPopup(px, py - 20, 'LATCH!', '#FFE066');
+}
+
+// ---- Release from current anchor ----
+function release() {
+  anchorIdx = -1;
+  playRelease();
+}
+
+// ---- Tap handler ----
+function handleTap() {
+  if (state === 'title') { startGame(); return; }
+  if (state === 'dead' || state === 'win') { state = 'title'; return; }
+  if (state !== 'playing') return;
+
+  if (anchorIdx === -1) {
+    // Try to latch onto nearest post
+    const idx = nearestPost(px, py, -1);
+    if (idx !== -1) latch(idx);
+    else addPopup(px, py - 20, 'MISS', '#E74C3C');
+  } else {
+    // Release
+    release();
+  }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  // Check feedback button area
+  const rect = canvas.getBoundingClientRect();
+  const scale = W / rect.width;
+  const cx = (e.clientX - rect.left) * scale;
+  const cy = (e.clientY - rect.top) * scale;
+  if (state === 'playing' || state === 'title' || state === 'dead' || state === 'win') {
+    if (cx > W - 50 && cy > H - 40) { showFeedback(); return; }
+  }
+  handleTap();
+});
+document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); handleTap(); } });
+
+// ---- Physics update ----
+function updatePhysics(dt) {
+  if (anchorIdx !== -1) {
+    // Pendulum: apply gravity, then project onto circle
+    pvx += 0; // no horizontal force
+    pvy += GRAVITY * dt;
+
+    // Project back to rope circle
+    const ax = posts[anchorIdx].x, ay = posts[anchorIdx].y;
+    let dx = px + pvx * dt - ax;
+    let dy = py + pvy * dt - ay;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 0) {
+      const nx = dx / dist, ny = dy / dist;
+      // New position on the circle
+      const newX = ax + nx * ropeLen;
+      const newY = ay + ny * ropeLen;
+      // Velocity tangential to rope (remove radial component)
+      const radVel = pvx * nx + pvy * ny;
+      pvx -= radVel * nx;
+      pvy -= radVel * ny;
+      // Add slight damping
+      pvx *= 0.999;
+      pvy *= 0.999;
+      px = newX;
+      py = newY;
+    }
+    // Track swing speed for audio
+    const spd = Math.hypot(pvx, pvy);
+    if (Math.abs(spd - lastSwingSpeed) > 80 && performance.now() - lastLatchT > 200) {
+      playSwingWhoosh(spd / 400);
+      lastSwingSpeed = spd;
+    }
+  } else {
+    // Free flight - apply gravity
+    pvy += GRAVITY * dt;
+    px += pvx * dt;
+    py += pvy * dt;
+    // Wall bounce
+    if (px < PLAYER_RADIUS) { px = PLAYER_RADIUS; pvx = Math.abs(pvx) * 0.7; }
+    if (px > W - PLAYER_RADIUS) { px = W - PLAYER_RADIUS; pvx = -Math.abs(pvx) * 0.7; }
+    // Auto-latch on any post within tight range during free flight
+    const idx = nearestPost(px, py, -1);
+    if (idx !== -1 && Math.hypot(px - posts[idx].x, py - posts[idx].y) < POST_RADIUS + PLAYER_RADIUS) {
+      latch(idx);
+    }
+  }
+
+  // Track highest point reached
+  if (py < highestY) {
+    highestY = py;
+    // Score: height gained (inverted: low y = high)
+    const heightScore = Math.floor((H - py) / 10);
+    if (heightScore > score) {
+      score = heightScore;
+      if (score % 10 === 0 && score > 0) addPopup(px, py - 30, '+HEIGHT', '#FF9F43');
+    }
+  }
+}
+
+// ---- Water ----
+function updateWater(dt) {
+  waterSpeedMult = Math.max(1, 1 + (1 - waterY / H) * 2); // faster as water rises, min 1
+  waterY -= WATER_RISE_RATE * waterSpeedMult * dt;
+
+  // Spawn water particles at surface
+  if (Math.random() < 0.15) {
+    const wx = Math.random() * W;
+    particles.push({ x: wx, y: waterY, vx: (Math.random() - 0.5) * 60, vy: -Math.random() * 40, life: 0.6, maxLife: 0.6 });
+  }
+}
+
+// ---- Death check ----
+function checkDeath() {
+  if (py > waterY - PLAYER_RADIUS * 0.5) {
+    playSplash();
+    // Splash particles
+    for (let i = 0; i < 20; i++) {
+      const angle = Math.random() * Math.PI;
+      const spd = 60 + Math.random() * 120;
+      particles.push({ x: px, y: py, vx: Math.cos(angle) * spd, vy: -Math.sin(angle) * spd * 1.5,
+                       life: 0.8, maxLife: 0.8 });
+    }
+    if (score > best) { best = score; localStorage.setItem('last_rope_best', best); }
+    state = 'dead';
+  }
+  // Win: if player reaches top row level
+  if (py < BASE_Y - 20) {
+    playWin();
+    score += 50;
+    if (score > best) { best = score; localStorage.setItem('last_rope_best', best); }
+    addPopup(W / 2, H / 2, 'ESCAPED!', '#FFE066');
+    state = 'win';
+  }
+}
+
+// ---- Update particles ----
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 200 * dt;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// ---- Main update ----
+function update(dt) {
+  scoreTimer += dt;
+  updatePhysics(dt);
+  updateWater(dt);
+  updateParticles(dt);
+  checkDeath();
+  // Update popups
+  for (let i = popups.length - 1; i >= 0; i--) {
+    popups[i].life -= dt * 1.2;
+    popups[i].y -= 40 * dt;
+    if (popups[i].life <= 0) popups.splice(i, 1);
+  }
+}
+
+// ---- Draw helpers ----
+function drawBackground() {
+  ctx.save();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0520');
+  grad.addColorStop(0.6, '#1a0d35');
+  grad.addColorStop(1, '#050208');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawPosts() {
+  ctx.save();
+  for (let i = 0; i < posts.length; i++) {
+    if (!posts[i].active) continue;
+    const { x, y } = posts[i];
+    // Post pole (vertical line)
+    ctx.strokeStyle = '#C8A04A';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y + POST_RADIUS); ctx.lineTo(x, y + 18); ctx.stroke();
+    // Post head (circle)
+    const isAnchor = (i === anchorIdx);
+    const glowAlpha = isAnchor ? 0.6 : 0;
+    if (isAnchor) {
+      ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 18;
+    }
+    ctx.fillStyle = isAnchor ? '#FFE066' : '#C8A04A';
+    ctx.beginPath(); ctx.arc(x, y, POST_RADIUS, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // Latch range indicator (faint circle when airborne, closest post)
+    ctx.restore();
+    ctx.save();
+  }
+  ctx.restore();
+}
+
+function drawRope() {
+  if (anchorIdx === -1) return;
+  ctx.save();
+  const ax = posts[anchorIdx].x, ay = posts[anchorIdx].y;
+  // Draw rope as a catenary-approximated curve
+  const mid = { x: (ax + px) / 2 + (ay - py) * 0.05, y: (ay + py) / 2 + 8 };
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 4;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.quadraticCurveTo(mid.x, mid.y, px, py);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlayer() {
+  ctx.save();
+  // Silhouette cowboy figure
+  const x = px, y = py;
+  ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 12;
+  // Body
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.ellipse(x, y + 4, 8, 11, 0, 0, Math.PI * 2); ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.arc(x, y - 11, 7, 0, Math.PI * 2); ctx.fill();
+  // Hat
+  ctx.fillStyle = '#2a0f30';
+  ctx.beginPath();
+  ctx.rect(x - 9, y - 20, 18, 5);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y - 20); ctx.lineTo(x - 1, y - 26); ctx.lineTo(x + 1, y - 26); ctx.lineTo(x + 7, y - 20);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawWater() {
+  ctx.save();
+  // Animated water surface
+  const waveTime = performance.now() / 800;
+  ctx.fillStyle = 'rgba(30, 80, 200, 0.75)';
+  ctx.beginPath();
+  ctx.moveTo(0, waterY);
+  for (let x = 0; x <= W; x += 8) {
+    const wave = Math.sin(x / 30 + waveTime) * 4 + Math.sin(x / 17 + waveTime * 1.3) * 2;
+    ctx.lineTo(x, waterY + wave);
+  }
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fill();
+  // Surface shimmer
+  ctx.fillStyle = 'rgba(100, 160, 255, 0.25)';
+  ctx.beginPath();
+  ctx.moveTo(0, waterY);
+  for (let x = 0; x <= W; x += 8) {
+    const wave = Math.sin(x / 30 + waveTime) * 4 + Math.sin(x / 17 + waveTime * 1.3) * 2;
+    ctx.lineTo(x, waterY + wave);
+  }
+  ctx.lineTo(W, waterY + 6); ctx.lineTo(0, waterY + 6); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawParticles() {
+  ctx.save();
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.fillStyle = '#5599ff';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawLatchIndicator() {
+  if (anchorIdx !== -1 || state !== 'playing') return;
+  ctx.save();
+  // Highlight nearest post within range
+  const idx = nearestPost(px, py, -1);
+  if (idx !== -1) {
+    const { x, y } = posts[idx];
+    const d = Math.hypot(px - x, py - y);
+    const alpha = 1 - d / LATCH_RADIUS;
+    ctx.strokeStyle = `rgba(255,224,102,${alpha * 0.6})`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(x, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Score
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 30);
+  // Water danger indicator
+  const danger = Math.max(0, 1 - (waterY - py) / 200);
+  if (danger > 0.3) {
+    ctx.fillStyle = `rgba(231,76,60,${danger * 0.8})`;
+    ctx.font = 'bold 13px Georgia,serif';
+    ctx.fillText('RISING FAST', W / 2, 52);
+  }
+  // Feedback btn
+  ctx.fillStyle = 'rgba(255,224,102,0.15)';
+  roundRect(ctx, W - 48, H - 34, 44, 28, 6);
+  ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '11px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('FEEDBACK', W - 26, H - 16);
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  for (const p of popups) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 15px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBackground();
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  for (let i = 0; i < 60; i++) {
+    const sx = (i * 137.508) % W;
+    const sy = (i * 97.3) % (H * 0.6);
+    ctx.beginPath(); ctx.arc(sx, sy, 1, 0, Math.PI * 2); ctx.fill();
+  }
+  // Title
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 20;
+  ctx.font = 'bold 34px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Last Rope', W / 2, 180);
+  ctx.fillText('Standing', W / 2, 220);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia,serif';
+  ctx.fillText('Swing between fence posts', W / 2, 270);
+  ctx.fillText('as floodwaters rise', W / 2, 292);
+  ctx.fillText('Tap to latch — Tap to release', W / 2, 320);
+  if (best > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '14px Georgia,serif';
+    ctx.fillText('Best: ' + best, W / 2, 352);
+  }
+  // Play button
+  ctx.fillStyle = '#FFE066';
+  roundRect(ctx, W / 2 - 70, 390, 140, 48, 10);
+  ctx.fill();
+  ctx.fillStyle = '#1a0d35';
+  ctx.font = 'bold 20px Georgia,serif';
+  ctx.fillText('PLAY', W / 2, 422);
+  ctx.restore();
+}
+
+function drawDead() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#E74C3C';
+  ctx.shadowColor = '#E74C3C'; ctx.shadowBlur = 15;
+  ctx.font = 'bold 32px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('WASHED OUT', W / 2, 230);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 24px Georgia,serif';
+  ctx.fillText('Score: ' + score, W / 2, 280);
+  if (score >= best && score > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 16px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, 310);
+  } else if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '15px Georgia,serif';
+    ctx.fillText('Best: ' + best, W / 2, 310);
+  }
+  ctx.fillStyle = '#FFE066';
+  roundRect(ctx, W / 2 - 70, 360, 140, 44, 10);
+  ctx.fill();
+  ctx.fillStyle = '#1a0d35';
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText('TRY AGAIN', W / 2, 389);
+  ctx.restore();
+}
+
+function drawWin() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 20;
+  ctx.font = 'bold 32px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('OUTLAW LIVES!', W / 2, 220);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 24px Georgia,serif';
+  ctx.fillText('Score: ' + score, W / 2, 270);
+  if (score >= best) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 16px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, 305);
+  }
+  ctx.fillStyle = '#FFE066';
+  roundRect(ctx, W / 2 - 70, 360, 140, 44, 10);
+  ctx.fill();
+  ctx.fillStyle = '#1a0d35';
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText('PLAY AGAIN', W / 2, 389);
+  // Share
+  roundRect(ctx, W / 2 - 50, 418, 100, 36, 8);
+  ctx.fillStyle = 'rgba(255,224,102,0.15)';
+  ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '14px Georgia,serif';
+  ctx.fillText('SHARE', W / 2, 442);
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function draw() {
+  if (state === 'title') { drawTitle(); return; }
+  drawBackground();
+  // Starfield
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  for (let i = 0; i < 40; i++) {
+    const sx = (i * 137.508) % W;
+    const sy = (i * 97.3) % (H * 0.5);
+    ctx.beginPath(); ctx.arc(sx, sy, 1, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  drawPosts();
+  drawLatchIndicator();
+  drawRope();
+  drawPlayer();
+  drawWater();
+  drawParticles();
+  drawHUD();
+  drawPopups();
+  if (state === 'dead') drawDead();
+  if (state === 'win') drawWin();
+}
+
+// ---- Test namespace ----
+window._lrs = {
+  get state() { return state; }, set state(v) { state = v; },
+  get px() { return px; }, set px(v) { px = v; },
+  get py() { return py; }, set py(v) { py = v; },
+  get pvx() { return pvx; }, set pvx(v) { pvx = v; },
+  get pvy() { return pvy; }, set pvy(v) { pvy = v; },
+  get anchorIdx() { return anchorIdx; }, set anchorIdx(v) { anchorIdx = v; },
+  get ropeLen() { return ropeLen; }, set ropeLen(v) { ropeLen = v; },
+  get waterY() { return waterY; }, set waterY(v) { waterY = v; },
+  get waterSpeedMult() { return waterSpeedMult; },
+  get posts() { return posts; },
+  get score() { return score; }, set score(v) { score = v; },
+  get highestY() { return highestY; }, set highestY(v) { highestY = v; },
+  get popups() { return popups; },
+  get particles() { return particles; },
+  GRAVITY, LATCH_RADIUS, WATER_RISE_RATE, POST_RADIUS, PLAYER_RADIUS,
+  POST_COLS, POST_ROWS, BASE_Y, W, H,
+  startGame, generatePosts, latch, release, nearestPost, addPopup,
+  update,
+};
+
+// ---- Main loop ----
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - (lastT || ts)) / 1000, 0.05);
+    lastT = ts;
+    if (state === 'playing') update(dt);
+    draw();
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---- Feedback ----
+function showFeedback() {
+  document.getElementById('fb-overlay').classList.add('show');
+}
+document.getElementById('fb-cancel').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('show');
+});
+document.getElementById('fb-send').addEventListener('click', async () => {
+  const game = document.getElementById('fb-target').value;
+  const message = document.getElementById('fb-text').value.trim();
+  if (!message) return;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game, message, source: 'in-game' }),
+      mode: 'no-cors'
+    });
+  } catch(e) {}
+  document.getElementById('fb-text').value = '';
+  document.getElementById('fb-overlay').classList.remove('show');
+  addPopup(W / 2, H / 2, 'Thanks!', '#FFE066');
+});
+
+// Share
+canvas.addEventListener('pointerdown', e => {}, { passive: true });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && (state === 'win') && e.target.tagName !== 'TEXTAREA') {
+    try {
+      navigator.share({ title: 'Last Rope Standing', text: 'I scored ' + score + ' in Last Rope Standing — Bob Davis', url: location.href });
+    } catch(e2) {}
+  }
+});
+</script>
+</body>
+</html>
