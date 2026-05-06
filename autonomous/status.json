@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-06T08:45:00.000Z",
+  "lastRunAt": "2026-05-06T09:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 39 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 39: Last Rope Standing - tests passing, committing"
-  },
-  "gamesBuilt": 38,
-  "lastGameTitle": "Dust Road Derby",
-  "lastGameFile": "dust-road-derby.html",
+  "lastRunSummary": "Built Game 39: Last Rope Standing - pendulum grapple survival, constraint pendulum physics, rising floodwaters, 50 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 39,
+  "lastGameTitle": "Last Rope Standing",
+  "lastGameFile": "last-rope-standing.html",
   "gameQueue": [
-    {
-      "num": 39,
-      "title": "Last Rope Standing",
-      "concept": "Grappling hook survival: the last outlaw standing swings between fence posts on a rope lasso as floodwaters rise. Tap to latch onto the nearest post, pendulum-swing to gain height, release to fly to the next anchor point. Miss an anchor and you drop. First grapple-physics mechanic in the series.",
-      "raisesBarOn": "First pendulum-swing grapple physics in series, first vertical survival structure with rising threat, first game where spatial awareness and swing momentum are the primary skills",
-      "status": "planned"
-    },
     {
       "num": 40,
       "title": "Wire Tap",
@@ -30,17 +20,16 @@
       "concept": "Skill-based prospecting: tilt a gold pan (left/right drag) to slosh water and separate gold flakes from gravel. Each round introduces more mud and lighter fools-gold that moves like real gold. Physics-based fluid slosh model with particle stratification by density. Race against drying pan and claim jumpers.",
       "raisesBarOn": "First fluid simulation mechanic in series, first density/stratification physics, first game based on manual dexterity over a sustained object rather than reaction timing",
       "status": "planned"
+    },
+    {
+      "num": 42,
+      "title": "Coyote Call",
+      "concept": "Audio pitch-matching predator lure: drag a slide-whistle to match the coyote howl frequency shown as an oscilloscope waveform. Hit three frequency markers in sequence to build trust and draw the pack in. Too far off and coyotes flee. 5 rounds of increasing pack intelligence and tighter tolerance windows. First continuous pitch-control mechanic in series.",
+      "raisesBarOn": "First real-time analog pitch-drag mechanic (continuous frequency slider vs tap), first game where audio matching IS the primary mechanic rather than a feedback cue, first predator/prey relational system in series",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-02T04:47:06Z",
-      "action": "new_game",
-      "game": "Trail Boss",
-      "result": "success",
-      "summary": "Built Game 20: Trail Boss - top-down wagon escort, 3 draining resources, 5 biomes, ambush/supply/river events, 40 tests pass.",
-      "commitHash": "6deb670"
-    },
     {
       "runAt": "2026-05-02T10:10:00.000Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 38: Dust Road Derby - top-down oval racer, parametric track, rubber-band AI rivals, slipstream draft mechanic, 50 tests pass.",
       "commitHash": "7e12cb6"
+    },
+    {
+      "runAt": "2026-05-06T09:30:00.000Z",
+      "action": "new_game",
+      "game": "Last Rope Standing",
+      "result": "success",
+      "summary": "Built Game 39: Last Rope Standing - pendulum grapple survival, constraint physics, rising floodwaters, 50 tests pass.",
+      "commitHash": "3558c68"
     }
   ]
 }
