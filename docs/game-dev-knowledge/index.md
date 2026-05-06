@@ -45,6 +45,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 35 | Snake Canyon | `snake-canyon.html` | First-person dungeon-crawler maze / DFS procedural 11x7 level / audio-spatial rattlesnake (bandpass noise + LFO tremolo + StereoPannerNode) / loud/quiet footstep timing mechanic / BFS snake chase AI / perspective trapezoid FP renderer / first procedural level in series | 2026-05-05 |
 | 36 | Rodeo Queen | `rodeo-queen.html` | Skill-chain combo game / 3 distinct events (barrel timing tap, lasso circular-drag, trick riding hold/release) / shared crowd energy meter / derivative-based peak/valley detection (cos sign change) / combo multiplier 1x-5x resets on miss / first multi-discipline structure in series | 2026-05-05 |
 | 37 | Tumbledown Town | `tumbledown-town.html` | Verlet physics demolition puzzle / position-based integration (pos+prevPos, no velocity) / 12-constraint-iteration Verlet solver / removable support links / CRUSH_Y/SAFE_Y thresholds for win/lose / diagonal braces create cross-section coupling / 5 escalating puzzle levels / first physics simulation in series | 2026-05-06 |
+| 38 | Dust Road Derby | `dust-road-derby.html` | Top-down oval racer / parametric track (t=0-1) + lane (-1 to +1) position system / carXY() computes screen pos from ellipse + outward normal / rubber-band AI (clamp 0.72-1.42x) with sine-wave lane weave / slipstream draft boost (78px proximity + progress check = +18% speed cap) / evenodd fill-rule for track donut / countdown beep sequence / 5 laps / first racing game in series | 2026-05-06 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -92,6 +93,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Snake Canyon](retrospectives/35-snake-canyon.md) — session lessons, action items for Game 36
 - [Retrospective: Rodeo Queen](retrospectives/36-rodeo-queen.md) — session lessons, action items for Game 37
 - [Retrospective: Tumbledown Town](retrospectives/37-tumbledown-town.md) — session lessons, action items for Game 38
+- [Retrospective: Dust Road Derby](retrospectives/38-dust-road-derby.md) — session lessons, action items for Game 39
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
