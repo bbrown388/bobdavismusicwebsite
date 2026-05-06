@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,7 +10,14 @@ body { background: #000; display: flex; align-items: center; justify-content: ce
        height: 100vh; overflow: hidden; touch-action: none; }
 canvas { display: block; }
 </style>
-</head>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script></head>
 <body>
 <canvas id="c" width="360" height="640"></canvas>
 <script>

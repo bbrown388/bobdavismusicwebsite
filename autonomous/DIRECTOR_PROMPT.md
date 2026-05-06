@@ -83,6 +83,17 @@ Read that output and act on it per the instructions below.
    - All state reset in `startGame()`
    - `ctx.save()/ctx.restore()` wraps every `draw*` function
    - Pre-composed chord progression (not random notes)
+   - Google Analytics tag in `<head>` — always include this snippet before `</head>`:
+     ```html
+     <!-- Google tag (gtag.js) -->
+     <script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+     <script>
+       window.dataLayer = window.dataLayer || [];
+       function gtag(){dataLayer.push(arguments);}
+       gtag('js', new Date());
+       gtag('config', 'G-X1W0TNHM51');
+     </script>
+     ```
    - Feedback overlay with Google Apps Script endpoint — read URL from `autonomous/feedback-url.txt`
      Set `const FEEDBACK_ENDPOINT = '<url from feedback-url.txt>';` near the top of the game file
    - `loop()` wrapped in try/catch
