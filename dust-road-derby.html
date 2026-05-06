@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dust Road Derby</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const W = 360, H = 640;
+
+// Track geometry - oval centered on canvas
+const CX = 180, CY = 320;
+const OUT_RX = 152, OUT_RY = 232;  // outer rail radii
+const IN_RX  = 94,  IN_RY  = 166;  // inner rail radii
+const CRX = (OUT_RX + IN_RX) / 2;  // centerline rx = 123
+const CRY = (OUT_RY + IN_RY) / 2;  // centerline ry = 199
+const HALF_TW = (OUT_RY - IN_RY) / 2; // half track width for lane offset = 33
+
+const TOTAL_LAPS = 5;
+
+// Car physics constants
+const BASE_SPEED  = 0.00225; // t-units per frame (60fps)
+const MAX_SPEED   = 0.00380;
+const ACCEL       = 0.0000070;
+const DRAG        = 0.0000045;
+const STEER_RATE  = 0.022;    // lane units per frame when input held
+const RUBBER_BAND = 0.35;     // rubber-band AI aggressiveness
+const SLIP_DIST   = 78;       // px - slipstream detection radius
+const SLIP_BOOST  = 0.18;     // 18% speed boost in slipstream
+const CAR_W = 12, CAR_H = 22;
+
+// Colors
+const C_TRACK   = '#b8904e';
+const C_INFIELD = '#1a3812';
+const C_PLAYER  = '#FFD700';
+const C_BORDER  = 'rgba(255,255,255,0.75)';
+const AI_COLS   = ['#c03820', '#2a5880', '#4a7030'];
+const AI_NAMES  = ['Outlaw Red', 'Texas Blue', 'Ranch Green'];
+
+// Canvas setup
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+  wrap.style.width  = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Track geometry helpers ──────────────────────────────────────────────────
+
+// Returns unit tangent vector at track parameter t (0-1, clockwise from top)
+function trackTangent(t) {
+  const a = t * Math.PI * 2 - Math.PI / 2;
+  const dx = -CRX * Math.sin(a);
+  const dy =  CRY * Math.cos(a);
+  const len = Math.sqrt(dx * dx + dy * dy);
+  return { dx: dx / len, dy: dy / len };
+}
+
+// Returns {x, y, heading} for a car at parameter t with lane offset [-1,+1]
+// lane -1 = inner rail, 0 = centerline, +1 = outer rail
+function carXY(t, lane) {
+  const a = t * Math.PI * 2 - Math.PI / 2;
+  const px = CX + CRX * Math.cos(a);
+  const py = CY + CRY * Math.sin(a);
+  const { dx, dy } = trackTangent(t);
+  // Outward normal: CW rotation of tangent
+  const nx = dy, ny = -dx;
+  return {
+    x: px + nx * lane * HALF_TW,
+    y: py + ny * lane * HALF_TW,
+    heading: Math.atan2(dy, dx)
+  };
+}
+
+// ── Audio ───────────────────────────────────────────────────────────────────
+
+let audioCtx = null;
+let engOsc = null, engGain = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  engOsc  = audioCtx.createOscillator();
+  engGain = audioCtx.createGain();
+  engOsc.type = 'sawtooth';
+  engOsc.frequency.value = 90;
+  engGain.gain.value = 0;
+  engOsc.connect(engGain);
+  engGain.connect(audioCtx.destination);
+  engOsc.start();
+}
+
+function setEngineFreq(speed) {
+  if (!audioCtx || !engOsc) return;
+  const r = Math.min(1, speed / MAX_SPEED);
+  engOsc.frequency.setTargetAtTime(75 + r * 310, audioCtx.currentTime, 0.08);
+  engGain.gain.setTargetAtTime(0.055, audioCtx.currentTime, 0.04);
+}
+
+function muteEngine() {
+  if (!audioCtx || !engGain) return;
+  engGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.2);
+}
+
+function beep(freq, dur, vol) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g   = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  g.gain.setValueAtTime(vol || 0.14, audioCtx.currentTime);
+  g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + dur);
+  osc.connect(g);
+  g.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur + 0.01);
+}
+
+function lapChime() {
+  beep(660, 0.10, 0.16);
+  setTimeout(() => beep(880, 0.14, 0.13), 110);
+}
+
+function finishFanfare() {
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.18, 0.14), i * 90));
+}
+
+// ── Game state ───────────────────────────────────────────────────────────────
+
+let gs = 'title'; // title | countdown | playing | result
+let player, aiCars, dustParts, countdownStart, finalPosition;
+let touchLeft = false, touchRight = false;
+let fbOpen = false, fbRating = 0, fbSubmitted = false, fbMsg = '';
+let rafId = null, lastTime = 0;
+
+function makeCar(t, lane, color, name) {
+  return {
+    t, prevT: t, lane, speed: BASE_SPEED * 0.55,
+    laps: 0, color, name,
+    finished: false, weavePhase: Math.random() * Math.PI * 2
+  };
+}
+
+function startGame() {
+  player  = makeCar(0.00, 0.0,  C_PLAYER,  'You');
+  aiCars  = [
+    makeCar(0.04, -0.25, AI_COLS[0], AI_NAMES[0]),
+    makeCar(0.08,  0.15, AI_COLS[1], AI_NAMES[1]),
+    makeCar(0.13,  0.0,  AI_COLS[2], AI_NAMES[2]),
+  ];
+  dustParts    = [];
+  finalPosition = 0;
+  countdownStart = performance.now();
+  gs = 'countdown';
+}
+
+// ── Input ────────────────────────────────────────────────────────────────────
+
+function updateTouchSides(touches) {
+  touchLeft = false; touchRight = false;
+  if (!touches) return;
+  const rect  = canvas.getBoundingClientRect();
+  const scale = parseFloat(canvas.style.width) / W;
+  for (const t of touches) {
+    const x = (t.clientX - rect.left) / scale;
+    if (x < W / 2) touchLeft = true;
+    else touchRight = true;
+  }
+}
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  initAudio();
+  if (fbOpen) { handleFbTouch(e); return; }
+  if (gs === 'title')  { startGame(); return; }
+  if (gs === 'result') { gs = 'title'; return; }
+  updateTouchSides(e.touches);
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (fbOpen) return;
+  updateTouchSides(e.touches);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  updateTouchSides(e.touches);
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  initAudio();
+  if (fbOpen) { handleFbClick(e); return; }
+  if (gs === 'title')  { startGame(); return; }
+  if (gs === 'result') {
+    handleResultClick(e);
+    return;
+  }
+  const rect  = canvas.getBoundingClientRect();
+  const scale = parseFloat(canvas.style.width) / W;
+  const x = (e.clientX - rect.left) / scale;
+  if (x < W / 2) touchLeft = true;
+  else touchRight = true;
+});
+
+canvas.addEventListener('mouseup', () => { touchLeft = false; touchRight = false; });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && gs === 'title') { initAudio(); startGame(); }
+  if (e.code === 'ArrowLeft')  touchLeft  = true;
+  if (e.code === 'ArrowRight') touchRight = true;
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft')  touchLeft  = false;
+  if (e.code === 'ArrowRight') touchRight = false;
+});
+
+// ── Physics ──────────────────────────────────────────────────────────────────
+
+function progress(car) { return car.laps + car.t; }
+
+function isInSlipstream(car) {
+  for (const ai of aiCars) {
+    if (ai.finished) continue;
+    const aPos = carXY(ai.t,  ai.lane);
+    const pPos = carXY(car.t, car.lane);
+    const dist = Math.hypot(pPos.x - aPos.x, pPos.y - aPos.y);
+    if (dist < SLIP_DIST && progress(ai) > progress(car)) return true;
+  }
+  return false;
+}
+
+function updatePlayer(dt60) {
+  if (player.finished) return;
+
+  // Steering input
+  const steer = touchLeft ? -1 : touchRight ? 1 : 0;
+  player.lane = Math.max(-1.25, Math.min(1.25,
+    player.lane + steer * STEER_RATE * dt60));
+
+  // Speed modifiers
+  const offTrack = Math.max(0, Math.abs(player.lane) - 0.80) / 0.45; // 0..1
+  const slip = isInSlipstream(player);
+  let speedCap = MAX_SPEED * (1 - offTrack * 0.62) * (slip ? (1 + SLIP_BOOST) : 1);
+
+  // Accelerate/decelerate
+  player.speed = Math.min(speedCap, player.speed + ACCEL * dt60);
+  player.speed = Math.max(BASE_SPEED * 0.45, player.speed - DRAG * dt60);
+
+  // Advance around track
+  player.prevT = player.t;
+  player.t    += player.speed * dt60;
+  if (player.t >= 1) {
+    player.t -= 1;
+    player.laps++;
+    if (player.laps < TOTAL_LAPS) lapChime();
+  }
+
+  // Dust particles when off racing line
+  if (Math.abs(player.lane) > 0.65) {
+    const pos = carXY(player.t, player.lane);
+    for (let i = 0; i < 2; i++) {
+      dustParts.push({
+        x: pos.x + (Math.random() - 0.5) * 10,
+        y: pos.y + (Math.random() - 0.5) * 10,
+        vx: (Math.random() - 0.5) * 1.2,
+        vy: (Math.random() - 0.5) * 1.2,
+        r: 3 + Math.random() * 3,
+        life: 1.0, maxLife: 1.0 + Math.random() * 0.5
+      });
+    }
+  }
+
+  player.inSlip = slip;
+
+  if (player.laps >= TOTAL_LAPS && !player.finished) {
+    player.finished = true;
+    finalPosition   = getPosition();
+    saveBest(finalPosition);
+    muteEngine();
+    finishFanfare();
+    gs = 'result';
+  }
+}
+
+function updateAI(ai, dt60) {
+  if (ai.finished) return;
+
+  // Rubber-band: speed based on gap to player
+  const gap     = progress(player) - progress(ai); // + if player ahead
+  let rbMult    = 1.0 + gap * RUBBER_BAND;
+  rbMult        = Math.max(0.72, Math.min(1.42, rbMult));
+  const aiMaxSp = MAX_SPEED * rbMult;
+
+  // Gentle lane weave for realism
+  ai.weavePhase += 0.012 * dt60;
+  const target = Math.sin(ai.weavePhase) * 0.30;
+  ai.lane += (target - ai.lane) * 0.05 * dt60;
+  ai.lane  = Math.max(-0.92, Math.min(0.92, ai.lane));
+
+  // Nudge away from player if too close
+  const aiPos = carXY(ai.t,  ai.lane);
+  const plPos = carXY(player.t, player.lane);
+  const dist  = Math.hypot(aiPos.x - plPos.x, aiPos.y - plPos.y);
+  if (dist < 22) {
+    const nudge = (ai.lane - player.lane) * 0.10 * dt60;
+    ai.lane = Math.max(-0.92, Math.min(0.92, ai.lane + nudge));
+  }
+
+  ai.speed = Math.min(aiMaxSp, ai.speed + ACCEL * dt60);
+  ai.prevT = ai.t;
+  ai.t    += ai.speed * dt60;
+  if (ai.t >= 1) {
+    ai.t -= 1;
+    ai.laps++;
+  }
+
+  if (ai.laps >= TOTAL_LAPS && !ai.finished) {
+    ai.finished = true;
+    // If all AI finished before player, player loses
+    if (!player.finished && aiCars.every(a => a.finished)) {
+      player.finished = true;
+      finalPosition   = getPosition();
+      saveBest(finalPosition);
+      muteEngine();
+      finishFanfare();
+      setTimeout(() => { gs = 'result'; }, 800);
+    }
+  }
+}
+
+function getPosition() {
+  const all = [player, ...aiCars];
+  all.sort((a, b) => progress(b) - progress(a));
+  return all.findIndex(c => c === player) + 1;
+}
+
+function saveBest(pos) {
+  const best = parseInt(localStorage.getItem('dust_road_derby_best') || '9');
+  if (pos < best) localStorage.setItem('dust_road_derby_best', pos);
+}
+
+function getBest() {
+  return parseInt(localStorage.getItem('dust_road_derby_best') || '0');
+}
+
+// ── Draw helpers ─────────────────────────────────────────────────────────────
+
+function pill(x, y, w, h, fill, text, textColor) {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.roundRect(x - w/2, y - h/2, w, h, h/2);
+  ctx.fill();
+  if (text) {
+    ctx.fillStyle = textColor || '#fff';
+    ctx.font = `bold ${h * 0.55}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y + 1);
+  }
+}
+
+function drawTrack() {
+  ctx.save();
+
+  // Track surface (donut shape via evenodd)
+  ctx.beginPath();
+  ctx.ellipse(CX, CY, OUT_RX, OUT_RY, 0, 0, Math.PI * 2);
+  ctx.ellipse(CX, CY, IN_RX,  IN_RY,  0, 0, Math.PI * 2, true);
+  ctx.fillStyle = C_TRACK;
+  ctx.fill('evenodd');
+
+  // Infield
+  ctx.beginPath();
+  ctx.ellipse(CX, CY, IN_RX, IN_RY, 0, 0, Math.PI * 2);
+  ctx.fillStyle = C_INFIELD;
+  ctx.fill();
+
+  // Outer and inner border lines
+  ctx.strokeStyle = C_BORDER;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.ellipse(CX, CY, OUT_RX, OUT_RY, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(CX, CY, IN_RX, IN_RY, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Dashed centerline
+  ctx.strokeStyle = 'rgba(255,255,160,0.18)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([7, 9]);
+  ctx.beginPath();
+  ctx.ellipse(CX, CY, CRX, CRY, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Start/finish line - vertical checkered strip at top of oval (t=0)
+  // At t=0, the track runs horizontally so the line is vertical
+  const sfX  = CX;
+  const sfY1 = CY - OUT_RY + 3;
+  const sfY2 = CY - IN_RY  - 3;
+  const sqH  = (sfY2 - sfY1) / 7;
+  const sqW  = 9;
+  for (let i = 0; i < 7; i++) {
+    ctx.fillStyle = i % 2 === 0 ? '#fff' : '#111';
+    ctx.fillRect(sfX - sqW / 2, sfY1 + i * sqH, sqW, sqH + 0.5);
+  }
+
+  // Infield text
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('DUST ROAD', CX, CY - 20);
+  ctx.fillText('DERBY', CX, CY + 5);
+  ctx.font = '11px Georgia, serif';
+  ctx.fillStyle = '#6a9050';
+  ctx.fillText('5 LAPS', CX, CY + 30);
+
+  ctx.restore();
+}
+
+function drawDust() {
+  for (const p of dustParts) {
+    ctx.save();
+    ctx.globalAlpha = (p.life / p.maxLife) * 0.45;
+    ctx.fillStyle = '#c09448';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * (1 + (1 - p.life / p.maxLife)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawSlipstreamEffect() {
+  if (!player.inSlip) return;
+  let closest = null;
+  for (const ai of aiCars) {
+    if (!ai.finished && progress(ai) > progress(player)) {
+      if (!closest || progress(ai) < progress(closest)) closest = ai;
+    }
+  }
+  if (!closest) return;
+
+  const aPos = carXY(closest.t, closest.lane);
+  const pPos = carXY(player.t,  player.lane);
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(200,240,255,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 6]);
+  for (let i = -4; i <= 4; i += 4) {
+    ctx.beginPath();
+    ctx.moveTo(pPos.x + i, pPos.y);
+    ctx.lineTo(aPos.x + i, aPos.y);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawCar(car) {
+  const pos = carXY(car.t, car.lane);
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  ctx.rotate(pos.heading + Math.PI / 2); // +90deg so nose of rect faces heading
+
+  // Shadow
+  ctx.save();
+  ctx.translate(2, 4);
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.roundRect(-CAR_W / 2, -CAR_H / 2, CAR_W, CAR_H, 3);
+  ctx.fill();
+  ctx.restore();
+
+  // Body
+  ctx.fillStyle = car.color;
+  ctx.beginPath();
+  ctx.roundRect(-CAR_W / 2, -CAR_H / 2, CAR_W, CAR_H, 3);
+  ctx.fill();
+
+  // Windshield (dark stripe near front)
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  ctx.fillRect(-CAR_W / 2 + 2, -CAR_H / 2 + 3, CAR_W - 4, 6);
+
+  // Tail lights
+  ctx.fillStyle = 'rgba(255,60,20,0.85)';
+  ctx.fillRect(-CAR_W / 2 + 1,   CAR_H / 2 - 5, 3, 3);
+  ctx.fillRect( CAR_W / 2 - 4,   CAR_H / 2 - 5, 3, 3);
+
+  ctx.restore();
+}
+
+function drawHUD(now) {
+  ctx.save();
+
+  // Top bar
+  ctx.fillStyle = 'rgba(5,2,8,0.88)';
+  ctx.fillRect(0, 0, W, 70);
+
+  // Lap count
+  const lap = Math.min(player.laps + 1, TOTAL_LAPS);
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`LAP ${lap} / ${TOTAL_LAPS}`, W / 2, 6);
+
+  // Position badge
+  const pos = getPosition();
+  const posLabel = ['1ST','2ND','3RD','4TH'][pos - 1];
+  const posColor = pos === 1 ? '#FFD700' : pos === 2 ? '#ccc' : '#aaa';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillStyle = posColor;
+  ctx.textAlign = 'right';
+  ctx.fillText(posLabel, W - 16, 10);
+
+  // Speed bar
+  const ratio = Math.min(1, player.speed / MAX_SPEED);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(16, 46, W - 32, 10);
+  const bGrad = ctx.createLinearGradient(16, 0, 16 + (W - 32) * ratio, 0);
+  bGrad.addColorStop(0, '#c04000');
+  bGrad.addColorStop(1, '#FFD700');
+  ctx.fillStyle = bGrad;
+  ctx.fillRect(16, 46, (W - 32) * ratio, 10);
+  ctx.fillStyle = 'rgba(255,255,200,0.35)';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('SPEED', 16, 58);
+
+  // Slipstream label
+  if (player.inSlip) {
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = '#60e0ff';
+    ctx.textAlign = 'right';
+    ctx.fillText('SLIPSTREAM +18%', W - 16, 36);
+  }
+
+  // Bottom hint bar
+  ctx.fillStyle = 'rgba(5,2,8,0.72)';
+  ctx.fillRect(0, H - 36, W, 36);
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,200,0.38)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('HOLD LEFT / RIGHT to steer  |  DRAFT for slipstream', W / 2, H - 18);
+
+  ctx.restore();
+}
+
+function drawCountdown(now) {
+  const elapsed = now - countdownStart;
+  let label = '', color = '#fff';
+  if      (elapsed <  900) label = '3';
+  else if (elapsed < 1800) label = '2';
+  else if (elapsed < 2700) label = '1';
+  else if (elapsed < 3300) { label = 'GO!'; color = '#FFD700'; }
+  else return;
+
+  ctx.save();
+  ctx.font = 'bold 88px Georgia, serif';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 14;
+  ctx.fillText(label, W / 2, H / 2 + 30);
+  ctx.restore();
+}
+
+// ── Title screen ─────────────────────────────────────────────────────────────
+
+function drawTitle() {
+  // Dark gradient bg
+  const gr = ctx.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#050208');
+  gr.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,210,0.6)';
+  for (let i = 0; i < 44; i++) {
+    ctx.fillRect((i * 137 + 23) % W, (i * 89 + 11) % 290, 1.5, 1.5);
+  }
+
+  // Mini track preview
+  ctx.save();
+  ctx.translate(0, -55);
+  ctx.globalAlpha = 0.65;
+  drawTrack();
+  ctx.restore();
+
+  // Title card
+  ctx.fillStyle = 'rgba(5,2,8,0.80)';
+  ctx.beginPath();
+  ctx.roundRect(28, 165, W - 56, 205, 14);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,215,0,0.2)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.font = 'bold 38px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('DUST ROAD', W / 2, 185);
+  ctx.fillText('DERBY', W / 2, 230);
+
+  ctx.font = '14px Georgia, serif';
+  ctx.fillStyle = '#b8903a';
+  ctx.textBaseline = 'top';
+  ctx.fillText('5-Lap Oval Race  |  3 AI Rivals', W / 2, 280);
+  ctx.fillText('Slipstream mechanic  |  Rubber-band AI', W / 2, 300);
+
+  const best = getBest();
+  if (best > 0) {
+    const bestLabel = ['1ST','2ND','3RD','4TH'][best - 1];
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#888';
+    ctx.fillText(`Best finish: ${bestLabel}`, W / 2, 328);
+  }
+
+  // Start button
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 75, H - 190, 150, 50, 25);
+  ctx.fill();
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillStyle = '#1a0d35';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('TAP TO RACE', W / 2, H - 165);
+
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,200,0.38)';
+  ctx.fillText('HOLD LEFT / RIGHT to steer', W / 2, H - 110);
+  ctx.fillText('Draft rivals to trigger SLIPSTREAM', W / 2, H - 90);
+}
+
+// ── Result screen ─────────────────────────────────────────────────────────────
+
+function posLabel(p) { return ['1ST','2ND','3RD','4TH'][p - 1] || p + 'TH'; }
+
+function drawResult() {
+  // Dim overlay
+  ctx.fillStyle = 'rgba(5,2,8,0.88)';
+  ctx.fillRect(0, 0, W, H);
+
+  const won = finalPosition === 1;
+  const title = won ? 'WINNER!' : finalPosition === 2 ? 'CLOSE RACE' : 'RACE OVER';
+
+  ctx.font = 'bold 44px Georgia, serif';
+  ctx.fillStyle = won ? '#FFD700' : '#ccc';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(title, W / 2, 80);
+
+  ctx.font = 'bold 26px Georgia, serif';
+  ctx.fillStyle = won ? '#FFE066' : finalPosition === 2 ? '#bbb' : '#999';
+  ctx.fillText(posLabel(finalPosition), W / 2, 135);
+
+  // Stars
+  const stars = Math.max(1, 4 - finalPosition);
+  for (let i = 0; i < 3; i++) {
+    ctx.font = '34px sans-serif';
+    ctx.fillStyle = i < stars ? '#FFD700' : '#2a2a2a';
+    ctx.fillText('★', W / 2 - 40 + i * 40, 172);
+  }
+
+  // New record pulse
+  const best = getBest();
+  if (best === finalPosition) {
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.fillStyle = '#FF9F43';
+    ctx.fillText('NEW RECORD!', W / 2, 216);
+  }
+
+  // Finishing order
+  const all = [player, ...aiCars].sort((a, b) => progress(b) - progress(a));
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,200,0.45)';
+  ctx.fillText('FINISHING ORDER', W / 2, 250);
+  all.forEach((c, i) => {
+    const isPlayer = c === player;
+    ctx.font = isPlayer ? 'bold 15px sans-serif' : '14px sans-serif';
+    ctx.fillStyle = isPlayer ? '#FFE066' : '#888';
+    ctx.fillText(`${posLabel(i+1)}  ${c.name}`, W / 2, 270 + i * 24);
+  });
+
+  // Play again
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 72, H - 185, 144, 48, 24);
+  ctx.fill();
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillStyle = '#1a0d35';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PLAY AGAIN', W / 2, H - 161);
+
+  // Share
+  ctx.strokeStyle = 'rgba(255,215,0,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.fillStyle = 'rgba(255,215,0,0.08)';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 58, H - 126, 116, 34, 17);
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('SHARE', W / 2, H - 109);
+
+  // Feedback button
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 46, H - 80, 92, 28, 14);
+  ctx.fill();
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,200,0.45)';
+  ctx.fillText('LEAVE FEEDBACK', W / 2, H - 66);
+}
+
+function handleResultClick(e) {
+  const rect  = canvas.getBoundingClientRect();
+  const scale = parseFloat(canvas.style.width) / W;
+  const rx    = (e.clientX - rect.left) / scale;
+  const ry    = (e.clientY - rect.top)  / scale;
+
+  // Play again
+  if (rx > W/2-72 && rx < W/2+72 && ry > H-185 && ry < H-137) {
+    gs = 'title'; return;
+  }
+  // Share
+  if (rx > W/2-58 && rx < W/2+58 && ry > H-126 && ry < H-92) {
+    const label = posLabel(finalPosition);
+    if (navigator.share) {
+      navigator.share({ title: 'Dust Road Derby', text: `I finished ${label} in Dust Road Derby - Bob Davis's outlaw oval racer!` });
+    }
+    return;
+  }
+  // Feedback
+  if (rx > W/2-46 && rx < W/2+46 && ry > H-80 && ry < H-52) {
+    openFeedback(); return;
+  }
+  gs = 'title';
+}
+
+// ── Feedback overlay ──────────────────────────────────────────────────────────
+
+function openFeedback() {
+  fbOpen = true; fbRating = 0; fbSubmitted = false; fbMsg = '';
+}
+
+function drawFeedback() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.93)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('HOW WAS YOUR RIDE?', W / 2, 100);
+
+  if (fbSubmitted) {
+    ctx.font = '16px Georgia, serif';
+    ctx.fillStyle = '#4ae06a';
+    ctx.fillText('Thanks for the feedback!', W / 2, 180);
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('Tap anywhere to close', W / 2, 220);
+    ctx.restore();
+    return;
+  }
+
+  // Stars row
+  for (let i = 1; i <= 5; i++) {
+    ctx.font = '38px sans-serif';
+    ctx.fillStyle = i <= fbRating ? '#FFD700' : '#333';
+    ctx.fillText('★', W/2 - 80 + (i-1) * 40, 155);
+  }
+
+  // Simple message hint
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#888';
+  ctx.fillText('Tap a star to rate, then submit', W / 2, 210);
+
+  // Submit button
+  ctx.fillStyle = fbRating > 0 ? '#FFD700' : '#444';
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 60, 250, 120, 40, 20);
+  ctx.fill();
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillStyle = fbRating > 0 ? '#1a0d35' : '#666';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SUBMIT', W / 2, 270);
+
+  // Close
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,200,0.35)';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Tap outside to close', W / 2, 310);
+
+  ctx.restore();
+}
+
+function handleFbClick(e) {
+  const rect  = canvas.getBoundingClientRect();
+  const scale = parseFloat(canvas.style.width) / W;
+  const rx    = (e.clientX - rect.left) / scale;
+  const ry    = (e.clientY - rect.top)  / scale;
+
+  if (fbSubmitted) { fbOpen = false; return; }
+
+  // Star tap
+  for (let i = 1; i <= 5; i++) {
+    const sx = W/2 - 80 + (i-1) * 40;
+    if (Math.abs(rx - sx) < 18 && ry > 155 && ry < 200) {
+      fbRating = i; return;
+    }
+  }
+
+  // Submit
+  if (rx > W/2-60 && rx < W/2+60 && ry > 250 && ry < 290 && fbRating > 0) {
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Dust Road Derby', rating: fbRating, message: `Finished ${posLabel(finalPosition)}` })
+    }).catch(() => {});
+    fbSubmitted = true;
+    return;
+  }
+
+  // Outside tap closes
+  fbOpen = false;
+}
+
+function handleFbTouch(e) {
+  if (e.changedTouches[0]) {
+    handleFbClick({ clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY });
+  }
+}
+
+// ── Countdown transitions ────────────────────────────────────────────────────
+
+let lastCdPhase = -1;
+
+function tickCountdown(now) {
+  const elapsed = now - countdownStart;
+  let phase;
+  if      (elapsed <  900) phase = 1;
+  else if (elapsed < 1800) phase = 2;
+  else if (elapsed < 2700) phase = 3;
+  else if (elapsed < 3300) phase = 4;
+  else { gs = 'playing'; return; }
+
+  if (phase !== lastCdPhase) {
+    lastCdPhase = phase;
+    beep(phase < 4 ? 440 : 880, 0.28, 0.18);
+  }
+}
+
+// ── Main loop ────────────────────────────────────────────────────────────────
+
+function loop(now) {
+  try {
+    const rawDt = now - (lastTime || now);
+    lastTime = now;
+    const dt60 = Math.min(rawDt, 50) / (1000 / 60); // clamp spike frames
+
+    // Clear
+    ctx.fillStyle = '#050208';
+    ctx.fillRect(0, 0, W, H);
+
+    if (gs === 'title') {
+      drawTitle();
+    } else if (gs === 'countdown') {
+      tickCountdown(now);
+      drawTrack();
+      drawDust();
+      for (const ai of aiCars) drawCar(ai);
+      drawCar(player);
+      drawHUD(now);
+      drawCountdown(now);
+    } else if (gs === 'playing') {
+      setEngineFreq(player.speed);
+      updatePlayer(dt60);
+      for (const ai of aiCars) updateAI(ai, dt60);
+
+      // Update dust
+      for (let i = dustParts.length - 1; i >= 0; i--) {
+        const p = dustParts[i];
+        p.x += p.vx; p.y += p.vy;
+        p.life -= 0.018;
+        if (p.life <= 0) dustParts.splice(i, 1);
+      }
+
+      drawTrack();
+      drawDust();
+      drawSlipstreamEffect();
+      for (const ai of aiCars) drawCar(ai);
+      drawCar(player);
+      drawHUD(now);
+    } else if (gs === 'result') {
+      drawTrack();
+      for (const ai of aiCars) drawCar(ai);
+      drawCar(player);
+      drawResult();
+    }
+
+    if (fbOpen) drawFeedback();
+
+  } catch (err) {
+    console.error('[DustRoadDerby] loop error:', err);
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+// Exports for testing
+window._drd = {
+  get gs()          { return gs; },
+  set gs(v)         { gs = v; },
+  get player()      { return player; },
+  get aiCars()      { return aiCars; },
+  get dustParts()   { return dustParts; },
+  get finalPosition(){ return finalPosition; },
+  carXY,
+  trackTangent,
+  progress,
+  getPosition,
+  isInSlipstream,
+  startGame,
+  makeCar,
+  TOTAL_LAPS,
+  BASE_SPEED,
+  MAX_SPEED,
+  ACCEL,
+  DRAG,
+  STEER_RATE,
+  RUBBER_BAND,
+  SLIP_DIST,
+  SLIP_BOOST,
+  CX, CY, CRX, CRY,
+  OUT_RX, OUT_RY, IN_RX, IN_RY, HALF_TW,
+  CAR_W, CAR_H,
+  W, H,
+};
+
+rafId = requestAnimationFrame(loop);
+</script>
+</body>
+</html>
