@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-06T08:30:00.000Z",
+  "lastRunAt": "2026-05-06T08:45:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 38 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 38: Dust Road Derby - tests passing, committing"
-  },
-  "gamesBuilt": 37,
-  "lastGameTitle": "Tumbledown Town",
-  "lastGameFile": "tumbledown-town.html",
+  "lastRunSummary": "Built Game 38: Dust Road Derby - top-down oval racer, rubber-band AI, slipstream mechanic, 50 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 38,
+  "lastGameTitle": "Dust Road Derby",
+  "lastGameFile": "dust-road-derby.html",
   "gameQueue": [
-    {
-      "num": 38,
-      "title": "Dust Road Derby",
-      "concept": "First racing game in the series: top-down oval circuit, 3 AI rivals with rubber-band difficulty scaling, slipstream mechanic (draft behind leading car for speed boost), dust cloud visibility penalty when off-line. 5 laps, position-based scoring. First racing/driving mechanic in the series.",
-      "raisesBarOn": "First real-time racing AI in series, first positional-scoring loop structure (not survival or accumulation), first slipstream/draft mechanic",
-      "status": "planned"
-    },
     {
       "num": 39,
       "title": "Last Rope Standing",
@@ -30,17 +20,16 @@
       "concept": "Telegraph Morse code decoder: intercept incoming messages from the outlaw gang. Each message is a sequence of short/long audio pulses (dots and dashes). Tap to mark dots vs dashes in real time, decode the letter, then identify the outlaw's destination on a frontier map. Race against the clock before the signal cuts out.",
       "raisesBarOn": "First temporal pattern-decoding mechanic in series, first Morse code / telegraph communication game, first game where listening and timing decode information rather than react to threats",
       "status": "planned"
+    },
+    {
+      "num": 41,
+      "title": "Gold Panner",
+      "concept": "Skill-based prospecting: tilt a gold pan (left/right drag) to slosh water and separate gold flakes from gravel. Each round introduces more mud and lighter fools-gold that moves like real gold. Physics-based fluid slosh model with particle stratification by density. Race against drying pan and claim jumpers.",
+      "raisesBarOn": "First fluid simulation mechanic in series, first density/stratification physics, first game based on manual dexterity over a sustained object rather than reaction timing",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-02T09:18:46Z",
-      "action": "new_game",
-      "game": "Canyon Crossfire",
-      "result": "success",
-      "summary": "Built Game 19: Canyon Crossfire - cover-based shooter, 3 outlaws with staggered reload cycles, peek/fire/retreat, 36 tests pass.",
-      "commitHash": "924bb91"
-    },
     {
       "runAt": "2026-05-02T04:47:06Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 37: Tumbledown Town - Verlet physics demolition puzzle, diagonal brace coupling, 5 levels, 50 tests pass.",
       "commitHash": "b929c79"
+    },
+    {
+      "runAt": "2026-05-06T08:45:00.000Z",
+      "action": "new_game",
+      "game": "Dust Road Derby",
+      "result": "success",
+      "summary": "Built Game 38: Dust Road Derby - top-down oval racer, parametric track, rubber-band AI rivals, slipstream draft mechanic, 50 tests pass.",
+      "commitHash": "7e12cb6"
     }
   ]
 }
