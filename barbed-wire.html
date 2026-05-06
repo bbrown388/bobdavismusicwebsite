@@ -258,6 +258,7 @@ function addFloat(x, y, text, color) {
 
 // === GAME LIFECYCLE ===
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Barbed Wire'});
   bestScore = parseInt(localStorage.getItem('barbed_wire_best') || '0');
   gState = 'playing';
   wave = 1; cattle = 5; score = 0;

@@ -233,6 +233,7 @@ function genStars() {
 
 // ---- State machine -------------------------------------------------------
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Midnight Rodeo'});
   state      = 'playing';
   bullPhase  = 'riding';
   bullDir    = DIR_STRAIGHT;

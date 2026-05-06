@@ -115,6 +115,7 @@ function playNav()     { playNote(CHORDS[1], 0.12, 0.10); }
 
 // ── GAME INIT ─────────────────────────────────────────────────────
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Wanted: Dead or Alive'});
   gameSeed = (Date.now() & 0x7FFFFFFF) | 1;
   state = 'poster';
   score = 0;

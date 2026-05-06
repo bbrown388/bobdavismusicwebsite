@@ -101,6 +101,7 @@ let lastTime   = 0;
 
 // --- Startup ---
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Fence Line'});
   score = 0;
   lives = 3;
   level = 0;

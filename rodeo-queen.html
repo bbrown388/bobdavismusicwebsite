@@ -288,6 +288,7 @@ function addPopup(text, color, x, y) {
 
 // === STATE MACHINE ===
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Rodeo Queen'});
   phase      = 'barrel';
   round      = 1;
   score      = 0;

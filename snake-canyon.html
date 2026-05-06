@@ -210,6 +210,7 @@ let winPulse = 0;
 let shakeX = 0, shakeY = 0;
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Snake Canyon'});
   maze = generateMaze();
   const mid = Math.floor(COLS / 2);
   playerR = ROWS - 1; playerC = mid; playerDir = 0;

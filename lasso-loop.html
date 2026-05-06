@@ -115,6 +115,7 @@ function streakMult() {
 
 // ── INIT ─────────────────────────────────────────────────────
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Lasso Loop'});
   score            = 0;
   lives            = 3;
   streak           = 0;

@@ -422,6 +422,7 @@ function tryPlayerAction(gc, gr) {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Jail Break'});
   level = 0;
   levelScores = [0,0,0,0,0];
   score = 0;

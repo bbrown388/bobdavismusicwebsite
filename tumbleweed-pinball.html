@@ -168,6 +168,7 @@ function getBest() { return parseInt(localStorage.getItem('tumbleweed_pinball_be
 function setBest(n) { localStorage.setItem('tumbleweed_pinball_best', String(n)); }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Tumbleweed Pinball'});
   score = 0; balls = 3; chain = 1; chainTimer = 0;
   lfAngle = LF_REST; rfAngle = RF_REST;
   leftActive = false; rightActive = false;

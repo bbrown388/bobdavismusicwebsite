@@ -238,6 +238,7 @@ function startRound() {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Wanted Poster'});
   score = 0; lives = 3; round = 0; popup = null; wrongFlash = {};
   startRound();
 }

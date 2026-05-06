@@ -403,7 +403,7 @@ footer {
   <p class="cart-empty" id="cart-empty">Your cart is empty.</p>
   <div class="cart-footer" id="cart-footer" hidden>
     <div class="cart-subtotal" id="cart-subtotal"></div>
-    <a class="checkout-btn" id="checkout-btn" href="#">Checkout</a>
+    <a class="checkout-btn" id="checkout-btn" href="#" onclick="trackCheckout()">Checkout</a>
   </div>
 </div>
 
@@ -419,6 +419,7 @@ const STOREFRONT_TOKEN = '2a7e0382b6e5915658809f9549bb28a7';
 const GQL = `https://${SHOP_DOMAIN}/api/2024-01/graphql.json`;
 
 let cartId = localStorage.getItem('bd_cart_id');
+let currentCart = null;
 
 async function shopify(query, variables = {}) {
   const res = await fetch(GQL, {
@@ -480,6 +481,15 @@ function renderProducts(products) {
   }
   if (products.length === 1) grid.classList.add('single');
   grid.innerHTML = products.map(buildCard).join('');
+  gtag('event', 'view_item_list', {
+    item_list_name: 'Merch',
+    items: products.map(p => ({
+      item_id: p.id,
+      item_name: p.title,
+      price: parseFloat(p.priceRange.minVariantPrice.amount),
+      currency: p.priceRange.minVariantPrice.currencyCode
+    }))
+  });
 }
 
 function buildCard(p) {
@@ -502,6 +512,8 @@ function buildCard(p) {
              data-vid="${v.id}"
              data-img-url="${v.image?.url || ''}"
              data-img-alt="${v.image?.altText || ''}"
+             data-price="${v.priceV2?.amount || ''}"
+             data-variant-name="${v.title}"
              onclick="selectVariant(this,'${sid}')"
              ${!v.availableForSale ? 'disabled' : ''}>
              ${v.title}
@@ -518,6 +530,9 @@ function buildCard(p) {
       <button class="add-btn" id="add-${sid}"
         data-sid="${sid}"
         data-vid="${firstVariant?.id || ''}"
+        data-product-name="${p.title.replace(/"/g, '&quot;')}"
+        data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
+        data-currency="${p.priceRange.minVariantPrice.currencyCode}"
         onclick="handleAdd(this)"
         ${!available ? 'disabled' : ''}>
         ${available ? 'Add to Cart' : 'Sold Out'}
@@ -530,8 +545,10 @@ function selectVariant(btn, sid) {
   document.querySelectorAll(`#vbtns-${sid} .variant-btn`).forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 
-  // Update add button's variant target
-  document.getElementById(`add-${sid}`).dataset.vid = btn.dataset.vid;
+  // Update add button's variant target and price
+  const addBtn = document.getElementById(`add-${sid}`);
+  addBtn.dataset.vid = btn.dataset.vid;
+  if (btn.dataset.price) addBtn.dataset.price = btn.dataset.price;
 
   if (btn.dataset.imgUrl) {
     swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
@@ -622,6 +639,11 @@ async function handleAdd(btn) {
       }
     }
     updateCartUI(cart);
+    gtag('event', 'add_to_cart', {
+      currency: btn.dataset.currency || 'USD',
+      value: parseFloat(btn.dataset.price || 0),
+      items: [{ item_id: variantId, item_name: btn.dataset.productName || '', price: parseFloat(btn.dataset.price || 0), quantity: 1 }]
+    });
     btn.textContent = 'Added!';
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1400);
     openCart();
@@ -638,6 +660,7 @@ async function removeLine(lineId) {
 }
 
 function updateCartUI(cart) {
+  currentCart = cart;
   const qty = cart.totalQuantity;
   const lines = cart.lines.edges.map(e => e.node);
 
@@ -673,6 +696,22 @@ function updateCartUI(cart) {
         <button class="cart-item-remove" onclick="removeLine('${line.id}')" aria-label="Remove">&#10005;</button>
       </div>`;
   }).join('');
+}
+
+function trackCheckout() {
+  if (!currentCart) return;
+  const lines = currentCart.lines.edges.map(e => e.node);
+  gtag('event', 'begin_checkout', {
+    currency: currentCart.estimatedCost.subtotalAmount.currencyCode,
+    value: parseFloat(currentCart.estimatedCost.subtotalAmount.amount),
+    items: lines.map(l => ({
+      item_id: l.merchandise.id,
+      item_name: l.merchandise.product.title,
+      item_variant: l.merchandise.title !== 'Default Title' ? l.merchandise.title : undefined,
+      price: parseFloat(l.merchandise.priceV2.amount),
+      quantity: l.quantity
+    }))
+  });
 }
 
 function openCart() {

@@ -630,6 +630,7 @@ function loop(ts) {
 
 // ── Game logic ─────────────────────────────────────────────
 function startMatch() {
+  gtag('event', 'game_start', {game_name: 'Tin Star Showdown'});
   round = 1; pWins = 0; aWins = 0;
   startIntro();
 }

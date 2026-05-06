@@ -742,6 +742,7 @@ function drawGameOver(now) {
   ctx.restore();
 }
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Honky Tonk (v1)'});
   state         = 'playing';
   score         = 0;
   lives         = 3;

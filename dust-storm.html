@@ -183,6 +183,7 @@ function updateDust(speed, dt) {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Dust Storm'});
   score = 0;
   lives = 3;
   round = 0;

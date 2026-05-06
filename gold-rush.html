@@ -177,6 +177,7 @@ function initGrid() {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Gold Rush'});
   initGrid();
   player.col=4; player.row=ROWS-1; player.px=cellX(4); player.py=cellY(ROWS-1);
   player.path=[]; player.animT=0; player.moving=false;

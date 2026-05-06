@@ -222,6 +222,7 @@ function deepCopyTiles(src) {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Gallows Road'});
   levelIndex = 0;
   totalScore = 0;
   startLevel();

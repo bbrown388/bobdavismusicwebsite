@@ -178,6 +178,7 @@ const STARS = Array.from({ length: 60 }, () => ({
 }));
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Rope Trick'});
   state = 'playing';
   phase = 'aiming';
   score = 0;

@@ -276,6 +276,7 @@ function endComposition() {
 
 // -- Start game --
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Dust Devil Dance'});
   ensureAudio();
   for (const d of devils) {
     try { if (d.osc) d.osc.stop(); } catch (_) {}

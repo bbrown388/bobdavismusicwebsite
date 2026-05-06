@@ -196,6 +196,7 @@ function roundRect(x, y, w, h, r) {
 
 // ── Game control ───────────────────────────────────────────
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Dust Devil'});
   score      = 0;
   walls      = [];
   particles  = [];

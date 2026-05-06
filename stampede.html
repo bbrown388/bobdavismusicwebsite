@@ -196,6 +196,7 @@ let shakeFrames;
 let best = parseInt(localStorage.getItem(SLUG + '_best') || '0');
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Stampede'});
   gameState    = 'playing';
   lives        = LIVES_START;
   distance     = 0;

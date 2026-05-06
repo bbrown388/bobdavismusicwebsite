@@ -200,6 +200,7 @@ function buildGrid() {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Prairie Fire'});
   state       = 'playing';
   buildGrid();
   windDir     = 4;  // south — fire spreads toward homestead

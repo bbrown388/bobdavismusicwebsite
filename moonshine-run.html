@@ -243,6 +243,7 @@ function spawnRevenuers(n) {
 
 // ---- Init ------------------------------------------------------------
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Moonshine Run'});
   heat = 50;
   pressure = 45;
   proof = 0;

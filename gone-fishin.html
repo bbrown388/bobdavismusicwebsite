@@ -95,6 +95,7 @@ let fishFighting  = false;
 let fightEndTime  = 0;
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Gone Fishin''});
   state         = 'casting';
   score         = 0;
   fishCount     = 0;

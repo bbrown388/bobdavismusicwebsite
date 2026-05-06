@@ -214,6 +214,7 @@ function spawnCurrentZone() {
 
 // ---- Lifecycle ----
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'River Run'});
   personalBest = parseInt(localStorage.getItem('river_run_best') || '0');
   score = 0;
   lives = LIVES_MAX;

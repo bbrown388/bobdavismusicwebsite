@@ -725,6 +725,7 @@
 
   // ─── INIT ──────────────────────────────────────────────────────────────────
   (function init() {
+    gtag('event', 'game_start', {game_name: 'On the Road'});
     canvas = document.getElementById('c');
     ctx    = canvas.getContext('2d');
     canvas.width  = W;

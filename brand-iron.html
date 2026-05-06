@@ -173,6 +173,7 @@ function stopSizzle() {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Brand Iron'});
   state = 'playing';
   score = 0;
   level = 0;

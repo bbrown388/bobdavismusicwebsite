@@ -129,6 +129,7 @@ function playLose() {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Devil's Backbone'});
   stageIndex = 0;
   totalScore = 0;
   startStage();

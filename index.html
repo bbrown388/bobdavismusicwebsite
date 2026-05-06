@@ -292,13 +292,13 @@ footer {
 <section>
   <p class="section-label">Connect</p>
   <div class="links">
-    <a class="link-btn tiktok" href="https://www.tiktok.com/@bobdavismusic" target="_blank" rel="noopener">
+    <a class="link-btn tiktok" href="https://www.tiktok.com/@bobdavismusic" target="_blank" rel="noopener" onclick="gtag('event','social_click',{platform:'TikTok'})">
       TikTok &nbsp;@bobdavismusic
     </a>
-    <a class="link-btn instagram" href="https://www.instagram.com/bobdavismusic" target="_blank" rel="noopener">
+    <a class="link-btn instagram" href="https://www.instagram.com/bobdavismusic" target="_blank" rel="noopener" onclick="gtag('event','social_click',{platform:'Instagram'})">
       Instagram &nbsp;@bobdavismusic
     </a>
-    <a class="link-btn facebook" href="https://www.facebook.com/share/1BQNcv6Zzt/" target="_blank" rel="noopener">
+    <a class="link-btn facebook" href="https://www.facebook.com/share/1BQNcv6Zzt/" target="_blank" rel="noopener" onclick="gtag('event','social_click',{platform:'Facebook'})">
       Facebook
     </a>
   </div>
@@ -308,7 +308,7 @@ footer {
 <section>
   <p class="section-label">Merch</p>
   <div class="links">
-    <a class="link-btn merch" href="merch.html">Bob Davis Merch</a>
+    <a class="link-btn merch" href="merch.html" onclick="gtag('event','merch_click',{})">Bob Davis Merch</a>
   </div>
 </section>
 
@@ -316,10 +316,10 @@ footer {
 <section>
   <p class="section-label">Support the Music</p>
   <div class="links">
-    <a class="link-btn venmo" href="https://venmo.com/bobdavismusic" target="_blank" rel="noopener">
+    <a class="link-btn venmo" href="https://venmo.com/bobdavismusic" target="_blank" rel="noopener" onclick="gtag('event','support_click',{platform:'Venmo'})">
       Venmo &nbsp;@bobdavismusic
     </a>
-    <a class="link-btn paypal" href="https://paypal.me/bobdavisbrown" target="_blank" rel="noopener">
+    <a class="link-btn paypal" href="https://paypal.me/bobdavisbrown" target="_blank" rel="noopener" onclick="gtag('event','support_click',{platform:'PayPal'})">
       PayPal &nbsp;@bobdavisbrown
     </a>
   </div>

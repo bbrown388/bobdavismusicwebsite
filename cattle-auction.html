@@ -352,6 +352,7 @@ function finishGame() {
 
 // === START GAME ===
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Cattle Auction'});
   callStage = 0;
   callTimer = 0;
   lotStartTimer = LOT_START_DELAY;

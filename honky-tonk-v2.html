@@ -794,6 +794,7 @@ function drawGameOver(now) {
 // Without the await, beats scheduled via AC.currentTime would be ignored
 // because the AudioContext clock is frozen while suspended.
 async function startGame() {
+  gtag('event', 'game_start', {game_name: 'Honky Tonk'});
   state          = 'playing';  // set first to prevent double-start during await
   score          = 0;
   lives          = 3;

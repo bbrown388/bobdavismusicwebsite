@@ -228,6 +228,7 @@ function updatePopups(dt) {
 
 // === Game flow ===
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Dead Man's Hand'});
   handNum = 0;
   player = { chips: STARTING_CHIPS, hole: [], bet: 0, folded: false };
   ais = AI_DEFS.map(makeAI);

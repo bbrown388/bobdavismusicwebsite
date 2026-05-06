@@ -136,6 +136,7 @@ function addPopup(txt, color, x, y) {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Trail Boss'});
   state = 'playing';
   score = 0; bonus = 0;
   progress = 0;

@@ -223,6 +223,7 @@ function spawnCustomer() {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Snake Oil'});
   gameState         = 'playing';
   score             = 0;
   mistakes          = 0;

@@ -209,6 +209,7 @@ function saveBest() {
 }
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Canyon Crossfire'});
   score = 0; lives = MAX_LIVES;
   peeked = false; peekTimer = 0; hitFlash = 0;
   bullets = []; popups = [];

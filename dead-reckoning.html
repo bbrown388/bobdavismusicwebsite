@@ -209,6 +209,7 @@ function playFail()    { [440,370,330,220].forEach((f,i) => setTimeout(() => pla
 
 // --- Game logic ---
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Dead Reckoning'});
   if (AC.state === 'suspended') AC.resume();
   round = 0; score = 0; lives = 3;
   bgStars = makeBgStars(); starPhase = 0;

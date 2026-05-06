@@ -114,6 +114,7 @@ let rider = { worldX: W / 2, worldY: 1680, pathIdx: 0, pathT: 0, moving: false }
 let sheriff = { worldX: W + 60, worldY: 1600, active: false, waypointTarget: null, recalcAt: 0 };
 
 function startGame() {
+  gtag('event', 'game_start', {game_name: 'Outlaw Run'});
   state          = 'playing';
   score          = 0;
   loseReason     = '';
