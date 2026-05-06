@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tumbledown Town</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#050208; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; touch-action:none; }
+canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const W = 360, H = 640;
+const GRAVITY    = 600;    // px/s^2
+const DAMPING    = 0.995;
+const ITERS      = 12;
+const GROUND_Y   = 520;
+const CRUSH_Y    = GROUND_Y - 60;   // 460: joint.y >= CRUSH_Y -> crushed
+const SAFE_Y     = GROUND_Y - 150;  // 370: joint.y <= SAFE_Y  -> safe
+const SETTLE_TIME = 2.5;            // seconds to wait after last removal before checking win/lose
+const TOTAL_LEVELS = 5;
+
+// Canvas
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+function scaleCanvas() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+}
+scaleCanvas();
+window.addEventListener('resize', scaleCanvas);
+
+// Audio
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+
+function noiseShot(dur, freq, gain) {
+  const buf = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = AC.createBufferSource();
+  src.buffer = buf;
+  const bp = AC.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 2;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(gain, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
+  src.connect(bp); bp.connect(g); g.connect(AC.destination);
+  src.start();
+}
+
+function playCreak() { noiseShot(0.25, 350, 0.25); }
+
+function playCrack() {
+  noiseShot(0.12, 180, 0.7);
+  const osc = AC.createOscillator();
+  const g   = AC.createGain();
+  osc.frequency.setValueAtTime(100, AC.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(30, AC.currentTime + 0.35);
+  g.gain.setValueAtTime(0.5, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.35);
+  osc.connect(g); g.connect(AC.destination);
+  osc.start(); osc.stop(AC.currentTime + 0.35);
+}
+
+function playRumble() {
+  const osc = AC.createOscillator();
+  const g   = AC.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(55, AC.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(18, AC.currentTime + 1.8);
+  g.gain.setValueAtTime(0.55, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 1.8);
+  osc.connect(g); g.connect(AC.destination);
+  osc.start(); osc.stop(AC.currentTime + 1.8);
+}
+
+function playWin() {
+  [523, 659, 784, 1047].forEach((f, i) => {
+    const osc = AC.createOscillator();
+    const g   = AC.createGain();
+    osc.frequency.value = f;
+    const t = AC.currentTime + i * 0.11;
+    g.gain.setValueAtTime(0.4, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc.connect(g); g.connect(AC.destination);
+    osc.start(t); osc.stop(t + 0.4);
+  });
+}
+
+function playLose() {
+  [400, 330, 260, 190].forEach((f, i) => {
+    const osc = AC.createOscillator();
+    const g   = AC.createGain();
+    osc.frequency.value = f;
+    const t = AC.currentTime + i * 0.13;
+    g.gain.setValueAtTime(0.4, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    osc.connect(g); g.connect(AC.destination);
+    osc.start(t); osc.stop(t + 0.3);
+  });
+}
+
+// Level definitions
+// joints: [{x, y, pinned}]
+// links:  [{a, b, isSupport}]  restLen auto-calculated from initial joint positions
+// chars:  [{joint, isTarget}]
+function makeLevel(name, hint, maxRemovals, jointDefs, linkDefs, charDefs) {
+  const links = linkDefs.map(l => {
+    const ja = jointDefs[l.a], jb = jointDefs[l.b];
+    return { ...l, restLen: Math.hypot(jb.x - ja.x, jb.y - ja.y) };
+  });
+  return { name, hint, maxRemovals, joints: jointDefs, links, chars: charDefs };
+}
+
+const LEVELS = [
+  // L1: Two independent pillars. Outlaw left, innocent right.
+  makeLevel('First Round', 'One shot. Pick the right post.', 1,
+    [
+      {x:120, y:310, pinned:false},
+      {x:240, y:310, pinned:false},
+      {x:120, y:GROUND_Y, pinned:true},
+      {x:240, y:GROUND_Y, pinned:true},
+    ],
+    [
+      {a:0, b:2, isSupport:true},
+      {a:1, b:3, isSupport:true},
+    ],
+    [{joint:0, isTarget:true}, {joint:1, isTarget:false}]
+  ),
+
+  // L2: Three independent pillars. Innocent-Outlaw-Innocent.
+  makeLevel('The Lineup', 'Only the outlaw. Mind the innocents.', 2,
+    [
+      {x:80,  y:310, pinned:false},
+      {x:180, y:295, pinned:false},
+      {x:280, y:310, pinned:false},
+      {x:80,  y:GROUND_Y, pinned:true},
+      {x:180, y:GROUND_Y, pinned:true},
+      {x:280, y:GROUND_Y, pinned:true},
+    ],
+    [
+      {a:0, b:3, isSupport:true},
+      {a:1, b:4, isSupport:true},
+      {a:2, b:5, isSupport:true},
+    ],
+    [{joint:0, isTarget:false}, {joint:1, isTarget:true}, {joint:2, isTarget:false}]
+  ),
+
+  // L3: Four pillars. Outlaw-Innocent-Outlaw-Innocent.
+  makeLevel('Dead or Alive', 'Two outlaws. Don\'t touch the innocents.', 3,
+    [
+      {x:60,  y:310, pinned:false},
+      {x:140, y:310, pinned:false},
+      {x:220, y:310, pinned:false},
+      {x:300, y:310, pinned:false},
+      {x:60,  y:GROUND_Y, pinned:true},
+      {x:140, y:GROUND_Y, pinned:true},
+      {x:220, y:GROUND_Y, pinned:true},
+      {x:300, y:GROUND_Y, pinned:true},
+    ],
+    [
+      {a:0, b:4, isSupport:true},
+      {a:1, b:5, isSupport:true},
+      {a:2, b:6, isSupport:true},
+      {a:3, b:7, isSupport:true},
+    ],
+    [
+      {joint:0, isTarget:true},
+      {joint:1, isTarget:false},
+      {joint:2, isTarget:true},
+      {joint:3, isTarget:false},
+    ]
+  ),
+
+  // L4: Two posts + diagonal brace. Left post structural (innocent).
+  // Right post removable (outlaw). Brace removable — holds outlaw post up.
+  // Must remove brace and outlaw post (either order).
+  makeLevel('The Brace', 'The brace holds the outlaw up. Cut everything.', 2,
+    [
+      {x:100, y:300, pinned:false},
+      {x:260, y:320, pinned:false},   // slightly lower so brace is genuinely diagonal
+      {x:100, y:GROUND_Y, pinned:true},
+      {x:260, y:GROUND_Y, pinned:true},
+    ],
+    [
+      {a:0, b:2, isSupport:false},  // left post structural — innocent
+      {a:1, b:3, isSupport:true},   // right post removable — outlaw
+      {a:0, b:1, isSupport:true},   // diagonal brace removable
+    ],
+    [{joint:0, isTarget:false}, {joint:1, isTarget:true}]
+  ),
+
+  // L5: Three posts + two braces forming V. Center post removable (outlaw).
+  // Outer posts structural (innocents). Both braces removable.
+  // Must remove both braces and center post (3 removals).
+  makeLevel('Last Stand', 'Three shots. Plan your move.', 3,
+    [
+      {x:80,  y:300, pinned:false},
+      {x:180, y:280, pinned:false},
+      {x:280, y:300, pinned:false},
+      {x:80,  y:GROUND_Y, pinned:true},
+      {x:180, y:GROUND_Y, pinned:true},
+      {x:280, y:GROUND_Y, pinned:true},
+    ],
+    [
+      {a:0, b:3, isSupport:false},  // left post structural
+      {a:1, b:4, isSupport:true},   // center post removable — outlaw
+      {a:2, b:5, isSupport:false},  // right post structural
+      {a:0, b:1, isSupport:true},   // left brace removable
+      {a:1, b:2, isSupport:true},   // right brace removable
+    ],
+    [{joint:0, isTarget:false}, {joint:1, isTarget:true}, {joint:2, isTarget:false}]
+  ),
+];
+
+// Game state
+let phase      = 'title';   // 'title' | 'playing' | 'result'
+let levelIdx   = 0;
+let score      = 0;
+let levelScore = 0;
+let bestScore  = +localStorage.getItem('tumbledown_town_best') || 0;
+
+let joints = [], links = [], chars = [];
+let removalsLeft = 0;
+let settleTimer  = -1;
+let gameResult   = null;   // 'win' | 'lose'
+
+let particles = [];
+let popups    = [];
+
+// Feedback state
+let fbOpen = false, fbRating = 0, fbMsg = '', fbStatus = '';
+
+function startGame() {
+  phase      = 'playing';
+  levelIdx   = 0;
+  score      = 0;
+  levelScore = 0;
+  setupLevel(0);
+  if (typeof gtag !== 'undefined') gtag('event', 'game_start', {game_title:'Tumbledown Town'});
+}
+
+function setupLevel(idx) {
+  const def = LEVELS[idx];
+  joints = def.joints.map(j => ({x:j.x, y:j.y, px:j.x, py:j.y, pinned:j.pinned}));
+  links  = def.links.map(l  => ({...l, removed:false, crackT:0}));
+  chars  = def.chars.map(c  => ({...c}));
+  removalsLeft = def.maxRemovals;
+  settleTimer  = -1;
+  gameResult   = null;
+  particles    = [];
+  popups       = [];
+}
+
+// Physics
+function updatePhysics(dt) {
+  dt = Math.min(dt, 0.05);
+  const dtSq = dt * dt;
+
+  for (const j of joints) {
+    if (j.pinned) continue;
+    const vx = (j.x - j.px) * DAMPING;
+    const vy = (j.y - j.py) * DAMPING;
+    j.px = j.x; j.py = j.y;
+    j.x += vx;
+    j.y += vy + GRAVITY * dtSq;
+  }
+
+  for (let iter = 0; iter < ITERS; iter++) {
+    for (const lk of links) {
+      if (lk.removed) continue;
+      const ja = joints[lk.a], jb = joints[lk.b];
+      const dx = jb.x - ja.x, dy = jb.y - ja.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+      const diff = (dist - lk.restLen) / dist * 0.5;
+      const cx = dx * diff, cy = dy * diff;
+      if (!ja.pinned) { ja.x += cx; ja.y += cy; }
+      if (!jb.pinned) { jb.x -= cx; jb.y -= cy; }
+    }
+  }
+
+  for (const j of joints) {
+    if (j.y > GROUND_Y) { j.y = GROUND_Y; j.py = j.y + (j.py - j.y) * 0.2; }
+    if (j.y < 80)       { j.y = 80;       j.py = 80; }
+  }
+}
+
+function checkWinLose() {
+  const targets   = chars.filter(c =>  c.isTarget);
+  const innocents = chars.filter(c => !c.isTarget);
+  const allTargetsCrushed  = targets.every(c   => joints[c.joint].y >= CRUSH_Y);
+  const anyInnocentCrushed = innocents.some(c  => joints[c.joint].y >= CRUSH_Y);
+  const allInnocentsSafe   = innocents.every(c => joints[c.joint].y <= SAFE_Y);
+  if (anyInnocentCrushed)                         return 'lose';
+  if (allTargetsCrushed && allInnocentsSafe)       return 'win';
+  if (removalsLeft <= 0 && !allTargetsCrushed)     return 'lose';
+  return null;
+}
+
+// Geometry helpers
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 0.001) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 60 + Math.random() * 140;
+    particles.push({
+      x, y,
+      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 60,
+      r: 3 + Math.random() * 4,
+      color,
+      life: 1, maxLife: 0.7 + Math.random() * 0.6,
+    });
+  }
+}
+
+function spawnPopup(x, y, text, color) {
+  popups.push({x, y, text, color, life: 1, vy: -55});
+}
+
+function removeSupport(lk) {
+  lk.removed  = true;
+  lk.crackT   = 1;
+  removalsLeft--;
+  playCrack();
+  playRumble();
+  const ja = joints[lk.a], jb = joints[lk.b];
+  spawnParticles((ja.x + jb.x) / 2, (ja.y + jb.y) / 2, '#C8A04A', 14);
+  settleTimer = SETTLE_TIME;
+}
+
+function handleTap(cx, cy) {
+  if (phase === 'title') {
+    AC.resume();
+    startGame();
+    return;
+  }
+  if (phase === 'result') {
+    if (gameResult === 'win') {
+      if (levelIdx < LEVELS.length - 1) {
+        levelIdx++;
+        setupLevel(levelIdx);
+        phase = 'playing';
+      } else {
+        phase = 'title';
+      }
+    } else {
+      setupLevel(levelIdx);
+      phase = 'playing';
+    }
+    return;
+  }
+  if (phase !== 'playing') return;
+  if (fbOpen) return;
+  if (settleTimer >= 0) return;
+  if (removalsLeft <= 0) return;
+
+  // Feedback button zone
+  if (cx >= W - 70 && cy >= H - 44 && cy <= H - 8) { fbOpen = true; return; }
+
+  // Find closest removable support
+  let best = null, bestD = 32;
+  for (const lk of links) {
+    if (!lk.isSupport || lk.removed) continue;
+    const ja = joints[lk.a], jb = joints[lk.b];
+    const d = distToSegment(cx, cy, ja.x, ja.y, jb.x, jb.y);
+    if (d < bestD) { best = lk; bestD = d; }
+  }
+  if (best) removeSupport(best);
+}
+
+// Draw helpers
+function pill(x, y, w, h, r, fill) {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.roundRect(x - w/2, y - h/2, w, h, r);
+  ctx.fill();
+}
+
+function drawBackground() {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  sky.addColorStop(0, '#050208');
+  sky.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+
+  // Stars (fixed positions)
+  ctx.fillStyle = 'rgba(255,255,200,0.75)';
+  [[28,38],[78,22],[132,58],[198,18],[262,42],[314,28],[48,92],[172,68],[292,82],[14,128],[342,108],[90,45],[220,30],[155,88]].forEach(([sx, sy]) => {
+    ctx.beginPath(); ctx.arc(sx, sy, 1, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // Ground
+  const gr = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  gr.addColorStop(0, '#3a1f05');
+  gr.addColorStop(1, '#1a0a00');
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+  ctx.strokeStyle = '#5A3A1A';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(W, GROUND_Y); ctx.stroke();
+  ctx.restore();
+}
+
+function drawLink(lk) {
+  ctx.save();
+  const ja = joints[lk.a], jb = joints[lk.b];
+
+  if (lk.removed) {
+    if (lk.crackT > 0) {
+      ctx.globalAlpha = lk.crackT;
+      ctx.strokeStyle = '#E74C3C';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      // Stub fragments
+      const frac = 0.18;
+      ctx.beginPath();
+      ctx.moveTo(ja.x, ja.y);
+      ctx.lineTo(ja.x + (jb.x - ja.x) * frac, ja.y + (jb.y - ja.y) * frac);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(jb.x, jb.y);
+      ctx.lineTo(jb.x - (jb.x - ja.x) * frac, jb.y - (jb.y - ja.y) * frac);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  ctx.lineCap = 'round';
+  if (lk.isSupport) {
+    ctx.shadowColor = '#FFE066';
+    ctx.shadowBlur  = 10;
+    ctx.strokeStyle = '#C8A04A';
+    ctx.lineWidth   = 9;
+  } else {
+    ctx.shadowBlur  = 0;
+    ctx.strokeStyle = '#5A3A1A';
+    ctx.lineWidth   = 7;
+  }
+  ctx.beginPath();
+  ctx.moveTo(ja.x, ja.y);
+  ctx.lineTo(jb.x, jb.y);
+  ctx.stroke();
+
+  // Wood grain overlay
+  ctx.shadowBlur  = 0;
+  ctx.strokeStyle = lk.isSupport ? 'rgba(255,224,102,0.18)' : 'rgba(100,60,20,0.3)';
+  ctx.lineWidth   = 2;
+  const mx = (ja.x + jb.x) / 2, my = (ja.y + jb.y) / 2;
+  ctx.beginPath();
+  ctx.moveTo(ja.x + (mx - ja.x) * 0.2, ja.y + (my - ja.y) * 0.2);
+  ctx.lineTo(mx, my);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawJoint(j) {
+  if (j.pinned) return;
+  ctx.save();
+  ctx.fillStyle = '#6B3A1A';
+  ctx.beginPath(); ctx.arc(j.x, j.y, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawChar(c) {
+  ctx.save();
+  const j = joints[c.joint];
+  const x = j.x, y = j.y;
+  const crushed = j.y >= CRUSH_Y;
+
+  if (crushed) {
+    // Lying flat silhouette
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = c.isTarget ? '#E74C3C' : '#4CAF50';
+    ctx.fillRect(x - 20, y - 7, 40, 7);
+    ctx.restore();
+    return;
+  }
+
+  const col = c.isTarget ? '#1a0520' : '#2a1a30';
+  ctx.fillStyle = col;
+
+  // Legs
+  ctx.fillRect(x - 7, y - 26, 5, 20);
+  ctx.fillRect(x + 2,  y - 26, 5, 20);
+
+  // Torso
+  ctx.beginPath();
+  ctx.ellipse(x, y - 36, 7, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Head
+  ctx.beginPath();
+  ctx.arc(x, y - 51, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hat
+  if (c.isTarget) {
+    ctx.fillStyle = '#080808';
+    ctx.fillRect(x - 13, y - 59, 26, 5);  // brim
+    ctx.fillRect(x - 8,  y - 71, 16, 14); // crown
+  } else {
+    ctx.fillStyle = '#B8903A';
+    ctx.fillRect(x - 10, y - 58, 20, 4);  // brim
+    ctx.fillRect(x - 6,  y - 69, 12, 13); // crown
+  }
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  const def = LEVELS[levelIdx];
+
+  // Level name top center
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(def.name, W / 2, 30);
+
+  // Hint
+  ctx.fillStyle = 'rgba(200,160,74,0.8)';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText(def.hint, W / 2, 50);
+
+  // Level indicator top-left
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('LVL ' + (levelIdx + 1) + '/' + TOTAL_LEVELS, 14, 28);
+
+  // Score top-right
+  ctx.textAlign = 'right';
+  ctx.fillText(score + '', W - 14, 28);
+
+  // Removals pill bottom
+  ctx.textAlign = 'center';
+  const hasRemove = removalsLeft > 0 && settleTimer < 0;
+  const rtxt = settleTimer >= 0
+    ? 'settling...'
+    : (removalsLeft > 0 ? removalsLeft + ' shot' + (removalsLeft !== 1 ? 's' : '') + ' left' : 'No shots left');
+  ctx.font = 'bold 14px Georgia, serif';
+  const tw = ctx.measureText(rtxt).width + 28;
+  pill(W / 2, H - 36, tw, 28, 8, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = hasRemove ? '#FFE066' : (settleTimer >= 0 ? '#C8A04A' : '#E74C3C');
+  ctx.fillText(rtxt, W / 2, H - 30);
+
+  // Feedback button
+  ctx.textAlign = 'center';
+  pill(W - 35, H - 26, 60, 28, 6, 'rgba(255,220,100,0.12)');
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('Feedback', W - 35, H - 20);
+
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBackground();
+
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 38px Georgia, serif';
+  ctx.fillText('Tumbledown', W / 2, 200);
+  ctx.fillText('Town', W / 2, 246);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Physics Demolition Puzzle', W / 2, 278);
+
+  ctx.fillStyle = 'rgba(255,220,100,0.75)';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('Tap the glowing supports to drop them.', W / 2, 314);
+  ctx.fillText('Crush outlaws. Spare innocents.', W / 2, 334);
+
+  // Legend
+  const lx = W / 2 - 70, ly = 375;
+  // Outlaw
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(lx - 6, ly - 20, 5, 18); ctx.fillRect(lx + 1, ly - 20, 5, 18);
+  ctx.beginPath(); ctx.ellipse(lx, ly - 30, 7, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(lx, ly - 44, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#080808';
+  ctx.fillRect(lx - 12, ly - 52, 24, 4); ctx.fillRect(lx - 7, ly - 63, 14, 13);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('= Outlaw (crush)', lx + 18, ly - 28);
+
+  // Innocent
+  const ix = lx, iy = ly + 62;
+  ctx.fillStyle = '#2a1a30';
+  ctx.fillRect(ix - 6, iy - 20, 5, 18); ctx.fillRect(ix + 1, iy - 20, 5, 18);
+  ctx.beginPath(); ctx.ellipse(ix, iy - 30, 7, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ix, iy - 44, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#B8903A';
+  ctx.fillRect(ix - 9, iy - 52, 18, 4); ctx.fillRect(ix - 5, iy - 62, 10, 12);
+  ctx.fillStyle = '#4CAF50';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('= Innocent (spare)', ix + 18, iy - 28);
+
+  if (bestScore > 0) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(200,160,74,0.6)';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore, W / 2, 500);
+  }
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText('Tap to Start', W / 2, 545);
+
+  ctx.restore();
+}
+
+function drawResult() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  const won = gameResult === 'win';
+  const allDone = won && levelIdx >= LEVELS.length - 1;
+
+  ctx.textAlign = 'center';
+
+  if (won) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 34px Georgia, serif';
+    ctx.fillText(allDone ? 'All Clear!' : "Got 'em!", W / 2, H / 2 - 90);
+
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '17px Georgia, serif';
+    ctx.fillText('Score: ' + score, W / 2, H / 2 - 52);
+
+    if (levelScore > 0) {
+      ctx.fillStyle = '#FF9F43';
+      ctx.font = '14px Georgia, serif';
+      ctx.fillText('+' + levelScore + ' this level', W / 2, H / 2 - 28);
+    }
+
+    if (allDone && score >= bestScore) {
+      const p = 0.8 + 0.2 * Math.sin(Date.now() / 200);
+      ctx.globalAlpha = p;
+      ctx.fillStyle = '#FF9F43';
+      ctx.font = 'bold 18px Georgia, serif';
+      ctx.fillText('NEW RECORD!', W / 2, H / 2 + 10);
+      ctx.globalAlpha = 1;
+    }
+  } else {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 30px Georgia, serif';
+    ctx.fillText('Innocent Down!', W / 2, H / 2 - 80);
+
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '16px Georgia, serif';
+    ctx.fillText('Try again', W / 2, H / 2 - 48);
+  }
+
+  // Share button
+  if (won) {
+    ctx.fillStyle = 'rgba(255,220,100,0.15)';
+    ctx.beginPath(); ctx.roundRect(W/2 - 55, H/2 + 30, 110, 34, 8); ctx.fill();
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText('Share Score', W / 2, H / 2 + 53);
+  }
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 16px Georgia, serif';
+  const nextTxt = won && !allDone ? 'Tap for Next Level' : (won ? 'Tap to Play Again' : 'Tap to Retry');
+  ctx.fillText(nextTxt, W / 2, H / 2 + 90);
+  ctx.restore();
+}
+
+function drawFeedbackOverlay() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Leave Feedback', W / 2, 140);
+
+  // Rating stars
+  ctx.font = '30px sans-serif';
+  for (let i = 1; i <= 5; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFE066' : '#555';
+    ctx.fillText('★', W / 2 - 70 + (i - 1) * 36, 210);
+  }
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('Tap stars to rate, then submit', W / 2, 240);
+
+  // Message box (static label, user taps to open native)
+  pill(W / 2, 290, 280, 50, 8, 'rgba(255,220,100,0.1)');
+  ctx.fillStyle = fbMsg ? '#FFE066' : 'rgba(200,160,74,0.5)';
+  ctx.font = '13px sans-serif';
+  ctx.fillText(fbMsg || 'Tap to type a message...', W / 2, 295);
+
+  // Submit
+  pill(W / 2, 360, 160, 40, 10, fbRating > 0 ? '#C8A04A' : 'rgba(100,80,40,0.4)');
+  ctx.fillStyle = fbRating > 0 ? '#050208' : '#888';
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.fillText(fbStatus || 'Submit', W / 2, 366);
+
+  // Cancel
+  ctx.fillStyle = 'rgba(200,160,74,0.6)';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('Cancel', W / 2, 415);
+
+  ctx.restore();
+}
+
+function handleFeedbackTap(cx, cy) {
+  // Stars: 5 stars centered at W/2 - 70 + (i-1)*36, y=195 ± 20
+  if (cy >= 178 && cy <= 218) {
+    for (let i = 1; i <= 5; i++) {
+      const sx = W / 2 - 70 + (i - 1) * 36;
+      if (Math.abs(cx - sx) < 20) { fbRating = i; return; }
+    }
+  }
+  // Message box
+  if (cy >= 265 && cy <= 315) {
+    const msg = window.prompt('Your message (optional):');
+    if (msg !== null) fbMsg = msg.slice(0, 200);
+    return;
+  }
+  // Submit
+  if (cy >= 340 && cy <= 380 && fbRating > 0) {
+    fbStatus = 'Sending...';
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({game:'Tumbledown Town', rating:fbRating, message:fbMsg, source:'in-game'}),
+    })
+    .then(() => { fbStatus = 'Sent! Thank you.'; setTimeout(() => { fbOpen = false; fbRating = 0; fbMsg = ''; fbStatus = ''; }, 1500); })
+    .catch(() => { fbStatus = 'Error. Try again.'; });
+    return;
+  }
+  // Cancel
+  if (cy >= 400 && cy <= 430) { fbOpen = false; fbRating = 0; fbMsg = ''; fbStatus = ''; }
+}
+
+function updateParticles(dt) {
+  for (const p of particles) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 220 * dt;
+    p.life -= dt / p.maxLife;
+  }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function updatePopups(dt) {
+  for (const p of popups) {
+    p.y += p.vy * dt;
+    p.life -= dt * 1.1;
+  }
+  popups = popups.filter(p => p.life > 0);
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * Math.max(0, p.life), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawPopups() {
+  for (const p of popups) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 17px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  }
+}
+
+// Main loop
+let lastTime = 0;
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.1);
+    lastTime = ts;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (phase === 'title') {
+      drawTitle();
+    } else {
+      drawBackground();
+
+      if (phase === 'playing') {
+        updatePhysics(dt);
+
+        // Crack animations
+        for (const lk of links) {
+          if (lk.crackT > 0) lk.crackT = Math.max(0, lk.crackT - dt * 2.5);
+        }
+
+        // Settle timer
+        if (settleTimer >= 0) {
+          settleTimer -= dt;
+          if (settleTimer <= 0) {
+            settleTimer = -1;
+            const res = checkWinLose();
+            if (res) {
+              gameResult = res;
+              if (res === 'win') {
+                levelScore = 100 + removalsLeft * 20;
+                score += levelScore;
+                if (score > bestScore) {
+                  bestScore = score;
+                  localStorage.setItem('tumbledown_town_best', bestScore);
+                }
+                playWin();
+                spawnPopup(W / 2, H / 2 - 80, '+' + levelScore, '#FFE066');
+                spawnParticles(W / 2, 300, '#FFE066', 28);
+                if (typeof gtag !== 'undefined') gtag('event', 'level_win', {game_title:'Tumbledown Town', level:levelIdx+1});
+              } else {
+                playLose();
+                spawnParticles(W / 2, 300, '#E74C3C', 22);
+              }
+              phase = 'result';
+            }
+          }
+        }
+
+        // Immediate innocent-crushed check during settle
+        if (phase === 'playing' && settleTimer >= 0) {
+          const innocentDown = chars.filter(c => !c.isTarget).some(c => joints[c.joint].y >= CRUSH_Y);
+          if (innocentDown) {
+            settleTimer = -1;
+            gameResult = 'lose';
+            playLose();
+            spawnParticles(W / 2, 300, '#E74C3C', 22);
+            phase = 'result';
+          }
+        }
+      }
+
+      // Draw structural links first, then supports
+      for (const lk of links) { if (!lk.isSupport) drawLink(lk); }
+      for (const lk of links) { if ( lk.isSupport) drawLink(lk); }
+      for (const j of joints) drawJoint(j);
+      for (const c of chars)  drawChar(c);
+
+      updateParticles(dt);
+      updatePopups(dt);
+      drawParticles();
+      drawPopups();
+
+      if (phase === 'playing') drawHUD();
+      if (phase === 'result')  drawResult();
+
+      if (fbOpen) drawFeedbackOverlay();
+    }
+  } catch (e) {
+    console.error('[loop]', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// Input
+function canvasXY(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  if (e.changedTouches && e.changedTouches.length) {
+    return { x: (e.changedTouches[0].clientX - rect.left) * sx, y: (e.changedTouches[0].clientY - rect.top) * sy };
+  }
+  return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const {x, y} = canvasXY(e);
+  if (fbOpen) { handleFeedbackTap(x, y); return; }
+
+  // Share button on result win screen
+  if (phase === 'result' && gameResult === 'win') {
+    if (x >= W/2 - 55 && x <= W/2 + 55 && y >= H/2 + 30 && y <= H/2 + 64) {
+      if (navigator.share) navigator.share({title:'Tumbledown Town', text:'I scored ' + score + ' on Tumbledown Town! Play Bob Davis games: bobdavismusic.com'});
+      return;
+    }
+  }
+
+  handleTap(x, y);
+});
+
+// Window exports for tests
+window.FEEDBACK_ENDPOINT = FEEDBACK_ENDPOINT;
+window.GRAVITY    = GRAVITY;
+window.GROUND_Y   = GROUND_Y;
+window.CRUSH_Y    = CRUSH_Y;
+window.SAFE_Y     = SAFE_Y;
+window.SETTLE_TIME = SETTLE_TIME;
+window.LEVELS     = LEVELS;
+window.getPhase   = () => phase;
+window.startGame  = startGame;
+window.setupLevel = setupLevel;
+window.getLevel   = () => levelIdx;
+window.getLevelCount = () => LEVELS.length;
+window.getJoints  = () => joints;
+window.getLinks   = () => links;
+window.getChars   = () => chars;
+window.getRemovalsLeft = () => removalsLeft;
+window.getSettleTimer  = () => settleTimer;
+window.getGameResult   = () => gameResult;
+window.getScore        = () => score;
+window.getBestScore    = () => bestScore;
+window.updatePhysics   = updatePhysics;
+window.checkWinLose    = checkWinLose;
+const _removeSupportFn = removeSupport;
+window.removeSupport   = (idx) => _removeSupportFn(links[idx]);
+window.distToSegment   = distToSegment;
+
+// Boot
+requestAnimationFrame(ts => { lastTime = ts; loop(ts); });
+</script>
+</body>
+</html>
