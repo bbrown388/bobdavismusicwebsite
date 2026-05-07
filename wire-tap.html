@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Wire Tap - Bob Davis</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+canvas { display: block; image-rendering: pixelated; touch-action: none; }
+#fb-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  justify-content: center; align-items: center; z-index: 100;
+}
+#fb-overlay.show { display: flex; }
+#fb-box {
+  background: #1a0d35; border: 2px solid #FFE066; border-radius: 12px;
+  padding: 24px; width: 300px; font-family: Georgia, serif; color: #FFE066;
+}
+#fb-box h3 { margin-bottom: 12px; font-size: 18px; }
+#fb-box select, #fb-box textarea {
+  width: 100%; margin-bottom: 10px; padding: 8px; border-radius: 6px;
+  background: #2a1500; color: #FFE066; border: 1px solid #FFE066; font-family: Georgia, serif;
+}
+#fb-box textarea { height: 80px; resize: none; }
+#fb-row { display: flex; gap: 10px; }
+#fb-row button {
+  flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer;
+  font-family: Georgia, serif; font-size: 14px; font-weight: bold;
+}
+#fb-send { background: #FFE066; color: #1a0d35; }
+#fb-cancel { background: #3a1f05; color: #FFE066; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <div id="fb-box">
+    <h3>Leave Feedback</h3>
+    <select id="fb-target">
+      <option value="general">General / next game</option>
+      <option value="Wire Tap" selected>Wire Tap</option>
+    </select>
+    <textarea id="fb-text" placeholder="What do you think?"></textarea>
+    <div id="fb-row">
+      <button id="fb-send">Send</button>
+      <button id="fb-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Morse alphabet ─────────────────────────────────────────────────────────────
+const MORSE = {
+  A:'.-',  B:'-...', C:'-.-.', D:'-..', E:'.', F:'..-.', G:'--.',
+  H:'....', I:'..', J:'.---', K:'-.-', L:'.-..', M:'--', N:'-.',
+  O:'---', P:'.--.', Q:'--.-', R:'.-.', S:'...', T:'-', U:'..-',
+  V:'...-', W:'.--', X:'-..-', Y:'-.--', Z:'--..'
+};
+
+// ── Timing constants (ms) ──────────────────────────────────────────────────────
+const DOT_DUR    = 220;
+const DASH_DUR   = 660;
+const ELEM_GAP   = 220;
+const LETTER_GAP = 550;
+const INPUT_GRACE = 480;
+
+// ── Round data ─────────────────────────────────────────────────────────────────
+// 3 messages to decode; each word is the outlaw destination
+const ROUNDS = [
+  { word: 'BANK', locationIdx: 0 },
+  { word: 'MINE', locationIdx: 1 },
+  { word: 'FORD', locationIdx: 2 },
+];
+
+// ── Map locations (x,y relative to top-left of map box) ───────────────────────
+const MAP_Y = 130;
+const LOCATIONS = [
+  { name: 'BANK',  x: 258, y:  58, r: 26 },
+  { name: 'MINE',  x:  82, y: 290, r: 26 },
+  { name: 'FORD',  x: 182, y: 178, r: 26 },
+  { name: 'RANCH', x: 268, y: 338, r: 26 },
+  { name: 'DEPOT', x:  84, y:  66, r: 26 },
+];
+
+// ── Timeline builder ───────────────────────────────────────────────────────────
+function buildTimeline(word) {
+  const evts = [];
+  let t = 0;
+  for (let li = 0; li < word.length; li++) {
+    const code = MORSE[word[li]] || '';
+    for (let ei = 0; ei < code.length; ei++) {
+      const isDash = code[ei] === '-';
+      const dur = isDash ? DASH_DUR : DOT_DUR;
+      evts.push({
+        idx: evts.length,
+        li, ei, isDash,
+        startT: t,
+        endT: t + dur,
+        winEnd: t + dur + INPUT_GRACE,
+      });
+      t += dur + ELEM_GAP;
+    }
+    t += LETTER_GAP;
+  }
+  return evts;
+}
+
+// ── Audio ──────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function scheduleMorse(evts) {
+  try {
+    const ac = getAudio();
+    const base = ac.currentTime + 0.45;
+    for (const ev of evts) {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 660;
+      const t0 = base + ev.startT / 1000;
+      const dur = (ev.isDash ? DASH_DUR : DOT_DUR) / 1000;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.38, t0 + 0.006);
+      gain.gain.setValueAtTime(0.38, t0 + dur - 0.02);
+      gain.gain.linearRampToValueAtTime(0, t0 + dur);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.01);
+    }
+    return Math.round((base - ac.currentTime) * 1000);
+  } catch (e) {
+    return 450;
+  }
+}
+
+function playChirp(correct) {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.type = 'sine';
+    osc.frequency.value = correct ? 900 : 240;
+    const t = ac.currentTime;
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    osc.start(t);
+    osc.stop(t + 0.1);
+  } catch (e) {}
+}
+
+function playFanfare() {
+  try {
+    const ac = getAudio();
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const t = ac.currentTime + i * 0.13;
+      gain.gain.setValueAtTime(0.25, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+      osc.start(t);
+      osc.stop(t + 0.25);
+    });
+  } catch (e) {}
+}
+
+function playBuzz() {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.type = 'sawtooth';
+    osc.frequency.value = 160;
+    const t = ac.currentTime;
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.start(t);
+    osc.stop(t + 0.3);
+  } catch (e) {}
+}
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let state = 'title';
+let round = 0;
+let confidence = 50;
+let timeline = [];
+let inputs = [];       // per-element: null | 'dot' | 'dash' | 'missed'
+let decoded = [];      // per-letter: null | string (the decoded letter)
+let pbStart = 0;       // Date.now() when audio playback begins
+let toningElem = null; // element currently sounding
+let inWinElem = null;  // element in input window (tone over, await tap)
+let roundOver = false;
+let mapPhase = false;
+let mapResult = null;  // null | 'correct' | 'wrong'
+let mapResultCountdown = 0;
+let score = 0;
+let best = parseInt(localStorage.getItem('wire_tap_best') || '0');
+let tick = 0;
+let popups = [];
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function addPopup(txt, col, x, y) {
+  popups.push({ txt, col, x, y, life: 68, vy: -1.1 });
+}
+
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (W / rect.width),
+    y: (e.clientY - rect.top) * (H / rect.height),
+  };
+}
+
+// ── Game logic ─────────────────────────────────────────────────────────────────
+function startGame() {
+  round = 0;
+  confidence = 50;
+  score = 0;
+  popups = [];
+  startRound();
+}
+
+function startRound() {
+  const word = ROUNDS[round].word;
+  timeline = buildTimeline(word);
+  inputs = new Array(timeline.length).fill(null);
+  decoded = new Array(word.length).fill(null);
+  toningElem = null;
+  inWinElem = null;
+  roundOver = false;
+  mapPhase = false;
+  mapResult = null;
+
+  const delay = scheduleMorse(timeline);
+  pbStart = Date.now() + delay;
+  state = 'playing';
+}
+
+function decodeLetter(li) {
+  if (decoded[li] !== null) return;
+  const word = ROUNDS[round].word;
+  const elems = timeline.filter(e => e.li === li);
+  let code = '';
+  for (const e of elems) {
+    const inp = inputs[e.idx];
+    if (inp === 'dot')  code += '.';
+    else if (inp === 'dash') code += '-';
+    else code += '?';
+  }
+  let letter = '?';
+  for (const [k, v] of Object.entries(MORSE)) {
+    if (v === code) { letter = k; break; }
+  }
+  decoded[li] = letter;
+
+  const correctCode = MORSE[word[li]];
+  for (const e of elems) {
+    const inp = inputs[e.idx];
+    const expected = e.isDash ? 'dash' : 'dot';
+    if (inp === expected) {
+      score += 10;
+      confidence = Math.min(100, confidence + 3);
+    } else if (inp === null || inp === 'missed') {
+      confidence = Math.max(0, confidence - 3);
+    }
+  }
+}
+
+function onMapTap(x, y) {
+  if (mapResult !== null) return;
+  for (let i = 0; i < LOCATIONS.length; i++) {
+    const loc = LOCATIONS[i];
+    const lx = loc.x, ly = loc.y + MAP_Y;
+    const dx = x - lx, dy = y - ly;
+    if (Math.sqrt(dx * dx + dy * dy) < loc.r + 18) {
+      const isTarget = i === ROUNDS[round].locationIdx;
+      if (isTarget) {
+        mapResult = 'correct';
+        confidence = Math.min(100, confidence + 12);
+        score += 50;
+        playFanfare();
+        addPopup('CORRECT!', '#FF9F43', W / 2, 340);
+      } else {
+        mapResult = 'wrong';
+        confidence = Math.max(0, confidence - 12);
+        playBuzz();
+        addPopup('WRONG LOCATION', '#E74C3C', W / 2, 340);
+      }
+      mapResultCountdown = 90;
+      return;
+    }
+  }
+}
+
+function tapClassify(type) {
+  const elapsed = Date.now() - pbStart;
+  for (let i = 0; i < timeline.length; i++) {
+    const ev = timeline[i];
+    if (inputs[i] === null && elapsed >= ev.startT - 60 && elapsed <= ev.winEnd) {
+      inputs[i] = type;
+      const correct = (type === 'dot') === !ev.isDash;
+      playChirp(correct);
+      if (correct) {
+        addPopup(type === 'dot' ? '.' : '-', '#FF9F43', W / 2, 285);
+      } else {
+        confidence = Math.max(0, confidence - 5);
+        addPopup('X', '#E74C3C', W / 2, 285);
+      }
+      return;
+    }
+  }
+}
+
+// ── Update ──────────────────────────────────────────────────────────────────────
+function update() {
+  tick++;
+
+  if (state === 'playing' && !mapPhase) {
+    const elapsed = Date.now() - pbStart;
+
+    // Identify currently sounding and input-window elements
+    toningElem = null;
+    inWinElem = null;
+    for (const ev of timeline) {
+      if (elapsed >= ev.startT && elapsed <= ev.endT) toningElem = ev;
+      if (inputs[ev.idx] === null && elapsed > ev.endT && elapsed <= ev.winEnd) inWinElem = ev;
+    }
+
+    // Mark missed elements whose window has passed
+    for (const ev of timeline) {
+      if (inputs[ev.idx] === null && elapsed > ev.winEnd) inputs[ev.idx] = 'missed';
+    }
+
+    // Decode letters whose elements are all resolved
+    const word = ROUNDS[round].word;
+    for (let li = 0; li < word.length; li++) {
+      if (decoded[li] !== null) continue;
+      const elems = timeline.filter(e => e.li === li);
+      const allDone = elems.every(e => inputs[e.idx] !== null || elapsed > e.winEnd);
+      const lastElem = elems[elems.length - 1];
+      if (allDone && elapsed > lastElem.endT + 80) decodeLetter(li);
+    }
+
+    // Check round complete
+    if (!roundOver && timeline.length > 0) {
+      const lastEv = timeline[timeline.length - 1];
+      if (elapsed > lastEv.winEnd + 250) {
+        roundOver = true;
+        for (let li = 0; li < word.length; li++) decodeLetter(li);
+        setTimeout(() => { if (state === 'playing') mapPhase = true; }, 700);
+      }
+    }
+  }
+
+  if (state === 'playing' && mapPhase && mapResult !== null) {
+    mapResultCountdown--;
+    if (mapResultCountdown <= 0) {
+      round++;
+      if (round >= ROUNDS.length) {
+        if (score > best) { best = score; localStorage.setItem('wire_tap_best', best); }
+        state = confidence >= 50 ? 'win' : 'lose';
+      } else {
+        startRound();
+      }
+    }
+  }
+
+  for (const p of popups) { p.y += p.vy; p.life--; }
+  popups = popups.filter(p => p.life > 0);
+}
+
+// ── Draw: background ───────────────────────────────────────────────────────────
+function drawBg() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#080412');
+  g.addColorStop(1, '#150900');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+// ── Draw: confidence bar ───────────────────────────────────────────────────────
+function drawConfidence() {
+  ctx.save();
+  const mx = 16, my = 8, mw = W - 32, mh = 20;
+  rr(mx, my, mw, mh, 10);
+  ctx.fillStyle = '#160820';
+  ctx.fill();
+  const ratio = Math.max(0, Math.min(1, confidence / 100));
+  if (ratio > 0) {
+    rr(mx, my, mw * ratio, mh, 10);
+    ctx.fillStyle = confidence >= 60 ? '#FF9F43' : confidence >= 35 ? '#FFE066' : '#E74C3C';
+    ctx.fill();
+  }
+  ctx.fillStyle = '#eee';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CONFIDENCE  ' + confidence + '%', W / 2, my + 14);
+  ctx.restore();
+}
+
+// ── Draw: word decode strip ────────────────────────────────────────────────────
+function drawWordBoxes() {
+  ctx.save();
+  const word = ROUNDS[round].word;
+  const bw = 54, bh = 50, gap = 8;
+  const totalW = word.length * bw + (word.length - 1) * gap;
+  const sx = (W - totalW) / 2;
+  const by = 38;
+
+  for (let i = 0; i < word.length; i++) {
+    const bx = sx + i * (bw + gap);
+    const dec = decoded[i];
+    const correct = dec === word[i];
+    rr(bx, by, bw, bh, 8);
+    ctx.fillStyle = dec ? (correct ? '#142200' : '#200808') : '#12082a';
+    ctx.fill();
+    rr(bx, by, bw, bh, 8);
+    ctx.strokeStyle = dec ? (correct ? '#FF9F43' : '#E74C3C') : '#2a1860';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = dec ? (correct ? '#FFE066' : '#E74C3C') : '#403060';
+    ctx.font = 'bold 24px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(dec || '_', bx + bw / 2, by + bh - 11);
+  }
+  ctx.restore();
+}
+
+// ── Draw: element indicator strip ─────────────────────────────────────────────
+function drawElemStrip() {
+  ctx.save();
+  const word = ROUNDS[round].word;
+  const bw = 54, gap = 8;
+  const totalW = word.length * bw + (word.length - 1) * gap;
+  const sx = (W - totalW) / 2;
+  const sy = 96;
+
+  for (let li = 0; li < word.length; li++) {
+    const lx = sx + li * (bw + gap);
+    const elems = timeline.filter(e => e.li === li);
+    const dotW = 9, dashW = 26, eGap = 5, eH = 9;
+    let mw = 0;
+    elems.forEach((e, j) => { mw += (e.isDash ? dashW : dotW) + (j < elems.length - 1 ? eGap : 0); });
+    let ex = lx + (bw - mw) / 2;
+
+    for (const e of elems) {
+      const inp = inputs[e.idx];
+      const ew = e.isDash ? dashW : dotW;
+      let col = '#251845';
+      if (inp === 'dot' || inp === 'dash') {
+        col = ((inp === 'dot') === !e.isDash) ? '#FF9F43' : '#E74C3C';
+      } else if (inp === 'missed') {
+        col = '#3a1428';
+      } else if (toningElem && toningElem.idx === e.idx) {
+        col = '#FFE066';
+      } else if (inWinElem && inWinElem.idx === e.idx) {
+        col = '#C8A04A';
+      }
+      rr(ex, sy, ew, eH, 3);
+      ctx.fillStyle = col;
+      ctx.fill();
+      ex += ew + eGap;
+    }
+  }
+  ctx.restore();
+}
+
+// ── Draw: tone indicator ───────────────────────────────────────────────────────
+function drawToneIndicator() {
+  ctx.save();
+  const cx = W / 2, cy = 220;
+  const elapsed = Date.now() - pbStart;
+
+  if (toningElem) {
+    const pulse = 0.88 + 0.12 * Math.sin(tick * 0.22);
+    const r = 38 * pulse;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r + 28);
+    g.addColorStop(0, 'rgba(255,224,102,0.92)');
+    g.addColorStop(0.45, 'rgba(255,159,67,0.5)');
+    g.addColorStop(1, 'rgba(255,100,10,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 28, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFE066';
+    ctx.fill();
+  } else if (inWinElem) {
+    const pulse = 0.5 + 0.5 * Math.sin(tick * 0.18);
+    ctx.globalAlpha = 0.5 + 0.5 * pulse;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 28, 0, Math.PI * 2);
+    ctx.fillStyle = '#C8A04A';
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TAP NOW', cx, cy + 55);
+  } else if (!roundOver) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e0d38';
+    ctx.fill();
+    ctx.strokeStyle = '#2e1858';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    const p = 0.55 + 0.45 * Math.sin(tick * 0.07);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('LISTENING...', cx, cy + 50);
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('DECODING...', cx, cy + 10);
+  }
+
+  // Round label
+  ctx.fillStyle = '#6a4a20';
+  ctx.font = '13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ROUND ' + (round + 1) + ' / ' + ROUNDS.length, cx, cy + 76);
+
+  ctx.restore();
+}
+
+// ── Draw: buttons ──────────────────────────────────────────────────────────────
+function drawButtons() {
+  ctx.save();
+  const bh = 138, by = H - 212, bpad = 10;
+
+  // DOT
+  const dotLit = !!(toningElem && !toningElem.isDash) || !!(inWinElem && !inWinElem.isDash);
+  rr(bpad, by, 162, bh, 14);
+  ctx.fillStyle = dotLit ? '#3a2800' : '#0e0820';
+  ctx.fill();
+  rr(bpad, by, 162, bh, 14);
+  ctx.strokeStyle = dotLit ? '#FFE066' : '#2a1860';
+  ctx.lineWidth = dotLit ? 3 : 2;
+  ctx.stroke();
+
+  ctx.fillStyle = dotLit ? '#FFE066' : '#3a2a60';
+  ctx.beginPath();
+  ctx.arc(bpad + 81, by + 56, dotLit ? 22 : 16, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = dotLit ? '#1a0520' : '#FFE066';
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('DOT', bpad + 81, by + 100);
+
+  // DASH
+  const dashLit = !!(toningElem && toningElem.isDash) || !!(inWinElem && inWinElem.isDash);
+  rr(W - bpad - 162, by, 162, bh, 14);
+  ctx.fillStyle = dashLit ? '#3a2800' : '#0e0820';
+  ctx.fill();
+  rr(W - bpad - 162, by, 162, bh, 14);
+  ctx.strokeStyle = dashLit ? '#FFE066' : '#2a1860';
+  ctx.lineWidth = dashLit ? 3 : 2;
+  ctx.stroke();
+
+  const dc = W - bpad - 162 + 81;
+  ctx.fillStyle = dashLit ? '#FFE066' : '#3a2a60';
+  rr(dc - 28, by + 46, 56, dashLit ? 18 : 12, 5);
+  ctx.fill();
+
+  ctx.fillStyle = dashLit ? '#1a0520' : '#FFE066';
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('DASH', dc, by + 100);
+
+  // Hint
+  ctx.fillStyle = '#3a2a10';
+  ctx.font = '12px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Short tone = DOT    Long tone = DASH', W / 2, H - 52);
+
+  ctx.restore();
+}
+
+// ── Draw: map screen ───────────────────────────────────────────────────────────
+function drawMap() {
+  ctx.save();
+
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#100800');
+  g.addColorStop(1, '#060300');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  drawConfidence();
+
+  // Decoded word header
+  const decodedWord = decoded.map(l => l || '?').join('');
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('DECODED MESSAGE:', W / 2, MAP_Y - 64);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.fillText(decodedWord, W / 2, MAP_Y - 36);
+  ctx.fillStyle = '#6a4a20';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('Where are the outlaws headed?', W / 2, MAP_Y - 14);
+
+  // Map box
+  const mh = H - MAP_Y - 54;
+  rr(8, MAP_Y, W - 16, mh, 8);
+  ctx.fillStyle = '#130a00';
+  ctx.fill();
+  rr(8, MAP_Y, W - 16, mh, 8);
+  ctx.strokeStyle = '#2a1800';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Terrain: river
+  ctx.beginPath();
+  ctx.moveTo(150, MAP_Y + 50);
+  ctx.bezierCurveTo(165, MAP_Y + 120, 195, MAP_Y + 200, 188, MAP_Y + 320);
+  ctx.strokeStyle = '#1a1000';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Terrain: hills
+  ctx.strokeStyle = '#1e1200';
+  ctx.lineWidth = 1.5;
+  [50, 130, 210].forEach(hx => {
+    ctx.beginPath();
+    ctx.arc(hx, MAP_Y + mh - 10, 22, Math.PI, 0);
+    ctx.stroke();
+  });
+
+  // Location markers
+  for (let i = 0; i < LOCATIONS.length; i++) {
+    const loc = LOCATIONS[i];
+    const lx = loc.x, ly = loc.y + MAP_Y;
+    const isTarget = i === ROUNDS[round].locationIdx;
+    const won = mapResult === 'correct' && isTarget;
+    const lost = mapResult === 'wrong' && i !== ROUNDS[round].locationIdx;
+
+    ctx.beginPath();
+    ctx.arc(lx, ly, loc.r, 0, Math.PI * 2);
+    ctx.fillStyle = won ? '#1a3500' : '#1a1000';
+    ctx.fill();
+    ctx.strokeStyle = won ? '#FF9F43' : '#C8A04A';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = won ? '#FF9F43' : '#C8A04A';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(loc.name[0], lx, ly + 5);
+
+    ctx.fillStyle = '#9a7a40';
+    ctx.font = '10px Georgia, serif';
+    ctx.fillText(loc.name, lx, ly + loc.r + 13);
+  }
+
+  // Instruction
+  if (mapResult === null) {
+    const p = 0.6 + 0.4 * Math.sin(tick * 0.1);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TAP THE LOCATION', W / 2, H - 24);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+// ── Draw: title ────────────────────────────────────────────────────────────────
+function drawTitle() {
+  ctx.save();
+  drawBg();
+
+  // Stars
+  for (let i = 0; i < 55; i++) {
+    const sx = (i * 179 + 30) % W;
+    const sy = (i * 113) % (H * 0.55);
+    const sp = 0.4 + 0.6 * Math.sin(tick * 0.04 + i * 0.9);
+    ctx.globalAlpha = sp * 0.65;
+    ctx.fillStyle = '#FFE066';
+    ctx.fillRect(sx, sy, 1.5, 1.5);
+  }
+  ctx.globalAlpha = 1;
+
+  // Telegraph poles
+  ctx.strokeStyle = '#2a1200';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 5; i++) {
+    const px = 30 + i * 75;
+    ctx.beginPath(); ctx.moveTo(px, 78); ctx.lineTo(px, 136); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(px - 10, 92); ctx.lineTo(px + 10, 92); ctx.stroke();
+  }
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#1a0d00';
+  for (let i = 0; i < 4; i++) {
+    const x1 = 30 + i * 75, x2 = 30 + (i + 1) * 75;
+    ctx.beginPath();
+    ctx.moveTo(x1, 90);
+    ctx.quadraticCurveTo((x1 + x2) / 2, 104, x2, 90);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x1, 96);
+    ctx.quadraticCurveTo((x1 + x2) / 2, 110, x2, 96);
+    ctx.stroke();
+  }
+
+  // Title
+  ctx.shadowColor = '#FF9F43';
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 56px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('WIRE TAP', W / 2, 222);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '19px Georgia, serif';
+  ctx.fillText('Telegraph Decoder', W / 2, 256);
+
+  // Decorative morse
+  ctx.fillStyle = '#2e1a40';
+  ctx.font = '15px monospace';
+  ctx.fillText('. - . . - . - - . -', W / 2, 288);
+
+  // Instructions
+  ctx.fillStyle = '#8a6a30';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Listen to the signal.', W / 2, 332);
+  ctx.fillText('Tap DOT or DASH to decode.', W / 2, 355);
+  ctx.fillText("Locate the gang's hideout.", W / 2, 378);
+  ctx.fillStyle = '#5a3a14';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('3 messages - short = dot, long = dash', W / 2, 406);
+
+  if (best > 0) {
+    ctx.fillStyle = '#4a3010';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('BEST: ' + best, W / 2, 432);
+  }
+
+  const pulse = 0.4 + 0.6 * Math.sin(tick * 0.065);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('TAP TO INTERCEPT', W / 2, 506);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ── Draw: win/lose ─────────────────────────────────────────────────────────────
+function drawEndScreen(win) {
+  ctx.save();
+  drawBg();
+
+  if (win) {
+    ctx.shadowColor = '#FF9F43';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 36px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('GANG TRACKED!', W / 2, 170);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '17px Georgia, serif';
+    ctx.fillText('The law is on their trail.', W / 2, 210);
+  } else {
+    ctx.shadowColor = '#E74C3C';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 34px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('SIGNAL LOST', W / 2, 170);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#9a6a40';
+    ctx.font = '17px Georgia, serif';
+    ctx.fillText('The gang got away...', W / 2, 210);
+  }
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '17px Georgia, serif';
+  ctx.fillText('Score: ' + score, W / 2, 252);
+  ctx.fillText('Confidence: ' + confidence + '%', W / 2, 278);
+
+  if (win && score >= best && score > 0) {
+    const p = 0.5 + 0.5 * Math.sin(tick * 0.11);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 21px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 312);
+    ctx.globalAlpha = 1;
+  }
+
+  // Play Again
+  rr(55, 352, 250, 54, 12);
+  ctx.fillStyle = '#FFE066';
+  ctx.fill();
+  ctx.fillStyle = '#1a0520';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('PLAY AGAIN', W / 2, 386);
+
+  // Share (win only)
+  if (win) {
+    rr(75, 422, 210, 44, 12);
+    ctx.fillStyle = '#1e1040';
+    ctx.fill();
+    rr(75, 422, 210, 44, 12);
+    ctx.strokeStyle = '#FFE066';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.fillText('SHARE', W / 2, 449);
+  }
+
+  // Feedback link
+  ctx.fillStyle = '#4a3010';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('Leave Feedback', W / 2, win ? 490 : 440);
+
+  ctx.restore();
+}
+
+// ── Draw: popups ───────────────────────────────────────────────────────────────
+function drawPopups() {
+  ctx.save();
+  for (const p of popups) {
+    ctx.globalAlpha = p.life / 68;
+    ctx.fillStyle = p.col;
+    ctx.font = 'bold 20px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.txt, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── Main draw ──────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  if (state === 'title') { drawTitle(); return; }
+
+  if (state === 'win')  { drawEndScreen(true);  drawPopups(); return; }
+  if (state === 'lose') { drawEndScreen(false); drawPopups(); return; }
+
+  if (state === 'playing') {
+    if (mapPhase) {
+      drawMap();
+    } else {
+      drawBg();
+      drawConfidence();
+      drawWordBoxes();
+      drawElemStrip();
+      drawToneIndicator();
+      drawButtons();
+    }
+    drawPopups();
+  }
+}
+
+// ── Input ──────────────────────────────────────────────────────────────────────
+function onTap(e) {
+  const pos = getPos(e);
+  try { getAudio(); } catch (ex) {}
+
+  if (state === 'title') { startGame(); return; }
+
+  if (state === 'win' || state === 'lose') {
+    const win = state === 'win';
+    // Play Again button
+    if (pos.x >= 55 && pos.x <= 305 && pos.y >= 352 && pos.y <= 406) { startGame(); return; }
+    // Share button (win)
+    if (win && pos.x >= 75 && pos.x <= 285 && pos.y >= 422 && pos.y <= 466) {
+      try {
+        navigator.share({
+          title: 'Wire Tap',
+          text: 'I cracked the gang\'s code! Score: ' + score,
+          url: location.href,
+        });
+      } catch (ex) {}
+      return;
+    }
+    // Feedback link
+    const fbY = win ? 490 : 440;
+    if (pos.y >= fbY - 14 && pos.y <= fbY + 6) {
+      document.getElementById('fb-overlay').classList.add('show');
+    }
+    return;
+  }
+
+  if (state === 'playing') {
+    if (mapPhase) {
+      onMapTap(pos.x, pos.y);
+    } else if (!roundOver) {
+      if (pos.y >= H - 212 && pos.y <= H - 212 + 138) {
+        if (pos.x < W / 2) tapClassify('dot');
+        else tapClassify('dash');
+      }
+    }
+  }
+}
+
+canvas.addEventListener('click', onTap);
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  onTap(e.touches[0]);
+}, { passive: false });
+
+// ── Feedback overlay ───────────────────────────────────────────────────────────
+document.getElementById('fb-cancel').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('show');
+});
+document.getElementById('fb-send').addEventListener('click', async () => {
+  const msg = document.getElementById('fb-text').value.trim();
+  if (!msg) return;
+  const game = document.getElementById('fb-target').value;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game, message: msg, source: 'in-game' }),
+    });
+  } catch (ex) {}
+  document.getElementById('fb-overlay').classList.remove('show');
+  document.getElementById('fb-text').value = '';
+});
+
+// ── Expose namespace for tests ─────────────────────────────────────────────────
+window._wt = {
+  get state()     { return state; },
+  get round()     { return round; },
+  get confidence(){ return confidence; },
+  get timeline()  { return timeline; },
+  get inputs()    { return inputs; },
+  get decoded()   { return decoded; },
+  get mapPhase()  { return mapPhase; },
+  get score()     { return score; },
+  get best()      { return best; },
+  get toningElem(){ return toningElem; },
+  MORSE, DOT_DUR, DASH_DUR, ELEM_GAP, LETTER_GAP, INPUT_GRACE,
+  ROUNDS, LOCATIONS, MAP_Y,
+  buildTimeline, startGame, startRound, decodeLetter,
+};
+
+// ── Main loop ──────────────────────────────────────────────────────────────────
+function loop() {
+  try { update(); draw(); } catch (e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
