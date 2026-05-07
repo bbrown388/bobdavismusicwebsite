@@ -47,6 +47,7 @@ Single source of truth for every game built, every technique proven, and every l
 | 37 | Tumbledown Town | `tumbledown-town.html` | Verlet physics demolition puzzle / position-based integration (pos+prevPos, no velocity) / 12-constraint-iteration Verlet solver / removable support links / CRUSH_Y/SAFE_Y thresholds for win/lose / diagonal braces create cross-section coupling / 5 escalating puzzle levels / first physics simulation in series | 2026-05-06 |
 | 38 | Dust Road Derby | `dust-road-derby.html` | Top-down oval racer / parametric track (t=0-1) + lane (-1 to +1) position system / carXY() computes screen pos from ellipse + outward normal / rubber-band AI (clamp 0.72-1.42x) with sine-wave lane weave / slipstream draft boost (78px proximity + progress check = +18% speed cap) / evenodd fill-rule for track donut / countdown beep sequence / 5 laps / first racing game in series | 2026-05-06 |
 | 39 | Last Rope Standing | `last-rope-standing.html` | Pendulum grapple survival / constraint-based pendulum (apply gravity + project onto rope circle) / tap-to-latch nearest post (LATCH_RADIUS=90px) / auto-latch on contact during flight / release to fly as projectile / rising water (waterSpeedMult = max(1, 1 + (1-waterY/H)*2)) / dashed guide line to nearest in-range post / staggered alternating post rows / height-based scoring / first grapple-physics game in series | 2026-05-06 |
+| 40 | Wire Tap | `wire-tap.html` | Temporal pattern-decoding / pre-scheduled Web Audio timeline (buildTimeline returns {startT,endT,winEnd,isDash,li,ei,idx}) / short tone (220ms dot) vs long tone (660ms dash) / INPUT_GRACE 480ms classify window / per-letter element-strip indicator / two-phase round (decode then map) / decodeLetter matches player's dot-dash sequence to MORSE table / 3-location frontier map identification / confidence meter (50% start, +3 correct elem, -3 wrong, +12 correct map) / first audio-primary mechanic in series | 2026-05-07 |
 
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
@@ -96,6 +97,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Tumbledown Town](retrospectives/37-tumbledown-town.md) — session lessons, action items for Game 38
 - [Retrospective: Dust Road Derby](retrospectives/38-dust-road-derby.md) — session lessons, action items for Game 39
 - [Retrospective: Last Rope Standing](retrospectives/39-last-rope-standing.md) — session lessons, action items for Game 40
+- [Retrospective: Wire Tap](retrospectives/40-wire-tap.md) — session lessons, action items for Game 41
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
