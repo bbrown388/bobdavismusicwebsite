@@ -117,27 +117,26 @@ try {
     # director.js writes any new feedback to pending-feedback.json.
     # Run a dedicated Claude session to process it before the main game loop.
     if (Test-Path $feedbackFile) {
-        $feedbackJson = Get-Content $feedbackFile -Raw
+        $feedbackJson = [System.IO.File]::ReadAllText($feedbackFile, [System.Text.Encoding]::UTF8)
         $feedbackItems = ConvertFrom-Json $feedbackJson
         if ($feedbackItems.Count -gt 0) {
             Log "--- Processing $($feedbackItems.Count) feedback item(s) before game loop ---"
             Log "Feedback: $feedbackJson"
 
-            $feedbackPrompt = @"
-You are the autonomous game director for Bob Davis's music website. You have received feedback that needs to be processed before the next game session begins.
+            $feedbackPrompt = 'You are the autonomous game director for Bob Davis''s music website. Feedback has arrived that must be processed before the next game session.
 
+Read autonomous/pending-feedback.json to get the exact feedback items (do not rely on any summary - read the file).
 Read autonomous/status.json to see the current game queue and state.
 
-Here is the feedback to process:
-$feedbackJson
+Process each feedback item as follows:
 
-Process each item exactly as you would if Bob had typed it to you directly in chat. For example:
-- Queue order changes ("do X next", "do X after Y", "skip X") -> update gameQueue in autonomous/status.json, director-status.json, and status.html, then commit and push
-- Fix requests -> note them (the next session will handle them via the director)
-- General direction feedback -> note it for the next game design
+1. Queue order changes ("do X next", "do X after Y", "skip X", "do not do X") -> update gameQueue in autonomous/status.json, director-status.json, and status.html, then commit and push.
 
-After processing all items, delete autonomous/pending-feedback.json, then output FEEDBACK_PROCESSED.
-"@
+2. Fix requests (fixRequested: true) -> update autonomous/state.json to set currentTask to {"action":"fix","target":"<game-slug>.html","context":"<complaint text>"}, then commit and push. The next game session will execute the fix.
+
+3. General direction or design feedback -> append a one-line note to autonomous/feedback-notes.txt (create if it does not exist) so the next game-design session can read it.
+
+After processing all items, delete autonomous/pending-feedback.json, then output FEEDBACK_PROCESSED.'
 
             $feedbackResult = RunClaude $feedbackPrompt
 
