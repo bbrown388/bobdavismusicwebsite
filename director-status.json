@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-07T20:33:41Z",
+  "lastRunAt": "2026-05-07T21:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 41: Gold Panner",
-  "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
-  },
-  "gamesBuilt": 40,
-  "lastGameTitle": "Wire Tap",
-  "lastGameFile": "wire-tap.html",
+  "lastRunSummary": "Built Game 41: Gold Panner - particle physics pan-tilt, density stratification, 22 tests pass",
+  "currentTask": null,
+  "gamesBuilt": 41,
+  "lastGameTitle": "Gold Panner",
+  "lastGameFile": "gold-panner.html",
   "gameQueue": [
-    {
-      "num": 41,
-      "title": "Gold Panner",
-      "concept": "Skill-based prospecting: tilt a gold pan (left/right drag) to slosh water and separate gold flakes from gravel. Each round introduces more mud and lighter fool's gold that moves like real gold. Physics-based particle system with density-based velocity: gold sinks faster than gravel. Race against drying pan and claim jumpers.",
-      "raisesBarOn": "First fluid/particle simulation mechanic in series, first density-stratification physics, first game based on manual dexterity over a sustained object rather than reaction timing",
-      "status": "planned"
-    },
     {
       "num": 42,
       "title": "Coyote Call",
@@ -29,6 +19,13 @@
       "title": "Wanted: Reward",
       "concept": "Bounty hunter economics: a new wanted poster appears each round showing a fugitive's traits (hat color, build, scar, weapon). Scan a scrolling crowd of silhouettes for the match. First correct ID earns full reward; wrong IDs reduce the payout. Each round: more fugitives, similar-looking decoys, crowd density increases.",
       "raisesBarOn": "First visual search mechanic in series (scan crowd vs memory test), first multi-trait composite matching, first economic payout mechanic tied to accuracy rather than speed alone",
+      "status": "planned"
+    },
+    {
+      "num": 44,
+      "title": "Trail Blaze",
+      "concept": "Wilderness pathfinding strategy: draw a trail through procedurally generated terrain (mountains, rivers, desert, forest) from a starting camp to a destination. Each terrain type has a travel-cost multiplier. Supplies drain per tile crossed. Find the path that reaches the destination before supplies run out. New route threats each round: seasonal floods, rockslides, rival wagon trains.",
+      "raisesBarOn": "First player-drawn pathfinding mechanic in series, first terrain-cost strategy layer, first game where the challenge is route optimization rather than reaction or memory",
       "status": "planned"
     }
   ],
@@ -88,14 +85,6 @@
       "result": "success",
       "summary": "Built Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw, shadow zones, 50 tests pass.",
       "commitHash": "9a691f5"
-    },
-    {
-      "runAt": "2026-05-05T08:30:00.000Z",
-      "action": "new_game",
-      "game": "Tumbleweed Pinball",
-      "result": "success",
-      "summary": "Built Game 30: Tumbleweed Pinball - physics pinball engine, cactus bumpers, WANTED poster targets, chain multiplier (1x-8x), drain post, 50 tests pass.",
-      "commitHash": "b111fa8"
     },
     {
       "runAt": "2026-05-05T08:30:00.000Z",
@@ -186,12 +175,12 @@
       "commitHash": "2a484c0"
     },
     {
-      "runAt": "2026-05-07T08:30:00.000Z",
+      "runAt": "2026-05-07T21:00:00.000Z",
       "action": "new_game",
-      "game": "Wire Tap",
+      "game": "Gold Panner",
       "result": "success",
-      "summary": "Built Game 40: Wire Tap - telegraph Morse code decoder, dot/dash audio classification, 3-round map identification, 51 tests pass.",
-      "commitHash": "2a484c0"
+      "summary": "Built Game 41: Gold Panner - particle physics pan-tilt, density stratification, claim jumper, 22 tests pass.",
+      "commitHash": "d848990"
     }
   ]
 }
