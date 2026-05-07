@@ -136,7 +136,7 @@ Process each feedback item as follows:
 
 3. General direction or design feedback -> append a one-line note to autonomous/feedback-notes.txt (create if it does not exist) so the next game-design session can read it.
 
-After processing all items, delete autonomous/pending-feedback.json, then output FEEDBACK_PROCESSED.'
+After processing all items, delete autonomous/pending-feedback.json. Your final text message MUST contain the exact word FEEDBACK_PROCESSED on its own line — this is required even if your last action was a tool call.'
 
             $feedbackResult = RunClaude $feedbackPrompt
 
