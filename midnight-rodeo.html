@@ -400,7 +400,6 @@ function update(dt) {
 // ---- Input ---------------------------------------------------------------
 function handleTap(x, y) {
   if (state === 'title')   { startGame(); return; }
-  if (state === 'dead')    { state = 'title'; return; }
   if (state !== 'playing') return;
   if (tapHandled) return;
   playerTap  = x < W / 2 ? 'left' : 'right';
@@ -761,8 +760,8 @@ function drawHUD() {
     ctx.fillText('LVL ' + (level + 1), W - 22, 58);
   }
 
-  // Pre-tap indicator during riding phase
-  if (bullPhase === 'riding' && playerTap !== null) {
+  // Tap indicator during riding and telegraphing phases
+  if ((bullPhase === 'riding' || bullPhase === 'telegraphing') && playerTap !== null) {
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#C8A04A';
