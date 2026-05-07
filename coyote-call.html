@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Coyote Call - Bob Davis</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; }
+canvas { display:block; touch-action:none; }
+#fb-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85);
+  justify-content:center; align-items:center; z-index:100;
+}
+#fb-overlay.show { display:flex; }
+#fb-box {
+  background:#1a0d35; border:2px solid #FFE066; border-radius:12px;
+  padding:24px; width:300px; font-family:Georgia,serif; color:#FFE066;
+}
+#fb-box h3 { margin-bottom:12px; font-size:18px; }
+#fb-box select, #fb-box textarea {
+  width:100%; margin-bottom:10px; padding:8px; border-radius:6px;
+  background:#2a1500; color:#FFE066; border:1px solid #FFE066; font-family:Georgia,serif;
+}
+#fb-box textarea { height:80px; resize:none; }
+#fb-row { display:flex; gap:10px; }
+#fb-row button {
+  flex:1; padding:10px; border-radius:8px; border:none; cursor:pointer;
+  font-family:Georgia,serif; font-size:14px; font-weight:bold;
+}
+#fb-send { background:#FFE066; color:#1a0d35; }
+#fb-cancel { background:#3a1f05; color:#FFE066; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <div id="fb-box">
+    <h3>Leave Feedback</h3>
+    <select id="fb-target">
+      <option value="general">General / next game</option>
+      <option value="Coyote Call" selected>Coyote Call</option>
+    </select>
+    <textarea id="fb-text" placeholder="What do you think?"></textarea>
+    <div id="fb-row">
+      <button id="fb-send">Send</button>
+      <button id="fb-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+let scale = 1;
+
+function resize() {
+  scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = scale * W + 'px';
+  canvas.style.height = scale * H + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Constants ───────────────────────────────────────────────
+const FREQ_MIN = 200;
+const FREQ_MAX = 1200;
+
+// Whistle bar (left side, vertical)
+const WH_X = 10, WH_Y = 78, WH_W = 44, WH_H = 340;
+
+// Oscilloscope panel
+const SC_X = 64, SC_Y = 70, SC_W = 288, SC_H = 292;
+
+// Trust bar
+const TR_X = 64, TR_Y = SC_Y + SC_H + 8, TR_W = 288, TR_H = 14;
+
+// Round configs: tolerance (Hz), hold time (sec), pack size, target freqs
+const ROUNDS = [
+  { tol: 62, hold: 1.5, pack: 1, freqs: [350, 550, 440] },
+  { tol: 48, hold: 1.3, pack: 2, freqs: [400, 640, 300] },
+  { tol: 36, hold: 1.2, pack: 3, freqs: [500, 260, 700] },
+  { tol: 26, hold: 1.0, pack: 4, freqs: [285, 620, 420] },
+  { tol: 18, hold: 0.9, pack: 5, freqs: [600, 320, 750] },
+];
+
+const SCARE_LIMIT = 3.0;
+const HOWL_INTERVAL = 3.8;
+
+// ── Game State ──────────────────────────────────────────────
+let state = 'title';
+let score = 0;
+let best = parseInt(localStorage.getItem('coyote_call_best') || '0', 10);
+let round = 0;
+let markerIdx = 0;
+let playerFreq = 700;
+let trustTimer = 0;
+let scareTimer = 0;
+let scareTotal = 0;
+let markerLocked = [false, false, false];
+let floaters = [];
+let coyotes = [];
+let scrollT = 0;
+let howlRepeat = 0;
+let howlIntro = 0;
+let transTimer = 0;
+let isDragging = false;
+let pressTimer = null;
+
+// ── Audio ───────────────────────────────────────────────────
+let audioCtx = null;
+let playerOsc = null;
+let playerGain = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  playerOsc = audioCtx.createOscillator();
+  playerGain = audioCtx.createGain();
+  playerOsc.type = 'sine';
+  playerOsc.frequency.value = playerFreq;
+  playerGain.gain.value = 0;
+  playerOsc.connect(playerGain);
+  playerGain.connect(audioCtx.destination);
+  playerOsc.start();
+}
+
+function setPlayerFreq(freq) {
+  playerFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+  if (playerOsc) playerOsc.frequency.setTargetAtTime(playerFreq, audioCtx.currentTime, 0.04);
+}
+
+function startTone() {
+  if (!playerGain) return;
+  playerGain.gain.setTargetAtTime(0.14, audioCtx.currentTime, 0.03);
+}
+
+function stopTone() {
+  if (!playerGain) return;
+  playerGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.06);
+}
+
+function playCoyoteHowl(freq) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const vib = audioCtx.createOscillator();
+  const vibGain = audioCtx.createGain();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  vib.type = 'sine';
+  vib.frequency.value = 6;
+  vibGain.gain.value = freq * 0.015;
+  gain.gain.value = 0;
+  vib.connect(vibGain);
+  vibGain.connect(osc.frequency);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  vib.start();
+  const t = audioCtx.currentTime;
+  osc.frequency.setValueAtTime(freq * 0.8, t);
+  osc.frequency.linearRampToValueAtTime(freq * 1.3, t + 0.45);
+  osc.frequency.linearRampToValueAtTime(freq * 0.75, t + 1.1);
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.2, t + 0.1);
+  gain.gain.setValueAtTime(0.2, t + 0.9);
+  gain.gain.linearRampToValueAtTime(0, t + 1.3);
+  osc.stop(t + 1.4);
+  vib.stop(t + 1.4);
+}
+
+function playLockChime() {
+  if (!audioCtx) return;
+  [880, 1100, 1320].forEach((f, i) => {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    g.gain.value = 0;
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+    osc.start();
+    const t = audioCtx.currentTime + i * 0.07;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.18, t + 0.04);
+    g.gain.linearRampToValueAtTime(0, t + 0.28);
+    osc.stop(t + 0.3);
+  });
+}
+
+function playScareFail() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 160;
+  g.gain.value = 0;
+  osc.connect(g);
+  g.connect(audioCtx.destination);
+  osc.start();
+  const t = audioCtx.currentTime;
+  g.gain.linearRampToValueAtTime(0.15, t + 0.05);
+  osc.frequency.linearRampToValueAtTime(90, t + 0.5);
+  g.gain.linearRampToValueAtTime(0, t + 0.55);
+  osc.stop(t + 0.6);
+}
+
+function playRoundFanfare() {
+  if (!audioCtx) return;
+  [[440, 0], [554, 0.12], [660, 0.24], [880, 0.36]].forEach(([f, delay]) => {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    g.gain.value = 0;
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+    osc.start();
+    const t = audioCtx.currentTime + delay;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.16, t + 0.06);
+    g.gain.linearRampToValueAtTime(0, t + 0.35);
+    osc.stop(t + 0.4);
+  });
+}
+
+// ── Helpers ─────────────────────────────────────────────────
+function rrect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function freqToY(freq) {
+  const t = (freq - FREQ_MIN) / (FREQ_MAX - FREQ_MIN);
+  return WH_Y + WH_H - t * WH_H;
+}
+
+function yToFreq(y) {
+  const t = (WH_Y + WH_H - y) / WH_H;
+  return FREQ_MIN + t * (FREQ_MAX - FREQ_MIN);
+}
+
+function addFloat(text, x, y, color) {
+  floaters.push({ text, x, y, alpha: 1.0, vy: -1.3, color });
+}
+
+// ── Coyotes ─────────────────────────────────────────────────
+function initCoyotes(count) {
+  coyotes = [];
+  for (let i = 0; i < count; i++) {
+    const far = W + 55 + i * 32;
+    coyotes.push({ x: far, y: 547 - (i % 2) * 15, targetX: far, far });
+  }
+}
+
+function updateCoyotePositions(dt, approachFrac) {
+  coyotes.forEach((c, i) => {
+    const close = 215 - i * 38;
+    c.targetX = c.far + (close - c.far) * approachFrac;
+    c.x += (c.targetX - c.x) * Math.min(1, dt * 2.5);
+  });
+}
+
+function fleeAll() {
+  coyotes.forEach(c => {
+    c.far = W + 90;
+    c.targetX = W + 90;
+  });
+}
+
+// ── Game Flow ───────────────────────────────────────────────
+function startGame() {
+  score = 0;
+  round = 0;
+  floaters = [];
+  state = 'playing';
+  startRound();
+}
+
+function startRound() {
+  markerIdx = 0;
+  trustTimer = 0;
+  scareTimer = 0;
+  scareTotal = 0;
+  markerLocked = [false, false, false];
+  howlRepeat = HOWL_INTERVAL;
+  howlIntro = 1.2;
+  transTimer = 0;
+  initCoyotes(ROUNDS[round].pack);
+  playCoyoteHowl(ROUNDS[round].freqs[0]);
+}
+
+function lockMarker() {
+  if (state !== 'playing') return;
+  markerLocked[markerIdx] = true;
+  const cfg = ROUNDS[round];
+  const diff = Math.abs(playerFreq - cfg.freqs[markerIdx]);
+  const perfect = diff < 12;
+  const pts = perfect ? 150 : 100;
+  score += pts;
+  addFloat(perfect ? 'PERFECT!' : 'LOCKED!', 205, 205, perfect ? '#FFE066' : '#FF9F43');
+  playLockChime();
+  trustTimer = 0;
+
+  if (markerIdx < 2) {
+    markerIdx++;
+    howlRepeat = HOWL_INTERVAL;
+    howlIntro = 0.6;
+    playCoyoteHowl(cfg.freqs[markerIdx]);
+  } else {
+    stopTone();
+    isDragging = false;
+    playRoundFanfare();
+    if (round >= 4) {
+      state = 'win';
+      if (score > best) { best = score; localStorage.setItem('coyote_call_best', best); }
+    } else {
+      state = 'round_win';
+      transTimer = 2.2;
+    }
+  }
+}
+
+function triggerFlee() {
+  if (state !== 'playing') return;
+  stopTone();
+  isDragging = false;
+  playScareFail();
+  fleeAll();
+  state = 'round_lose';
+  transTimer = 2.2;
+}
+
+// ── Update ──────────────────────────────────────────────────
+let lastTime = 0;
+
+function update(ts) {
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  scrollT += dt;
+
+  floaters = floaters.filter(f => f.alpha > 0);
+  floaters.forEach(f => { f.y += f.vy; f.alpha -= dt * 1.3; });
+
+  if (state === 'playing') {
+    updatePlay(dt);
+  } else if (state === 'round_win' || state === 'round_lose') {
+    transTimer -= dt;
+    updateCoyotePositions(dt, state === 'round_win' ? 1.0 : 0);
+    if (transTimer <= 0) {
+      if (state === 'round_win') {
+        round++;
+        startRound();
+        state = 'playing';
+      } else {
+        state = 'lose';
+        if (score > best) { best = score; localStorage.setItem('coyote_call_best', best); }
+      }
+    }
+  }
+}
+
+function updatePlay(dt) {
+  const cfg = ROUNDS[round];
+  const target = cfg.freqs[markerIdx];
+  const diff = Math.abs(playerFreq - target);
+  const onTarget = diff <= cfg.tol;
+  const farOff = diff > cfg.tol * 2.2;
+
+  if (howlIntro > 0) {
+    howlIntro -= dt;
+  } else {
+    howlRepeat -= dt;
+    if (howlRepeat <= 0) {
+      playCoyoteHowl(target);
+      howlRepeat = HOWL_INTERVAL;
+    }
+  }
+
+  if (isDragging) {
+    if (onTarget) {
+      trustTimer += dt;
+      scareTimer = Math.max(0, scareTimer - dt * 1.5);
+      if (trustTimer >= cfg.hold) lockMarker();
+    } else if (farOff && howlIntro <= 0) {
+      scareTimer += dt;
+      trustTimer = Math.max(0, trustTimer - dt * 1.8);
+      if (scareTimer >= 1.4) {
+        scareTotal += scareTimer;
+        scareTimer = 0;
+        if (scareTotal >= SCARE_LIMIT) {
+          triggerFlee();
+          return;
+        }
+      }
+    } else {
+      trustTimer = Math.max(0, trustTimer - dt * 0.6);
+      scareTimer = Math.max(0, scareTimer - dt * 0.4);
+    }
+  } else {
+    trustTimer = Math.max(0, trustTimer - dt * 2.5);
+    scareTimer = Math.max(0, scareTimer - dt * 0.5);
+  }
+
+  const locked = markerLocked.filter(Boolean).length;
+  const approach = Math.min(1, (locked + Math.min(1, trustTimer / cfg.hold) * 0.7) / 3);
+  updateCoyotePositions(dt, approach);
+}
+
+// ── Draw: Background ────────────────────────────────────────
+function drawBg() {
+  ctx.save();
+  const grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#030112');
+  grd.addColorStop(0.45, '#0c0624');
+  grd.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawStars() {
+  ctx.save();
+  const pts = [
+    [28,12],[75,9],[133,22],[197,8],[262,19],[308,11],[348,28],
+    [18,38],[88,33],[155,44],[222,30],[295,41],[342,52],
+    [45,58],[118,52],[187,65],[254,55],[325,62],
+    [12,78],[97,72],[168,85],[240,74],[316,80],
+  ];
+  ctx.fillStyle = '#fff';
+  pts.forEach(([sx, sy]) => {
+    const r = 0.7 + ((sx * 13 + sy * 7) % 10) * 0.08;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawMoon() {
+  ctx.save();
+  const mx = 302, my = 58, mr = 30;
+  const grd = ctx.createRadialGradient(mx, my, mr * 0.4, mx, my, mr * 2.8);
+  grd.addColorStop(0, 'rgba(255,248,200,0.22)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(mx, my, mr * 2.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#FFF8DC';
+  ctx.beginPath();
+  ctx.arc(mx, my, mr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#0c0624';
+  ctx.beginPath();
+  ctx.arc(mx + 9, my - 3, mr * 0.85, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHills() {
+  ctx.save();
+  ctx.fillStyle = '#100728';
+  ctx.beginPath();
+  ctx.moveTo(0, 560);
+  ctx.bezierCurveTo(70, 512, 160, 535, 215, 510);
+  ctx.bezierCurveTo(268, 485, 315, 525, W, 518);
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#0b041e';
+  ctx.beginPath();
+  ctx.moveTo(0, 592);
+  ctx.bezierCurveTo(55, 565, 128, 578, 178, 560);
+  ctx.bezierCurveTo(228, 542, 285, 568, W, 554);
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── Draw: Coyote Silhouette ─────────────────────────────────
+function drawCoyote(cx, cy) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = '#180420';
+  ctx.strokeStyle = '#180420';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 21, 9, -0.08, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(19, -8, 10, 7, 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(27, -6, 6, 4, 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(13, -13); ctx.lineTo(9, -22); ctx.lineTo(18, -14);
+  ctx.closePath(); ctx.fill();
+  ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-17, -1);
+  ctx.bezierCurveTo(-27, -7, -32, -20, -23, -22);
+  ctx.stroke();
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-6, 7); ctx.lineTo(-6, 20);
+  ctx.moveTo(3, 8);  ctx.lineTo(3, 21);
+  ctx.moveTo(11, 7); ctx.lineTo(11, 19);
+  ctx.moveTo(18, 5); ctx.lineTo(18, 17);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Draw: Oscilloscope ──────────────────────────────────────
+function drawScope() {
+  ctx.save();
+  ctx.fillStyle = '#010a01';
+  ctx.strokeStyle = '#1a5c1a';
+  ctx.lineWidth = 2;
+  rrect(SC_X, SC_Y, SC_W, SC_H, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.save();
+  for (let sy = SC_Y + 4; sy < SC_Y + SC_H - 2; sy += 7) {
+    ctx.fillStyle = 'rgba(0,18,0,0.28)';
+    ctx.fillRect(SC_X + 3, sy, SC_W - 6, 4);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,80,0,0.25)';
+  ctx.lineWidth = 0.5;
+  for (let gx = 1; gx < 4; gx++) {
+    const x = SC_X + (SC_W / 4) * gx;
+    ctx.beginPath(); ctx.moveTo(x, SC_Y); ctx.lineTo(x, SC_Y + SC_H); ctx.stroke();
+  }
+  for (let gy = 1; gy < 4; gy++) {
+    const y = SC_Y + (SC_H / 4) * gy;
+    ctx.beginPath(); ctx.moveTo(SC_X, y); ctx.lineTo(SC_X + SC_W, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  const midY = SC_Y + SC_H / 2;
+  const amp = SC_H * 0.32;
+
+  ctx.save();
+  rrect(SC_X + 1, SC_Y + 1, SC_W - 2, SC_H - 2, 7);
+  ctx.clip();
+
+  const cfg = ROUNDS[Math.min(round, 4)];
+  const targetFreq = cfg.freqs[Math.min(markerIdx, 2)];
+  const BASE = 200;
+  const scrollPhase = scrollT * 2 * Math.PI;
+
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(200,170,80,0.65)';
+  ctx.lineWidth = 1.5;
+  for (let px = 0; px <= SC_W; px++) {
+    const cyc = (targetFreq / BASE) * 2.5;
+    const angle = scrollPhase + (px / SC_W) * cyc * Math.PI * 2;
+    const wy = midY + amp * Math.sin(angle);
+    if (px === 0) ctx.moveTo(SC_X + px, wy);
+    else ctx.lineTo(SC_X + px, wy);
+  }
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#FFE066';
+  ctx.shadowBlur = 5;
+  for (let px = 0; px <= SC_W; px++) {
+    const cyc = (playerFreq / BASE) * 2.5;
+    const angle = scrollPhase + (px / SC_W) * cyc * Math.PI * 2;
+    const wy = midY + amp * Math.sin(angle);
+    if (px === 0) ctx.moveTo(SC_X + px, wy);
+    else ctx.lineTo(SC_X + px, wy);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.restore(); // unclip
+
+  // Marker labels
+  if (state === 'playing' || state === 'round_win' || state === 'round_lose') {
+    const mw = SC_W / 3;
+    cfg.freqs.forEach((f, i) => {
+      const mx = SC_X + i * mw + mw / 2;
+      const my = SC_Y + SC_H - 18;
+      ctx.save();
+      const locked = markerLocked[i];
+      const active = i === markerIdx && state === 'playing';
+      if (active) {
+        const pulse = 0.5 + 0.5 * Math.sin(scrollT * 6);
+        ctx.fillStyle = 'rgba(255,224,102,' + (0.1 + pulse * 0.12) + ')';
+        ctx.beginPath();
+        ctx.arc(mx, my - 1, 14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = locked ? '#FF9F43' : active ? '#FFE066' : 'rgba(180,180,180,0.4)';
+      ctx.font = (active ? 'bold ' : '') + '12px Georgia,serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((locked ? '✓ ' : '') + f + 'Hz', mx, my);
+      ctx.restore();
+    });
+  }
+
+  ctx.restore();
+}
+
+// ── Draw: Whistle ───────────────────────────────────────────
+function drawWhistle() {
+  ctx.save();
+  const tGrd = ctx.createLinearGradient(WH_X, 0, WH_X + WH_W, 0);
+  tGrd.addColorStop(0, '#3a2208');
+  tGrd.addColorStop(0.38, '#7a5018');
+  tGrd.addColorStop(0.68, '#C8A04A');
+  tGrd.addColorStop(1, '#5a3e10');
+  ctx.fillStyle = tGrd;
+  rrect(WH_X, WH_Y, WH_W, WH_H, 5);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  rrect(WH_X + 9, WH_Y + 5, 7, WH_H - 10, 3);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,220,100,0.65)';
+  ctx.font = '9px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('HI', WH_X + WH_W / 2, WH_Y - 7);
+  ctx.fillText('LO', WH_X + WH_W / 2, WH_Y + WH_H + 13);
+
+  if (state === 'playing') {
+    const cfg = ROUNDS[round];
+    const tgt = cfg.freqs[markerIdx];
+    const tolY1 = freqToY(tgt + cfg.tol);
+    const tolY2 = freqToY(tgt - cfg.tol);
+    const bandH = Math.max(4, Math.abs(tolY2 - tolY1));
+    const bandY = Math.min(tolY1, tolY2);
+    ctx.fillStyle = 'rgba(255,224,102,0.15)';
+    rrect(WH_X + 2, bandY, WH_W - 4, bandH, 3);
+    ctx.fill();
+
+    const ty = freqToY(tgt);
+    ctx.strokeStyle = '#FF9F43';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(WH_X + 3, ty);
+    ctx.lineTo(WH_X + WH_W - 3, ty);
+    ctx.stroke();
+  }
+
+  const py = freqToY(playerFreq);
+  ctx.shadowColor = '#FFE066';
+  ctx.shadowBlur = isDragging ? 12 : 6;
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.arc(WH_X + WH_W / 2, py, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#1a0d35';
+  ctx.beginPath();
+  ctx.arc(WH_X + WH_W / 2, py, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ── Draw: Trust Bar ─────────────────────────────────────────
+function drawTrustBar() {
+  if (state !== 'playing') return;
+  ctx.save();
+  const cfg = ROUNDS[round];
+  const trust = Math.min(1, trustTimer / cfg.hold);
+  const scare = Math.min(1, scareTotal / SCARE_LIMIT);
+
+  ctx.fillStyle = '#0c0620';
+  rrect(TR_X, TR_Y, TR_W, TR_H, 4);
+  ctx.fill();
+
+  if (scare > 0) {
+    ctx.fillStyle = '#E74C3C';
+    rrect(TR_X, TR_Y, TR_W * scare, TR_H, 4);
+    ctx.fill();
+  }
+
+  if (trust > 0) {
+    const tGrd = ctx.createLinearGradient(TR_X, 0, TR_X + TR_W, 0);
+    tGrd.addColorStop(0, '#FF9F43');
+    tGrd.addColorStop(1, '#FFE066');
+    ctx.fillStyle = tGrd;
+    rrect(TR_X, TR_Y, TR_W * trust, TR_H, 4);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = 'rgba(255,224,102,0.6)';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('TRUST', TR_X, TR_Y - 2);
+  ctx.textAlign = 'right';
+  ctx.fillText('FLEE', TR_X + TR_W, TR_Y - 2);
+  ctx.restore();
+}
+
+// ── Draw: HUD ───────────────────────────────────────────────
+function drawHUD() {
+  ctx.save();
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 13px Georgia,serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('ROUND ' + (round + 1) + '/5', SC_X, 8);
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 8);
+  for (let i = 0; i < 3; i++) {
+    const bx = W - 18 - (2 - i) * 20;
+    ctx.fillStyle = markerLocked[i] ? '#FF9F43' : i === markerIdx ? '#FFE066' : 'rgba(255,224,102,0.25)';
+    ctx.beginPath();
+    ctx.arc(bx, 14, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Draw: Floaters ──────────────────────────────────────────
+function drawFloaters() {
+  ctx.save();
+  floaters.forEach(f => {
+    ctx.globalAlpha = Math.max(0, f.alpha);
+    ctx.fillStyle = f.color;
+    ctx.font = 'bold 22px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = f.color;
+    ctx.shadowBlur = 8;
+    ctx.fillText(f.text, f.x, f.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// ── Draw: Shared Scene ──────────────────────────────────────
+function drawScene() {
+  drawBg();
+  drawStars();
+  drawMoon();
+  drawHills();
+  coyotes.forEach(c => drawCoyote(c.x, c.y));
+}
+
+// ── Screens ─────────────────────────────────────────────────
+function drawTitle() {
+  ctx.save();
+  drawBg();
+  drawStars();
+  drawMoon();
+  drawHills();
+  drawCoyote(65, 550);
+  drawCoyote(172, 558);
+  drawCoyote(278, 546);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 40px Georgia,serif';
+  ctx.shadowColor = '#FF9F43';
+  ctx.shadowBlur = 22;
+  ctx.fillText('COYOTE CALL', W / 2, 185);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = 'rgba(255,224,102,0.82)';
+  ctx.font = '16px Georgia,serif';
+  ctx.fillText('Match the howl to call the pack', W / 2, 228);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '12px Georgia,serif';
+  ctx.fillText('Drag the left bar to tune your pitch', W / 2, 260);
+  ctx.fillText('Hold on target to lock each note', W / 2, 278);
+  ctx.fillText('Three notes per round - five rounds', W / 2, 296);
+
+  if (best > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '14px Georgia,serif';
+    ctx.fillText('Best: ' + best, W / 2, 326);
+  }
+
+  const pulse = 0.55 + 0.45 * Math.sin(scrollT * 2.2);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 17px Georgia,serif';
+  ctx.fillText('TAP TO BEGIN', W / 2, 396);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPlaying() {
+  ctx.save();
+  drawScene();
+  drawScope();
+  drawWhistle();
+  drawTrustBar();
+  drawHUD();
+  drawFloaters();
+
+  if (howlIntro > 0.2) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, howlIntro);
+    ctx.fillStyle = '#FFE066';
+    ctx.font = '13px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Listen, then drag to match the howl', W / 2, TR_Y + TR_H + 22);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  } else if (!isDragging) {
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = '#FFE066';
+    ctx.font = '12px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Drag anywhere to tune your call', W / 2, TR_Y + TR_H + 22);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawRoundWin() {
+  ctx.save();
+  drawScene();
+  drawScope();
+  drawWhistle();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, H * 0.3, W, H * 0.35);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px Georgia,serif';
+  ctx.shadowColor = '#FF9F43';
+  ctx.shadowBlur = 16;
+  ctx.fillText('PACK CALLS BACK!', W / 2, H * 0.40);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,224,102,0.85)';
+  ctx.font = '18px Georgia,serif';
+  ctx.fillText('Round ' + (round + 1) + ' Complete', W / 2, H * 0.49);
+  ctx.fillText('Score: ' + score, W / 2, H * 0.56);
+  ctx.restore();
+}
+
+function drawRoundLose() {
+  ctx.save();
+  drawScene();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, H * 0.3, W, H * 0.35);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 30px Georgia,serif';
+  ctx.shadowColor = '#E74C3C';
+  ctx.shadowBlur = 14;
+  ctx.fillText('COYOTES SPOOKED!', W / 2, H * 0.40);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,224,102,0.8)';
+  ctx.font = '16px Georgia,serif';
+  ctx.fillText('Drifted too far off pitch', W / 2, H * 0.49);
+  ctx.restore();
+}
+
+function drawEndScreen(won) {
+  ctx.save();
+  drawScene();
+  const ovl = ctx.createLinearGradient(0, H * 0.18, 0, H * 0.82);
+  ovl.addColorStop(0, 'rgba(0,0,0,0)');
+  ovl.addColorStop(0.15, 'rgba(0,0,0,0.72)');
+  ovl.addColorStop(0.85, 'rgba(0,0,0,0.72)');
+  ovl.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ovl;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = won ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 36px Georgia,serif';
+  ctx.shadowColor = won ? '#FF9F43' : '#E74C3C';
+  ctx.shadowBlur = 22;
+  ctx.fillText(won ? 'PACK CALLED!' : 'PACK FLED', W / 2, H * 0.33);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 24px Georgia,serif';
+  ctx.fillText('Score: ' + score, W / 2, H * 0.43);
+
+  const isRecord = score > 0 && score >= best;
+  if (isRecord) {
+    const pulse = 0.65 + 0.35 * Math.sin(scrollT * 4);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 19px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, H * 0.51);
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctx.fillStyle = 'rgba(255,224,102,0.55)';
+    ctx.font = '15px Georgia,serif';
+    ctx.fillText('Best: ' + best, W / 2, H * 0.51);
+  }
+
+  ctx.fillStyle = '#FFE066';
+  rrect(W / 2 - 88, H * 0.60, 176, 44, 8);
+  ctx.fill();
+  ctx.fillStyle = '#1a0d35';
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText('PLAY AGAIN', W / 2, H * 0.60 + 22);
+
+  ctx.fillStyle = '#2a1500';
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+  rrect(W / 2 - 68, H * 0.71, 136, 36, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '15px Georgia,serif';
+  ctx.fillText('SHARE', W / 2, H * 0.71 + 18);
+
+  ctx.restore();
+}
+
+// ── Main Loop ───────────────────────────────────────────────
+function loop(ts) {
+  try {
+    if (!lastTime) lastTime = ts;
+    update(ts);
+    if (state === 'title')      drawTitle();
+    else if (state === 'playing')    drawPlaying();
+    else if (state === 'round_win')  drawRoundWin();
+    else if (state === 'round_lose') drawRoundLose();
+    else if (state === 'win')        drawEndScreen(true);
+    else if (state === 'lose')       drawEndScreen(false);
+  } catch (e) {
+    console.error(e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ── Input ───────────────────────────────────────────────────
+function canvasXY(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (cx - r.left) / scale, y: (cy - r.top) / scale };
+}
+
+function handleDown(cx, cy) {
+  initAudio();
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    document.getElementById('fb-overlay').classList.add('show');
+  }, 800);
+  const { x, y } = canvasXY(cx, cy);
+  if (state === 'title') {
+    startGame();
+    isDragging = true;
+    setPlayerFreq(yToFreq(Math.max(WH_Y, Math.min(WH_Y + WH_H, y))));
+    startTone();
+    return;
+  }
+  if (state === 'win' || state === 'lose') {
+    if (y > H * 0.60 && y < H * 0.60 + 44 && x > W / 2 - 88 && x < W / 2 + 88) {
+      startGame(); return;
+    }
+    if (y > H * 0.71 && y < H * 0.71 + 36 && x > W / 2 - 68 && x < W / 2 + 68) {
+      if (navigator.share) navigator.share({ title: 'Coyote Call', text: 'I scored ' + score + ' on Coyote Call by Bob Davis!' });
+      return;
+    }
+    startGame(); return;
+  }
+  if (state === 'playing') {
+    isDragging = true;
+    setPlayerFreq(yToFreq(Math.max(WH_Y, Math.min(WH_Y + WH_H, y))));
+    startTone();
+  }
+}
+
+function handleMove(cx, cy) {
+  if (!isDragging) return;
+  clearTimeout(pressTimer);
+  const { y } = canvasXY(cx, cy);
+  setPlayerFreq(yToFreq(Math.max(WH_Y, Math.min(WH_Y + WH_H, y))));
+}
+
+function handleUp() {
+  clearTimeout(pressTimer);
+  isDragging = false;
+  stopTone();
+}
+
+canvas.addEventListener('mousedown', e => { e.preventDefault(); handleDown(e.clientX, e.clientY); });
+canvas.addEventListener('mousemove', e => { e.preventDefault(); handleMove(e.clientX, e.clientY); });
+canvas.addEventListener('mouseup',   e => { e.preventDefault(); handleUp(); });
+canvas.addEventListener('mouseleave', () => handleUp());
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleDown(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+canvas.addEventListener('touchmove',  e => { e.preventDefault(); handleMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+canvas.addEventListener('touchend',   e => { e.preventDefault(); handleUp(); }, { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    initAudio();
+    if (state !== 'playing') { startGame(); return; }
+  }
+  if (state === 'playing' && (e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
+    setPlayerFreq(playerFreq + (e.code === 'ArrowUp' ? 15 : -15));
+    if (!isDragging) { isDragging = true; startTone(); }
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { isDragging = false; stopTone(); }
+});
+
+// ── Feedback Overlay ────────────────────────────────────────
+document.getElementById('fb-cancel').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('show');
+});
+document.getElementById('fb-send').addEventListener('click', async () => {
+  const target = document.getElementById('fb-target').value;
+  const text = document.getElementById('fb-text').value.trim();
+  if (!text) return;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: target, message: text }),
+      mode: 'no-cors'
+    });
+  } catch (e) {}
+  document.getElementById('fb-overlay').classList.remove('show');
+  document.getElementById('fb-text').value = '';
+});
+
+// ── Boot ────────────────────────────────────────────────────
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
