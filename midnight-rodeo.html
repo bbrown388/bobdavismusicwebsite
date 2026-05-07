@@ -70,6 +70,7 @@ const CROWD_CORRECT = 0.20;
 const CROWD_WRONG   = 0.25;
 const CROWD_DECAY   = 0.008;  // per second
 const LIVES         = 3;
+const MAX_ROUNDS    = 10;
 
 // Phase durations by level (seconds)
 const RIDE_DUR  = [1.4, 1.1, 0.75];
@@ -116,6 +117,7 @@ let riderFly;    // null | { vx, vy, x, y, rot, rotV, life }
 let dust;        // [{ x, y, r, alpha, vx, vy }]
 let shakeFrames;
 let arenaStars;  // pre-generated star positions
+let roundCount;  // buckings survived this game
 
 // ---- Audio ---------------------------------------------------------------
 let audioCtx;
@@ -252,6 +254,7 @@ function startGame() {
   riderFly   = null;
   dust       = [];
   shakeFrames = 0;
+  roundCount = 0;
   best       = parseInt(localStorage.getItem(SLUG + '_best') || '0');
   initAudio();
 }
@@ -305,6 +308,16 @@ function endGame() {
     localStorage.setItem(SLUG + '_best', best);
   }
   stopAudio();
+}
+
+function winGame() {
+  state = 'won';
+  if (score > best) {
+    best = score;
+    localStorage.setItem(SLUG + '_best', best);
+  }
+  stopAudio();
+  gtag('event', 'game_win', {game_name: 'Midnight Rodeo', score});
 }
 
 function update(dt) {
@@ -361,10 +374,15 @@ function update(dt) {
       if (mistakes >= LIVES) {
         endGame();
       } else {
-        bullPhase  = 'riding';
-        phaseTimer = rideDur();
-        playerTap  = null;   // clear pre-tap at start of new cycle
-        tapHandled = false;  // allow pre-tapping during riding
+        roundCount++;
+        if (roundCount >= MAX_ROUNDS) {
+          winGame();
+        } else {
+          bullPhase  = 'riding';
+          phaseTimer = rideDur();
+          playerTap  = null;   // clear pre-tap at start of new cycle
+          tapHandled = false;  // allow pre-tapping during riding
+        }
       }
     }
   }
@@ -760,6 +778,12 @@ function drawHUD() {
     ctx.fillText('LVL ' + (level + 1), W - 22, 58);
   }
 
+  // Round counter (top center, below score)
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#907860';
+  ctx.fillText('RIDE ' + roundCount + ' / ' + MAX_ROUNDS, W / 2, 64);
+
   // Tap indicator during riding and telegraphing phases
   if ((bullPhase === 'riding' || bullPhase === 'telegraphing') && playerTap !== null) {
     ctx.font = 'bold 13px sans-serif';
@@ -984,6 +1008,77 @@ function drawDead() {
   ctx.restore();
 }
 
+function drawWon() {
+  ctx.save();
+  drawBackground();
+  drawDust();
+  drawBull(bullLean);
+
+  ctx.fillStyle = 'rgba(5,2,8,0.82)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Champion header
+  ctx.font = 'bold 38px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 300);
+  ctx.globalAlpha = pulse;
+  ctx.fillText('CHAMPION!', W / 2, 190);
+  ctx.globalAlpha = 1;
+
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Survived all ' + MAX_ROUNDS + ' rides!', W / 2, 220);
+
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#705848';
+  ctx.fillText('SCORE', W / 2, 260);
+  ctx.font = 'bold 52px sans-serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText(score.toLocaleString(), W / 2, 315);
+
+  if (score >= best && best > 0) {
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.fillStyle = '#FF9F43';
+    const p2 = 0.75 + 0.25 * Math.sin(Date.now() / 250);
+    ctx.globalAlpha = p2;
+    ctx.fillText('NEW RECORD!', W / 2, 345);
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#907860';
+    ctx.fillText('BEST: ' + best.toLocaleString(), W / 2, 345);
+  }
+
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Crowd: ' + Math.round(crowd * 100) + '%  •  Level: ' + (level + 1), W / 2, 375);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 80, 405, 160, 44, 10);
+  ctx.fill();
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillStyle = '#0d0400';
+  ctx.fillText('RIDE AGAIN', W / 2, 432);
+
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 80, 460, 74, 36, 8);
+  ctx.stroke();
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('Share', W / 2 - 43, 482);
+
+  ctx.beginPath();
+  ctx.roundRect(W / 2 + 6, 460, 74, 36, 8);
+  ctx.stroke();
+  ctx.fillText('Feedback', W / 2 + 43, 482);
+
+  ctx.restore();
+}
+
 // Dead screen button tap handling
 canvas.addEventListener('pointerdown', e => {
   if (state !== 'dead') return;
@@ -1010,6 +1105,27 @@ canvas.addEventListener('pointerdown', e => {
   state = 'title';
 });
 
+// Won screen button tap handling (same layout as dead screen)
+canvas.addEventListener('pointerdown', e => {
+  if (state !== 'won') return;
+  const r = canvas.getBoundingClientRect();
+  const s = W / r.width;
+  const x = (e.clientX - r.left) * s;
+  const y = (e.clientY - r.top)  * s;
+  if (x >= W/2-80 && x <= W/2+80 && y >= 405 && y <= 449) {
+    startGame(); return;
+  }
+  if (x >= W/2-80 && x <= W/2-6 && y >= 460 && y <= 496) {
+    if (navigator.share) navigator.share({ title: 'Midnight Rodeo', text: 'I scored ' + score + ' and survived all ' + MAX_ROUNDS + ' rides! Can you beat it?' });
+    return;
+  }
+  if (x >= W/2+6 && x <= W/2+80 && y >= 460 && y <= 496) {
+    document.getElementById('fb-ov').style.display = 'flex';
+    return;
+  }
+  state = 'title';
+});
+
 // ---- Game loop -----------------------------------------------------------
 let lastTs = 0;
 function loop(ts) {
@@ -1018,9 +1134,10 @@ function loop(ts) {
     lastTs = ts;
     if (state === 'playing') update(dt);
     ctx.clearRect(0, 0, W, H);
-    if (state === 'title')  drawTitle();
+    if (state === 'title')   drawTitle();
     if (state === 'playing') drawPlaying();
     if (state === 'dead')    drawDead();
+    if (state === 'won')     drawWon();
     requestAnimationFrame(loop);
   } catch (e) {
     console.error('loop error:', e);
@@ -1078,14 +1195,15 @@ if (MUSIC_SRC) {
 
 // ---- Test helpers --------------------------------------------------------
 window.__test = {
-  getState:     () => state,
-  getBullPhase: () => bullPhase,
-  getBullDir:   () => bullDir,
-  getMistakes:  () => mistakes,
-  getCrowd:     () => crowd,
-  getScore:     () => score,
-  getLevel:     () => level,
-  getBullLean:  () => bullLean,
+  getState:      () => state,
+  getBullPhase:  () => bullPhase,
+  getBullDir:    () => bullDir,
+  getMistakes:   () => mistakes,
+  getCrowd:      () => crowd,
+  getScore:      () => score,
+  getLevel:      () => level,
+  getBullLean:   () => bullLean,
+  getRoundCount: () => roundCount,
   startGame,
   tap: (side) => handleTap(side === 'left' ? 0 : W, H / 2),
   tickFrames: (n) => { for (let i = 0; i < n; i++) update(1 / 60); },
@@ -1095,7 +1213,8 @@ window.__test = {
     if (phase === 'telegraphing') tapHandled = false;          // allow tap during telegraph
     if (phase === 'riding') { playerTap = null; tapHandled = false; }  // fresh cycle
   },
-  forceBullDir: (dir) => { bullDir = dir; },
+  forceBullDir:   (dir) => { bullDir = dir; },
+  forceRoundCount: (n)  => { roundCount = n; },
 };
 </script>
 </body>

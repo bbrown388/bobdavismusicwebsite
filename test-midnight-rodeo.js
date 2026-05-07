@@ -570,13 +570,78 @@ async function suite31() {
   await teardown();
 }
 
+// Suite 32: roundCount starts at 0
+async function suite32() {
+  console.log('\nSuite 32: roundCount starts at 0');
+  await setup();
+  await page.evaluate(() => window.__test.startGame());
+  const rc = await page.evaluate(() => window.__test.getRoundCount());
+  assert(rc === 0, 'roundCount is 0 after startGame');
+  await teardown();
+}
+
+// Suite 33: roundCount increments after each completed ride
+async function suite33() {
+  console.log('\nSuite 33: roundCount increments after each completed ride');
+  await setup();
+  await page.evaluate(() => {
+    window.__test.startGame();
+    // Complete 3 correct rounds
+    for (let i = 0; i < 3; i++) {
+      window.__test.forcePhase('telegraphing');
+      window.__test.forceBullDir(0); // STRAIGHT = always correct
+      window.__test.tickFrames(60); // telegraph + bucking + recovering
+    }
+  });
+  const rc = await page.evaluate(() => window.__test.getRoundCount());
+  assert(rc === 3, 'roundCount is 3 after 3 completed rides (got ' + rc + ')');
+  await teardown();
+}
+
+// Suite 34: 10 completed rides transitions to won state
+async function suite34() {
+  console.log('\nSuite 34: 10 completed rides = won state');
+  await setup();
+  await page.evaluate(() => {
+    window.__test.startGame();
+    for (let i = 0; i < 10; i++) {
+      window.__test.forcePhase('telegraphing');
+      window.__test.forceBullDir(0); // STRAIGHT = always correct
+      window.__test.tickFrames(60);
+    }
+  });
+  const st = await page.evaluate(() => window.__test.getState());
+  assert(st === 'won', 'state is won after 10 completed rides (got ' + st + ')');
+  await teardown();
+}
+
+// Suite 35: won state does not advance further
+async function suite35() {
+  console.log('\nSuite 35: won state is stable (no further updates)');
+  await setup();
+  await page.evaluate(() => {
+    window.__test.startGame();
+    window.__test.forceRoundCount(9);
+    window.__test.forcePhase('telegraphing');
+    window.__test.forceBullDir(0);
+    window.__test.tickFrames(60);
+  });
+  const st = await page.evaluate(() => window.__test.getState());
+  assert(st === 'won', 'state is won after final round (' + st + ')');
+  // Tick more frames — state should stay won
+  await page.evaluate(() => window.__test.tickFrames(120));
+  const st2 = await page.evaluate(() => window.__test.getState());
+  assert(st2 === 'won', 'state remains won after additional ticks');
+  await teardown();
+}
+
 // ---- Run all suites -------------------------------------------------------
 (async () => {
   const suites = [
     suite1, suite2, suite3, suite4, suite5, suite6, suite7, suite8, suite9, suite10,
     suite11, suite12, suite13, suite14, suite15, suite16, suite17, suite18, suite19, suite20,
     suite21, suite22, suite23, suite24, suite25, suite26, suite27, suite28, suite29, suite30,
-    suite31,
+    suite31, suite32, suite33, suite34, suite35,
   ];
   let passed = 0, failed = 0;
   for (const s of suites) {
