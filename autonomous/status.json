@@ -1,46 +1,35 @@
 {
-  "lastRunAt": "2026-05-07T08:00:01Z",
+  "lastRunAt": "2026-05-07T08:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 40 Wire Tap tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 40: Wire Tap - tests passing, committing"
-  },
-  "gamesBuilt": 39,
-  "lastGameTitle": "Last Rope Standing",
-  "lastGameFile": "last-rope-standing.html",
+  "lastRunSummary": "Built Game 40: Wire Tap - telegraph Morse code decoder, pre-scheduled Web Audio timeline, dot/dash classification, 3-round frontier map identification, 51 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 40,
+  "lastGameTitle": "Wire Tap",
+  "lastGameFile": "wire-tap.html",
   "gameQueue": [
-    {
-      "num": 40,
-      "title": "Wire Tap",
-      "concept": "Telegraph Morse code decoder: intercept incoming messages from the outlaw gang. Each message is a sequence of short/long audio pulses (dots and dashes). Tap to mark dots vs dashes in real time, decode the letter, then identify the outlaw's destination on a frontier map. Race against the clock before the signal cuts out.",
-      "raisesBarOn": "First temporal pattern-decoding mechanic in series, first Morse code / telegraph communication game, first game where listening and timing decode information rather than react to threats",
-      "status": "planned"
-    },
     {
       "num": 41,
       "title": "Gold Panner",
-      "concept": "Skill-based prospecting: tilt a gold pan (left/right drag) to slosh water and separate gold flakes from gravel. Each round introduces more mud and lighter fools-gold that moves like real gold. Physics-based fluid slosh model with particle stratification by density. Race against drying pan and claim jumpers.",
-      "raisesBarOn": "First fluid simulation mechanic in series, first density/stratification physics, first game based on manual dexterity over a sustained object rather than reaction timing",
+      "concept": "Skill-based prospecting: tilt a gold pan (left/right drag) to slosh water and separate gold flakes from gravel. Each round introduces more mud and lighter fool's gold that moves like real gold. Physics-based particle system with density-based velocity: gold sinks faster than gravel. Race against drying pan and claim jumpers.",
+      "raisesBarOn": "First fluid/particle simulation mechanic in series, first density-stratification physics, first game based on manual dexterity over a sustained object rather than reaction timing",
       "status": "planned"
     },
     {
       "num": 42,
       "title": "Coyote Call",
-      "concept": "Audio pitch-matching predator lure: drag a slide-whistle to match the coyote howl frequency shown as an oscilloscope waveform. Hit three frequency markers in sequence to build trust and draw the pack in. Too far off and coyotes flee. 5 rounds of increasing pack intelligence and tighter tolerance windows. First continuous pitch-control mechanic in series.",
+      "concept": "Audio pitch-matching predator lure: drag a slide-whistle to match the coyote howl frequency shown as an oscilloscope waveform. Hit three frequency markers in sequence to build trust and draw the pack in. Too far off and coyotes flee. 5 rounds of increasing pack intelligence and tighter tolerance windows.",
       "raisesBarOn": "First real-time analog pitch-drag mechanic (continuous frequency slider vs tap), first game where audio matching IS the primary mechanic rather than a feedback cue, first predator/prey relational system in series",
+      "status": "planned"
+    },
+    {
+      "num": 43,
+      "title": "Wanted: Reward",
+      "concept": "Bounty hunter economics: a new wanted poster appears each round showing a fugitive's traits (hat color, build, scar, weapon). Scan a scrolling crowd of silhouettes for the match. First correct ID earns full reward; wrong IDs reduce the payout. Each round: more fugitives, similar-looking decoys, crowd density increases.",
+      "raisesBarOn": "First visual search mechanic in series (scan crowd vs memory test), first multi-trait composite matching, first economic payout mechanic tied to accuracy rather than speed alone",
       "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-02T10:10:00.000Z",
-      "action": "new_game",
-      "game": "Wanted: Dead or Alive",
-      "result": "success",
-      "summary": "Built Game 21: Wanted: Dead or Alive - first-person investigation, 5 locations, confidence meter, accuse mechanic, 47 tests pass.",
-      "commitHash": "42565c3"
-    },
     {
       "runAt": "2026-05-03T09:30:00.000Z",
       "action": "new_game",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 39: Last Rope Standing - pendulum grapple survival, constraint physics, rising floodwaters, 50 tests pass.",
       "commitHash": "3558c68"
+    },
+    {
+      "runAt": "2026-05-07T08:30:00.000Z",
+      "action": "new_game",
+      "game": "Wire Tap",
+      "result": "success",
+      "summary": "Built Game 40: Wire Tap - telegraph Morse code decoder, dot/dash audio classification, 3-round map identification, 51 tests pass.",
+      "commitHash": "2a484c0"
     }
   ]
 }
