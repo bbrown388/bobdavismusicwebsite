@@ -40,16 +40,22 @@ Read that output and act on it per the instructions below.
 
 1. Read `target` (the game filename, e.g. `gone-fishin.html`)
 2. Read `context` (the complaint text from players)
-3. Open the game file and diagnose the issue described
-4. Apply the smallest change that addresses the complaint
-5. Run the game's Playwright test file (e.g. `node autonomous/test-feedback.js` → then `node test-gone-fishin.js`)
-6. Fix any test failures
-7. Commit: `git commit -m "fix(<game-slug>): <one-line description>"`
-8. Push
-9. Update `autonomous/state.json` → set `"currentTask": null`
-10. Update status data — see **Maintaining Status Data** below (update all three: `autonomous/status.json`, `director-status.json`, `status.html`)
-11. Commit status: `git commit -m "chore: update director status"`
-12. Push
+3. **Reproduce the issue before touching any code.**
+   - Read the full game file
+   - Run the existing Playwright test: `node test-<slug>.js`
+   - Write a new focused test case that directly exercises and fails on the reported behaviour (e.g. if the complaint is "game never ends", write a test that simulates N rounds and asserts the game reaches the dead/lose state). The test must fail before your fix.
+   - If you cannot reproduce it with a test, add console instrumentation to the game, run it under Playwright, and confirm the bug in the output before proceeding.
+   - **Do not fix what you cannot first reproduce.**
+4. Diagnose the root cause from the reproduction evidence — not from reading code alone
+5. Apply the smallest change that addresses the root cause
+6. Re-run the focused test and confirm it now passes
+7. Run the full test suite and fix any regressions
+8. Commit: `git commit -m "fix(<game-slug>): <one-line description>"`
+9. Push
+10. Update `autonomous/state.json` → set `"currentTask": null`
+11. Update status data — see **Maintaining Status Data** below (update all three: `autonomous/status.json`, `director-status.json`, `status.html`)
+12. Commit status: `git commit -m "chore: update director status"`
+13. Push
 
 ---
 
