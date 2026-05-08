@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "game": "Midnight Rodeo",
+    "message": "Game still isn't working.   Tapping does absolutely nothing and nothing moves on the screen",
+    "fixRequested": true
+  }
+]
