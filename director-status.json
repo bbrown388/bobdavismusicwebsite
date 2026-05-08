@@ -1,11 +1,8 @@
 {
-  "lastRunAt": "2026-05-08T08:00:01Z",
+  "lastRunAt": "2026-05-08T12:00:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Fixed Midnight Rodeo: added 10-round win condition, round counter HUD, champion screen. 35 tests pass.",
-  "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
-  },
+  "lastRunSummary": "Fixed Midnight Rodeo: roundRect polyfill for older mobile browsers + touch-action:none on canvas. 36 tests pass.",
+  "currentTask": null,
   "gamesBuilt": 41,
   "lastGameTitle": "Gold Panner",
   "lastGameFile": "gold-panner.html",
@@ -184,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 41: Gold Panner - particle physics pan-tilt, density stratification, claim jumper, 22 tests pass.",
       "commitHash": "d848990"
+    },
+    {
+      "runAt": "2026-05-08T12:00:00Z",
+      "action": "fix",
+      "game": "midnight-rodeo",
+      "result": "success",
+      "summary": "Fixed Midnight Rodeo: added roundRect polyfill (missing in Chrome <99/Safari <15.4) and touch-action:none on canvas. 36 tests pass.",
+      "commitHash": "9b96a4b"
     }
   ]
 }
