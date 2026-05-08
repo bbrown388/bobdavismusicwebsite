@@ -1,7 +1,7 @@
 {
-  "lastRunAt": "2026-05-08T12:00:00Z",
+  "lastRunAt": "2026-05-08T08:25:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Fixed Midnight Rodeo: roundRect polyfill for older mobile browsers + touch-action:none on canvas. 36 tests pass.",
+  "lastRunSummary": "Fixed Midnight Rodeo: added touchstart handler for mobile browsers that do not fire pointerdown on canvas. 38 tests pass.",
   "currentTask": null,
   "gamesBuilt": 41,
   "lastGameTitle": "Gold Panner",
@@ -30,14 +30,6 @@
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-03T08:30:19.000Z",
-      "action": "new_game",
-      "game": "Devil's Backbone",
-      "result": "success",
-      "summary": "Built Game 23: Devil's Backbone - hold-to-balance wagon load, spring+damping physics, 5-stage mountain pass, 44 tests pass.",
-      "commitHash": "2ae179d"
-    },
     {
       "runAt": "2026-05-03T09:00:00.000Z",
       "action": "new_game",
@@ -189,6 +181,14 @@
       "result": "success",
       "summary": "Fixed Midnight Rodeo: added roundRect polyfill (missing in Chrome <99/Safari <15.4) and touch-action:none on canvas. 36 tests pass.",
       "commitHash": "9b96a4b"
+    },
+    {
+      "runAt": "2026-05-08T08:25:00.000Z",
+      "action": "fix",
+      "game": "midnight-rodeo",
+      "result": "success",
+      "summary": "Fixed Midnight Rodeo: added touchstart handler; devices that do not fire pointerdown for touch now respond. 38 tests pass.",
+      "commitHash": "9547434"
     }
   ]
 }
