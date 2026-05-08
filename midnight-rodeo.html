@@ -8,8 +8,8 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #000; display: flex; justify-content: center; align-items: center;
        height: 100vh; overflow: hidden; touch-action: none; }
-#wrap { position: relative; }
-canvas { display: block; }
+#wrap { position: relative; touch-action: none; }
+canvas { display: block; touch-action: none; cursor: pointer; }
 #fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
          flex-direction: column; align-items: center; justify-content: center; gap: 11px;
          background: rgba(5,2,8,0.97); border: 2px solid #FFD700; box-sizing: border-box;
@@ -54,6 +54,25 @@ canvas { display: block; }
   </div>
 </div>
 <script>
+// Polyfill for ctx.roundRect — not available in Chrome <99, Safari <15.4, older Android WebView
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    var rad = typeof r === 'number' ? r : (Array.isArray(r) && r.length ? (r[0] || 0) : 0);
+    if (rad <= 0) { this.rect(x, y, w, h); return; }
+    rad = Math.min(rad, w / 2, h / 2);
+    this.moveTo(x + rad, y);
+    this.lineTo(x + w - rad, y);
+    this.arcTo(x + w, y, x + w, y + rad, rad);
+    this.lineTo(x + w, y + h - rad);
+    this.arcTo(x + w, y + h, x + w - rad, y + h, rad);
+    this.lineTo(x + rad, y + h);
+    this.arcTo(x, y + h, x, y + h - rad, rad);
+    this.lineTo(x, y + rad);
+    this.arcTo(x, y, x + rad, y, rad);
+    this.closePath();
+  };
+}
+
 const W = 360, H = 640;
 const MUSIC_SRC = '';
 const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';

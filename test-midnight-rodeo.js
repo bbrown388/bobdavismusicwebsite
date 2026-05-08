@@ -635,13 +635,37 @@ async function suite35() {
   await teardown();
 }
 
+// Suite 36: roundRect polyfill — game must not log loop errors when native roundRect is absent
+async function suite36() {
+  console.log('\nSuite 36: Game renders without native roundRect (polyfill regression)');
+  browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const bctx = await browser.newContext({ viewport: { width: W, height: H } });
+  page = await bctx.newPage();
+  // Inject BEFORE page scripts run so the polyfill's guard fires during page load
+  await page.addInitScript(() => {
+    delete CanvasRenderingContext2D.prototype.roundRect;
+  });
+  const loopErrors = [];
+  page.on('console', m => {
+    if (m.type() === 'error' && m.text().includes('loop error')) loopErrors.push(m.text());
+  });
+  await page.goto(FILE);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__test.startGame());
+  await page.waitForTimeout(200); // let rAF frames run so draw functions execute
+  assert(loopErrors.length === 0, 'no loop errors when native roundRect is absent: ' + JSON.stringify(loopErrors));
+  const st = await page.evaluate(() => window.__test.getState());
+  assert(st === 'playing', 'game stays in playing state without native roundRect');
+  await teardown();
+}
+
 // ---- Run all suites -------------------------------------------------------
 (async () => {
   const suites = [
     suite1, suite2, suite3, suite4, suite5, suite6, suite7, suite8, suite9, suite10,
     suite11, suite12, suite13, suite14, suite15, suite16, suite17, suite18, suite19, suite20,
     suite21, suite22, suite23, suite24, suite25, suite26, suite27, suite28, suite29, suite30,
-    suite31, suite32, suite33, suite34, suite35,
+    suite31, suite32, suite33, suite34, suite35, suite36,
   ];
   let passed = 0, failed = 0;
   for (const s of suites) {
