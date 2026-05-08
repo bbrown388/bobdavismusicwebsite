@@ -436,19 +436,53 @@ function update(dt) {
 
 // ---- Input ---------------------------------------------------------------
 function handleTap(x, y) {
-  if (state === 'title')   { startGame(); return; }
-  if (state !== 'playing') return;
-  if (tapHandled) return;
-  playerTap  = x < W / 2 ? 'left' : 'right';
-  tapHandled = true;
+  if (state === 'title') { startGame(); return; }
+  if (state === 'playing') {
+    if (tapHandled) return;
+    playerTap  = x < W / 2 ? 'left' : 'right';
+    tapHandled = true;
+    return;
+  }
+  if (state === 'dead' || state === 'won') {
+    if (x >= W/2-80 && x <= W/2+80 && y >= 405 && y <= 449) { startGame(); return; }
+    if (x >= W/2-80 && x <= W/2-6  && y >= 460 && y <= 496) {
+      if (navigator.share) navigator.share({
+        title: 'Midnight Rodeo',
+        text: state === 'won'
+          ? 'I scored ' + score + ' and survived all ' + MAX_ROUNDS + ' rides! Can you beat it?'
+          : 'I scored ' + score + ' in Midnight Rodeo! Can you beat it?',
+      });
+      return;
+    }
+    if (x >= W/2+6  && x <= W/2+80 && y >= 460 && y <= 496) {
+      document.getElementById('fb-ov').style.display = 'flex';
+      return;
+    }
+    state = 'title';
+  }
 }
 
-canvas.addEventListener('pointerdown', e => {
-  e.preventDefault();
+function tapCoords(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const s = W / r.width;
-  handleTap((e.clientX - r.left) * s, (e.clientY - r.top) * s);
+  handleTap((clientX - r.left) * s, (clientY - r.top) * s);
+}
+
+// Primary touch handler — fires on all mobile browsers; e.preventDefault() suppresses
+// the subsequent pointerdown so we don't handle the same tap twice.
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  tapCoords(t.clientX, t.clientY);
+}, { passive: false });
+
+// Mouse / stylus input — skip touch-type pointers (touchstart handled those above).
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') return;
+  e.preventDefault();
+  tapCoords(e.clientX, e.clientY);
 });
+
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft'  || e.key === 'a') handleTap(0, H / 2);
   if (e.key === 'ArrowRight' || e.key === 'd') handleTap(W, H / 2);
@@ -1098,52 +1132,6 @@ function drawWon() {
   ctx.restore();
 }
 
-// Dead screen button tap handling
-canvas.addEventListener('pointerdown', e => {
-  if (state !== 'dead') return;
-  const r = canvas.getBoundingClientRect();
-  const s = W / r.width;
-  const x = (e.clientX - r.left) * s;
-  const y = (e.clientY - r.top)  * s;
-  // Play again
-  if (x >= W/2-80 && x <= W/2+80 && y >= 405 && y <= 449) {
-    startGame(); return;
-  }
-  // Share
-  if (x >= W/2-80 && x <= W/2-6 && y >= 460 && y <= 496) {
-    if (navigator.share) navigator.share({ title: 'Midnight Rodeo', text: 'I scored ' + score + ' in Midnight Rodeo! Can you beat it?' });
-    return;
-  }
-  // Feedback
-  if (x >= W/2+6 && x <= W/2+80 && y >= 460 && y <= 496) {
-    const ov = document.getElementById('fb-ov');
-    ov.style.display = 'flex';
-    return;
-  }
-  // Fallback: tap anywhere else goes to title
-  state = 'title';
-});
-
-// Won screen button tap handling (same layout as dead screen)
-canvas.addEventListener('pointerdown', e => {
-  if (state !== 'won') return;
-  const r = canvas.getBoundingClientRect();
-  const s = W / r.width;
-  const x = (e.clientX - r.left) * s;
-  const y = (e.clientY - r.top)  * s;
-  if (x >= W/2-80 && x <= W/2+80 && y >= 405 && y <= 449) {
-    startGame(); return;
-  }
-  if (x >= W/2-80 && x <= W/2-6 && y >= 460 && y <= 496) {
-    if (navigator.share) navigator.share({ title: 'Midnight Rodeo', text: 'I scored ' + score + ' and survived all ' + MAX_ROUNDS + ' rides! Can you beat it?' });
-    return;
-  }
-  if (x >= W/2+6 && x <= W/2+80 && y >= 460 && y <= 496) {
-    document.getElementById('fb-ov').style.display = 'flex';
-    return;
-  }
-  state = 'title';
-});
 
 // ---- Game loop -----------------------------------------------------------
 let lastTs = 0;

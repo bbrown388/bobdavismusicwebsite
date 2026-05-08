@@ -659,13 +659,78 @@ async function suite36() {
   await teardown();
 }
 
+// Suite 37: touchstart-only event starts game (no pointerdown fired — simulates devices
+//           where pointer events don't fire for touch input)
+async function suite37() {
+  console.log('\nSuite 37: touchstart-only event starts game from title screen');
+  browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true });
+  page = await ctx.newPage();
+  await page.goto(FILE);
+  await page.waitForTimeout(300);
+
+  const st0 = await page.evaluate(() => window.__test.getState());
+  assert(st0 === 'title', 'initial state is title before touch');
+
+  // Dispatch ONLY a touchstart event — no pointerdown.
+  // Reproduces the reported bug: mobile devices that don't reliably fire pointerdown.
+  await page.evaluate(() => {
+    const canvas = document.getElementById('c');
+    const rect = canvas.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const touch = new Touch({ identifier: 1, target: canvas, clientX: cx, clientY: cy });
+    canvas.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true,
+      touches: [touch], changedTouches: [touch],
+    }));
+  });
+  await page.waitForTimeout(100);
+
+  const st1 = await page.evaluate(() => window.__test.getState());
+  assert(st1 === 'playing', 'touchstart-only tap on title screen starts game (got ' + st1 + ')');
+  await teardown();
+}
+
+// Suite 38: touchstart fires correct left/right tap during playing state
+async function suite38() {
+  console.log('\nSuite 38: touchstart left/right tap handled during playing state');
+  browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true });
+  page = await ctx.newPage();
+  await page.goto(FILE);
+  await page.waitForTimeout(300);
+
+  await page.evaluate(() => {
+    window.__test.startGame();
+    window.__test.forcePhase('telegraphing');
+    window.__test.forceBullDir(-1); // LEFT
+
+    // Dispatch a touchstart on the LEFT half of the canvas
+    const canvas = document.getElementById('c');
+    const rect = canvas.getBoundingClientRect();
+    const cx = rect.left + rect.width * 0.25; // left quarter
+    const cy = rect.top + rect.height / 2;
+    const touch = new Touch({ identifier: 2, target: canvas, clientX: cx, clientY: cy });
+    canvas.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true,
+      touches: [touch], changedTouches: [touch],
+    }));
+    window.__test.tickFrames(20);
+  });
+
+  const mistakes = await page.evaluate(() => window.__test.getMistakes());
+  assert(mistakes === 0, 'touchstart left tap on LEFT spin = no mistake (got ' + mistakes + ')');
+  await teardown();
+}
+
 // ---- Run all suites -------------------------------------------------------
 (async () => {
   const suites = [
     suite1, suite2, suite3, suite4, suite5, suite6, suite7, suite8, suite9, suite10,
     suite11, suite12, suite13, suite14, suite15, suite16, suite17, suite18, suite19, suite20,
     suite21, suite22, suite23, suite24, suite25, suite26, suite27, suite28, suite29, suite30,
-    suite31, suite32, suite33, suite34, suite35, suite36,
+    suite31, suite32, suite33, suite34, suite35, suite36, suite37, suite38,
   ];
   let passed = 0, failed = 0;
   for (const s of suites) {
