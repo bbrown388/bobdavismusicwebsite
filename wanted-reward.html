@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Wanted: Reward</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { height: 100%; overflow: hidden; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100%; overflow: hidden; touch-action: none; position: fixed; width: 100%; }
+#wrap { position: relative; touch-action: none; }
+canvas { display: block; touch-action: none; cursor: pointer; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(5,2,8,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">&#9734;</span><span data-v="2">&#9734;</span><span data-v="3">&#9734;</span><span data-v="4">&#9734;</span><span data-v="5">&#9734;</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Wanted: Reward" selected>Existing: Wanted: Reward</option>
+      <option value="Coyote Call">Existing: Coyote Call</option>
+      <option value="Last Rope Standing">Existing: Last Rope Standing</option>
+      <option value="Midnight Rodeo">Existing: Midnight Rodeo</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0400;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    const rv = Math.min(typeof r === 'number' ? r : (Array.isArray(r) ? r[0] || 0 : 0), w / 2, h / 2);
+    if (rv <= 0) { this.rect(x, y, w, h); return; }
+    this.moveTo(x + rv, y); this.lineTo(x + w - rv, y);
+    this.arcTo(x + w, y, x + w, y + rv, rv); this.lineTo(x + w, y + h - rv);
+    this.arcTo(x + w, y + h, x + w - rv, y + h, rv); this.lineTo(x + rv, y + h);
+    this.arcTo(x, y + h, x, y + h - rv, rv); this.lineTo(x, y + rv);
+    this.arcTo(x, y, x + rv, y, rv); this.closePath();
+  };
+}
+
+const W = 360, H = 640;
+const SLUG = 'wanted-reward';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+
+const HATS   = ['cowboy', 'tophat', 'cap', 'none'];
+const BUILDS = ['slim', 'stout'];
+const ITEMS  = ['rifle', 'sack', 'none'];
+const FACES  = ['beard', 'scar', 'none'];
+
+const TRAIT_LABELS = {
+  hat:   { cowboy: 'COWBOY HAT', tophat: 'TOP HAT', cap: 'CAP', none: 'NO HAT' },
+  build: { slim: 'SLIM BUILD', stout: 'STOCKY BUILD' },
+  item:  { rifle: 'CARRIES RIFLE', sack: 'CARRIES SACK', none: 'EMPTY HANDS' },
+  face:  { beard: 'HAS BEARD', scar: 'HAS SCAR', none: 'CLEAN FACE' },
+};
+
+const ROUND_CFG = [
+  { clueKeys: ['hat', 'item'],                   crowdSize: 6,  baseReward: 500  },
+  { clueKeys: ['hat', 'build'],                  crowdSize: 7,  baseReward: 750  },
+  { clueKeys: ['hat', 'build', 'item'],          crowdSize: 9,  baseReward: 1000 },
+  { clueKeys: ['hat', 'item', 'face'],           crowdSize: 11, baseReward: 1250 },
+  { clueKeys: ['hat', 'build', 'item', 'face'],  crowdSize: 13, baseReward: 1500 },
+];
+const TOTAL_ROUNDS = 5;
+const WRONG_PENALTY = 0.25;
+const SLOT_W = 60;
+const FIGURE_BASE_Y = 580;
+const CROWD_Y = 268;
+const DRAG_THRESHOLD = 6;
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+  wrap.style.width    = canvas.style.width;
+  wrap.style.height   = canvas.style.height;
+}
+resize();
+window.addEventListener('resize', resize);
+window.addEventListener('load', resize);
+
+// ---- State ---------------------------------------------------------------
+let state;         // 'title' | 'playing' | 'result' | 'gameover'
+let round;
+let figures;       // [{hat,build,item,face}] shuffled crowd
+let fugitiveIdx;   // index in figures of the actual fugitive
+let clueKeys;      // trait keys shown on poster this round
+let crowdOffset;   // scroll px
+let wrongGuesses;
+let roundEarned;
+let totalEarned;
+let resultCorrect;
+let resultTimer;
+let popups;        // [{text,x,y,life,color}]
+let best;
+
+// Drag / input state
+let pointerDownX, pointerDownY, pointerDownOffset;
+let isDragging;
+
+// ---- Audio ---------------------------------------------------------------
+let audioCtx;
+function initAudio() {
+  if (audioCtx) return;
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+}
+function tone(freq, dur, vol, type, delay) {
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    const t = audioCtx.currentTime + (delay || 0);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + dur);
+  } catch(e) {}
+}
+function playCorrect() {
+  tone(660, 0.10, 0.15, 'sine', 0);
+  tone(880, 0.15, 0.12, 'sine', 0.08);
+  tone(1100, 0.20, 0.10, 'sine', 0.18);
+}
+function playWrong() {
+  tone(200, 0.18, 0.15, 'sawtooth', 0);
+  tone(140, 0.28, 0.10, 'triangle', 0.10);
+}
+function playFanfare() {
+  [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 0.12, 'sine', i * 0.10));
+}
+
+// ---- Trait helpers -------------------------------------------------------
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function traitLabel(key, val) {
+  return (TRAIT_LABELS[key] && TRAIT_LABELS[key][val]) || val.toUpperCase();
+}
+
+function countDiffs(a, b) {
+  return (a.hat !== b.hat) + (a.build !== b.build) + (a.item !== b.item) + (a.face !== b.face);
+}
+
+function matchesClues(fig, fugitive, keys) {
+  return keys.every(k => fig[k] === fugitive[k]);
+}
+
+function generateDecoy(fugitive, clueKeys) {
+  for (let attempts = 0; attempts < 200; attempts++) {
+    const d = { hat: pick(HATS), build: pick(BUILDS), item: pick(ITEMS), face: pick(FACES) };
+    if (!matchesClues(d, fugitive, clueKeys)) return d;
+  }
+  // Fallback: force a clue difference on the first key
+  const d = { hat: pick(HATS), build: pick(BUILDS), item: pick(ITEMS), face: pick(FACES) };
+  const k = clueKeys[0];
+  const opts = (k === 'hat' ? HATS : k === 'build' ? BUILDS : k === 'item' ? ITEMS : FACES);
+  d[k] = opts.find(v => v !== fugitive[k]) || opts[0];
+  return d;
+}
+
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// ---- Game logic ----------------------------------------------------------
+function startGame() {
+  gtag('event', 'game_start', { game_name: 'Wanted: Reward' });
+  round        = 0;
+  totalEarned  = 0;
+  popups       = [];
+  best         = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+  startRound();
+  state = 'playing';
+}
+
+function startRound() {
+  const cfg  = ROUND_CFG[round];
+  clueKeys   = cfg.clueKeys;
+  const fug  = { hat: pick(HATS), build: pick(BUILDS), item: pick(ITEMS), face: pick(FACES) };
+  figures    = [fug];
+  for (let i = 1; i < cfg.crowdSize; i++) figures.push(generateDecoy(fug, clueKeys));
+  shuffleArray(figures);
+  fugitiveIdx  = figures.indexOf(fug);
+  crowdOffset  = 0;
+  wrongGuesses = 0;
+  isDragging   = false;
+}
+
+function maxCrowdOffset() {
+  return Math.max(0, SLOT_W * figures.length - W + SLOT_W / 2);
+}
+
+function figureScreenX(i) {
+  return Math.round(SLOT_W / 2) + i * SLOT_W - crowdOffset;
+}
+
+function figureAt(sx, sy) {
+  if (sy < CROWD_Y || sy > FIGURE_BASE_Y + 10) return -1;
+  for (let i = 0; i < figures.length; i++) {
+    if (Math.abs(sx - figureScreenX(i)) < SLOT_W / 2) return i;
+  }
+  return -1;
+}
+
+function handleTap(sx, sy) {
+  if (state === 'title') { initAudio(); startGame(); return; }
+  if (state === 'result') { advanceRound(); return; }
+  if (state === 'gameover') { state = 'title'; return; }
+  if (state !== 'playing') return;
+
+  // Feedback button tap
+  const fbov = document.getElementById('fb-ov');
+  if (fbov && fbov.style.display === 'flex') return;
+  if (sx > W - 50 && sy > H - 38) { showFeedback(); return; }
+
+  const idx = figureAt(sx, sy);
+  if (idx === -1) return;
+
+  if (idx === fugitiveIdx) {
+    const earned = Math.round(ROUND_CFG[round].baseReward * Math.max(0, 1 - wrongGuesses * WRONG_PENALTY));
+    roundEarned  = earned;
+    totalEarned += earned;
+    resultCorrect = true;
+    resultTimer   = 2.2;
+    state = 'result';
+    playFanfare();
+    if (totalEarned > best) { best = totalEarned; localStorage.setItem(SLUG + '_best', best); }
+    gtag('event', 'round_win', { game_name: 'Wanted: Reward', round: round + 1, earned });
+  } else {
+    wrongGuesses++;
+    const penalty = Math.round(ROUND_CFG[round].baseReward * WRONG_PENALTY);
+    addPopup('-$' + penalty, figureScreenX(idx), FIGURE_BASE_Y - 110, '#E74C3C');
+    playWrong();
+  }
+}
+
+function advanceRound() {
+  round++;
+  popups = [];
+  if (round >= TOTAL_ROUNDS) {
+    state = 'gameover';
+    playFanfare();
+    gtag('event', 'game_win', { game_name: 'Wanted: Reward', totalEarned });
+  } else {
+    startRound();
+    state = 'playing';
+  }
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, life: 1.0, color: color || '#FFD700' });
+}
+
+function update(dt) {
+  if (state === 'result') {
+    resultTimer -= dt;
+    if (resultTimer <= 0) advanceRound();
+  }
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.y -= 45 * dt;
+    p.life -= dt * 1.4;
+    if (p.life <= 0) popups.splice(i, 1);
+  }
+}
+
+// ---- Drawing: silhouette figure ------------------------------------------
+function drawFigure(traits, cx, baseY, scale, highlight) {
+  scale = scale || 1;
+  const { hat, build, item, face } = traits;
+  const bw = build === 'stout' ? 24 : 15;
+
+  ctx.save();
+  ctx.translate(cx, baseY);
+  ctx.scale(scale, scale);
+
+  const dark  = highlight === 'correct' ? '#C8A04A' : highlight === 'wrong' ? '#C03020' : '#1a0520';
+  const dark2 = highlight ? dark : '#0e0316';
+
+  // Ground shadow
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, bw + 5, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = dark;
+
+  // Legs
+  const legW = Math.max(5, bw * 0.38);
+  ctx.beginPath(); ctx.roundRect(-bw / 2 + 1, -22, legW, 22, 2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(bw / 2 - legW - 1, -22, legW, 22, 2); ctx.fill();
+
+  // Body
+  ctx.beginPath(); ctx.roundRect(-bw / 2, -56, bw, 34, 3); ctx.fill();
+
+  // Head
+  ctx.beginPath(); ctx.arc(0, -67, 11, 0, Math.PI * 2); ctx.fill();
+
+  // Hat
+  if (hat === 'cowboy') {
+    ctx.fillRect(-14, -81, 28, 4);         // brim
+    ctx.fillRect(-7, -94, 14, 14);         // crown
+    ctx.fillStyle = '#C8A04A';
+    ctx.fillRect(-7, -79, 14, 2.5);        // hat band
+    ctx.fillStyle = dark;
+  } else if (hat === 'tophat') {
+    ctx.fillRect(-11, -80, 22, 3);         // brim
+    ctx.fillRect(-6, -102, 12, 23);        // tall crown
+  } else if (hat === 'cap') {
+    ctx.beginPath();
+    ctx.arc(0, -74, 10, Math.PI, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.fillRect(3, -75, 11, 3);           // brim
+  }
+  // hat 'none': head only
+
+  // Face mark
+  if (face === 'beard') {
+    ctx.fillStyle = dark2;
+    ctx.beginPath();
+    ctx.arc(0, -60, 8, 0.25, Math.PI - 0.25);
+    ctx.closePath(); ctx.fill();
+  } else if (face === 'scar') {
+    ctx.strokeStyle = '#E05040';
+    ctx.lineWidth = 1.8;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.moveTo(-5, -73); ctx.lineTo(4, -62); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Item (held at right side)
+  if (item === 'rifle') {
+    ctx.fillStyle = '#6A4828';
+    ctx.save();
+    ctx.translate(bw / 2 + 6, -42);
+    ctx.rotate(0.10);
+    ctx.fillRect(-1.5, -28, 3, 50);   // barrel
+    ctx.fillRect(-4, 10, 8, 9);       // stock
+    ctx.restore();
+  } else if (item === 'sack') {
+    ctx.fillStyle = '#7A5830';
+    ctx.beginPath();
+    ctx.arc(bw / 2 + 9, -28, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#C8A04A';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bw / 2 + 3, -35);
+    ctx.lineTo(bw / 2 + 7, -35);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// ---- Drawing: wanted poster ----------------------------------------------
+function drawPoster() {
+  const px = 18, py = 8, pw = 324, ph = 258;
+
+  // Parchment
+  ctx.fillStyle = '#D4B896';
+  ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 6); ctx.fill();
+
+  // Parchment texture
+  ctx.globalAlpha = 0.06;
+  for (let i = 0; i < 30; i++) {
+    ctx.fillStyle = '#5A2808';
+    ctx.fillRect(px + (Math.sin(i * 5.1) * 0.5 + 0.5) * pw,
+                 py + (Math.sin(i * 3.7) * 0.5 + 0.5) * ph, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // Double border
+  ctx.strokeStyle = '#5A3010';
+  ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.roundRect(px + 4, py + 4, pw - 8, ph - 8, 4); ctx.stroke();
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(px + 8, py + 8, pw - 16, ph - 16, 2); ctx.stroke();
+
+  // WANTED
+  ctx.fillStyle = '#8B1A1A';
+  ctx.font = 'bold 34px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('WANTED', W / 2, py + 50);
+
+  // DEAD OR ALIVE
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = '#5A3010';
+  ctx.letterSpacing = '2px';
+  ctx.fillText('DEAD OR ALIVE', W / 2, py + 65);
+  ctx.letterSpacing = '0px';
+
+  // Portrait frame
+  const portX = W / 2 - 40, portY = py + 70, portW = 80, portH = 104;
+  ctx.fillStyle = '#BEA082';
+  ctx.fillRect(portX, portY, portW, portH);
+  ctx.strokeStyle = '#5A3010';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(portX, portY, portW, portH);
+
+  // Clip and draw fugitive portrait
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(portX, portY, portW, portH);
+  ctx.clip();
+  const fug = figures[fugitiveIdx];
+  drawFigure(fug, W / 2, portY + portH - 2, 1.0, null);
+  ctx.restore();
+
+  // Reward
+  ctx.fillStyle = '#8B1A1A';
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('$' + ROUND_CFG[round].baseReward + ' REWARD', W / 2, py + 190);
+
+  // Trait clue chips
+  const n = clueKeys.length;
+  const chipW = (pw - 28) / Math.min(n, 2);
+  const chipH = 24;
+  clueKeys.forEach((key, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const cx2 = px + 14 + col * chipW;
+    const cy2 = py + 198 + row * (chipH + 4);
+
+    ctx.fillStyle = 'rgba(90, 48, 16, 0.14)';
+    ctx.beginPath(); ctx.roundRect(cx2, cy2, chipW - 6, chipH, 5); ctx.fill();
+    ctx.strokeStyle = '#8B5A30';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(cx2, cy2, chipW - 6, chipH, 5); ctx.stroke();
+
+    ctx.fillStyle = '#3A1808';
+    ctx.font = 'bold 9.5px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(traitLabel(key, fug[key]), cx2 + (chipW - 6) / 2, cy2 + 16);
+  });
+}
+
+// ---- Drawing: crowd area -------------------------------------------------
+function drawCrowdArea() {
+  // Night street background
+  const skyGrad = ctx.createLinearGradient(0, CROWD_Y, 0, CROWD_Y + 140);
+  skyGrad.addColorStop(0, '#070314');
+  skyGrad.addColorStop(1, '#100820');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, CROWD_Y, W, 140);
+
+  // Building silhouettes
+  drawBuildings();
+
+  // Street
+  const streetGrad = ctx.createLinearGradient(0, CROWD_Y + 140, 0, CROWD_Y + 270);
+  streetGrad.addColorStop(0, '#1a0f04');
+  streetGrad.addColorStop(1, '#0a0603');
+  ctx.fillStyle = streetGrad;
+  ctx.fillRect(0, CROWD_Y + 140, W, 200);
+
+  // Street edge line
+  ctx.strokeStyle = '#3a2010';
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath(); ctx.moveTo(0, CROWD_Y + 145); ctx.lineTo(W, CROWD_Y + 145); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Lamp glow (static)
+  [80, 280].forEach(lx => {
+    const lg = ctx.createRadialGradient(lx, CROWD_Y + 55, 0, lx, CROWD_Y + 55, 70);
+    lg.addColorStop(0, 'rgba(255, 210, 100, 0.12)');
+    lg.addColorStop(1, 'rgba(255, 210, 100, 0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(lx - 70, CROWD_Y, 140, 140);
+    // Lamp post
+    ctx.fillStyle = '#2a1808';
+    ctx.fillRect(lx - 2, CROWD_Y + 60, 4, 90);
+    // Lamp head
+    ctx.fillStyle = '#FFD070';
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath(); ctx.arc(lx, CROWD_Y + 58, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // Scroll arrows
+  const maxOff = maxCrowdOffset();
+  if (crowdOffset > 4) {
+    drawScrollArrow(24, CROWD_Y + 160, 'left');
+  }
+  if (crowdOffset < maxOff - 4) {
+    drawScrollArrow(W - 24, CROWD_Y + 160, 'right');
+  }
+
+  // Figures
+  const clip_top    = CROWD_Y;
+  const clip_bottom = FIGURE_BASE_Y + 8;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, clip_top, W, clip_bottom - clip_top); ctx.clip();
+
+  for (let i = 0; i < figures.length; i++) {
+    const sx = figureScreenX(i);
+    if (sx < -SLOT_W || sx > W + SLOT_W) continue;
+
+    let highlight = null;
+    if (state === 'result' && i === fugitiveIdx) highlight = 'correct';
+
+    ctx.globalAlpha = (sx < 0 || sx > W) ? 0.3 : 1;
+    drawFigure(figures[i], sx, FIGURE_BASE_Y, 1.0, highlight);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  // Scroll indicator dots
+  if (figures.length > 5) {
+    const total = figures.length;
+    const dotR  = 3;
+    const dotSpacing = 9;
+    const totalW = total * dotSpacing;
+    const startX = W / 2 - totalW / 2;
+    const dotY   = FIGURE_BASE_Y + 22;
+    for (let i = 0; i < total; i++) {
+      const sx = figureScreenX(i);
+      const isVisible = sx > 20 && sx < W - 20;
+      ctx.fillStyle = isVisible ? '#C8A04A' : '#3a2010';
+      ctx.beginPath();
+      ctx.arc(startX + i * dotSpacing, dotY, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawBuildings() {
+  // Saloon / frontier building silhouettes
+  const buildings = [
+    { x: 0,   w: 100, h: 110, type: 'flat' },
+    { x: 100, w: 80,  h: 135, type: 'peaked' },
+    { x: 180, w: 90,  h: 100, type: 'flat' },
+    { x: 270, w: 90,  h: 120, type: 'peaked' },
+  ];
+  buildings.forEach(b => {
+    ctx.fillStyle = '#0d0618';
+    const by = CROWD_Y + 145 - b.h;
+    ctx.fillRect(b.x, by, b.w, b.h);
+    if (b.type === 'peaked') {
+      ctx.beginPath();
+      ctx.moveTo(b.x, by);
+      ctx.lineTo(b.x + b.w / 2, by - 20);
+      ctx.lineTo(b.x + b.w, by);
+      ctx.closePath(); ctx.fill();
+    }
+    // Windows (lit amber)
+    ctx.fillStyle = 'rgba(255, 200, 80, 0.25)';
+    const winRows = Math.floor(b.h / 35);
+    const winCols = Math.floor(b.w / 28);
+    for (let r = 0; r < winRows; r++) {
+      for (let c = 0; c < winCols; c++) {
+        ctx.fillRect(b.x + 8 + c * 26, by + 12 + r * 30, 12, 16);
+      }
+    }
+  });
+}
+
+function drawScrollArrow(x, y, dir) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (dir === 'left') ctx.scale(-1, 1);
+  const pulse = 0.5 + 0.5 * Math.abs(Math.sin(Date.now() / 500));
+  ctx.globalAlpha = 0.4 + 0.3 * pulse;
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.moveTo(8, 0);
+  ctx.lineTo(-4, -9);
+  ctx.lineTo(-4, 9);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ---- Drawing: HUD --------------------------------------------------------
+function drawHUD() {
+  // Top bar
+  ctx.fillStyle = 'rgba(5,2,8,0.8)';
+  ctx.fillRect(0, 0, W, 8);
+
+  // Round counter
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('ROUND ' + (round + 1) + '/' + TOTAL_ROUNDS, 14, CROWD_Y + 16);
+
+  // Wrong guess indicator
+  if (wrongGuesses > 0) {
+    const penalty = Math.round(ROUND_CFG[round].baseReward * wrongGuesses * WRONG_PENALTY);
+    const remaining = Math.max(0, ROUND_CFG[round].baseReward - penalty);
+    ctx.fillStyle = wrongGuesses >= 3 ? '#E74C3C' : '#FF9F43';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('-' + Math.round(WRONG_PENALTY * 100 * wrongGuesses) + '% penalty', 14, CROWD_Y + 30);
+    ctx.fillStyle = '#C8A04A';
+    ctx.fillText('$' + remaining + ' if found now', 14, CROWD_Y + 43);
+  }
+
+  // Total earned (right)
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('$' + totalEarned, W - 14, CROWD_Y + 16);
+  ctx.fillStyle = '#907860';
+  ctx.font = '10px sans-serif';
+  ctx.fillText('EARNED', W - 14, CROWD_Y + 28);
+
+  // Instruction
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#907860';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('Drag to scroll  -  Tap the fugitive', W / 2, CROWD_Y - 6);
+
+  // Feedback button
+  ctx.fillStyle = 'rgba(20,10,5,0.7)';
+  ctx.beginPath(); ctx.roundRect(W - 48, H - 34, 42, 26, 6); ctx.fill();
+  ctx.fillStyle = '#907860';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('feedback', W - 27, H - 17);
+}
+
+// ---- Drawing: title screen -----------------------------------------------
+function drawTitle() {
+  // Night sky
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#040110');
+  sky.addColorStop(1, '#0a0520');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 55; i++) {
+    const sx = (Math.sin(i * 137.5) * 0.5 + 0.5) * W;
+    const sy = (Math.sin(i * 89.3) * 0.5 + 0.5) * H * 0.6;
+    ctx.globalAlpha = 0.3 + 0.6 * Math.abs(Math.sin(i * 2.1));
+    ctx.fillStyle = '#E8DCC8';
+    ctx.beginPath(); ctx.arc(sx, sy, Math.random() * 1.2 + 0.4, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Silhouette: bounty hunter + pole
+  ctx.fillStyle = '#0a0318';
+  ctx.fillRect(W / 2 - 4, 380, 8, 120); // post
+  ctx.fillRect(W / 2 - 55, 380, 110, 5); // crossbar
+  // Wanted poster hanging
+  ctx.fillStyle = '#BEA082';
+  ctx.fillRect(W / 2 - 44, 385, 88, 62);
+  ctx.strokeStyle = '#5A3010';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 44, 385, 88, 62);
+  ctx.fillStyle = '#8B1A1A';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('WANTED', W / 2, 415);
+  ctx.font = 'bold 7px sans-serif';
+  ctx.fillStyle = '#5A3010';
+  ctx.fillText('DEAD OR ALIVE', W / 2, 427);
+  // Small silhouette figure on poster
+  drawFigure({ hat: 'cowboy', build: 'slim', item: 'rifle', face: 'none' }, W / 2, 447, 0.52, null);
+
+  // Bounty hunter figure (right side)
+  drawFigure({ hat: 'tophat', build: 'stout', item: 'none', face: 'none' }, W / 2 + 95, 500, 0.9, null);
+
+  // Title card
+  ctx.fillStyle = 'rgba(5,2,8,0.78)';
+  ctx.beginPath(); ctx.roundRect(20, 60, W - 40, 220, 12); ctx.fill();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.35;
+  ctx.beginPath(); ctx.roundRect(20, 60, W - 40, 220, 12); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#907860';
+  ctx.letterSpacing = '3px';
+  ctx.fillText('GAME 43', W / 2, 96);
+  ctx.letterSpacing = '0px';
+
+  ctx.font = 'bold 36px Georgia, serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('WANTED:', W / 2, 140);
+  ctx.fillText('REWARD', W / 2, 180);
+
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#C8B89A';
+  ctx.fillText('Study the poster. Find the fugitive.', W / 2, 214);
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = '#705848';
+  ctx.fillText('5 rounds   -   Wrong IDs reduce payout', W / 2, 234);
+
+  const b = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+  if (b > 0) {
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#C8A04A';
+    ctx.fillText('BEST: $' + b, W / 2, 258);
+  }
+
+  const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 600);
+  ctx.globalAlpha = pulse;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('TAP TO START', W / 2, 590);
+  ctx.globalAlpha = 1;
+}
+
+// ---- Drawing: result screen ----------------------------------------------
+function drawResult() {
+  drawCrowdArea();
+  drawPoster();
+  drawHUD();
+  drawPopupsLayer();
+
+  // Result overlay
+  ctx.fillStyle = 'rgba(5,2,8,0.80)';
+  ctx.fillRect(0, CROWD_Y + 50, W, 180);
+
+  if (resultCorrect) {
+    ctx.font = 'bold 30px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText('BOUNTY COLLECTED!', W / 2, CROWD_Y + 100);
+
+    ctx.font = 'bold 42px sans-serif';
+    ctx.fillStyle = '#4CAF50';
+    ctx.fillText('+$' + roundEarned, W / 2, CROWD_Y + 152);
+
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#C8A04A';
+    const msg = wrongGuesses > 0 ? wrongGuesses + ' wrong ID' + (wrongGuesses > 1 ? 's' : '') + ' - penalty applied' : 'Clean ID! Full payout';
+    ctx.fillText(msg, W / 2, CROWD_Y + 174);
+
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = '#907860';
+    const next = round + 1 < TOTAL_ROUNDS ? 'Tap for round ' + (round + 2) : 'Tap to see final score';
+    ctx.fillText(next, W / 2, CROWD_Y + 195);
+  }
+}
+
+// ---- Drawing: game over --------------------------------------------------
+function drawGameOver() {
+  // Background
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#040110'); sky.addColorStop(1, '#0a0520');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = 'rgba(5,2,8,0.82)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.font = 'bold 36px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('BOUNTY PAID!', W / 2, 180);
+
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#705848';
+  ctx.fillText('ALL 5 ROUNDS COMPLETE', W / 2, 215);
+
+  ctx.font = 'bold 58px sans-serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('$' + totalEarned, W / 2, 290);
+
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#907860';
+  ctx.fillText('TOTAL EARNED', W / 2, 315);
+
+  if (totalEarned >= best && best > 0) {
+    const pulse = 0.75 + 0.25 * Math.sin(Date.now() / 250);
+    ctx.globalAlpha = pulse;
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.fillStyle = '#FF9F43';
+    ctx.fillText('NEW RECORD!', W / 2, 350);
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#907860';
+    ctx.fillText('BEST: $' + best, W / 2, 350);
+  }
+
+  // Max possible
+  const maxPossible = ROUND_CFG.reduce((s, c) => s + c.baseReward, 0);
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = '#705848';
+  ctx.fillText('Max possible: $' + maxPossible, W / 2, 380);
+
+  // Play again button
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 90, 405, 180, 48, 10); ctx.fill();
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillStyle = '#0d0400';
+  ctx.fillText('HUNT AGAIN', W / 2, 434);
+
+  // Feedback button
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(W / 2 - 60, 465, 120, 36, 8); ctx.stroke();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('Leave Feedback', W / 2, 488);
+}
+
+// ---- Drawing: popups -----------------------------------------------------
+function drawPopupsLayer() {
+  ctx.save();
+  popups.forEach(p => {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ---- Game loop -----------------------------------------------------------
+let lastTs = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTs) / 1000, 0.05);
+    lastTs = ts;
+    update(dt);
+    ctx.clearRect(0, 0, W, H);
+    if (state === 'title')   drawTitle();
+    if (state === 'playing') { drawCrowdArea(); drawPoster(); drawHUD(); drawPopupsLayer(); }
+    if (state === 'result')  drawResult();
+    if (state === 'gameover') drawGameOver();
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error('loop error:', e);
+    requestAnimationFrame(loop);
+  }
+}
+
+// ---- Init ----------------------------------------------------------------
+state   = 'title';
+popups  = [];
+requestAnimationFrame(loop);
+
+// ---- Input ---------------------------------------------------------------
+function canvasCoords(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const s = W / r.width;
+  return { cx: (clientX - r.left) * s, cy: (clientY - r.top) * s };
+}
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  const t = e.changedTouches[0];
+  const { cx, cy } = canvasCoords(t.clientX, t.clientY);
+  pointerDownX = cx; pointerDownY = cy;
+  pointerDownOffset = crowdOffset || 0;
+  isDragging = false;
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (state !== 'playing') return;
+  const t = e.changedTouches[0];
+  const { cx } = canvasCoords(t.clientX, t.clientY);
+  const dx = pointerDownX - cx;
+  if (Math.abs(dx) > DRAG_THRESHOLD) isDragging = true;
+  if (isDragging) {
+    crowdOffset = Math.max(0, Math.min(maxCrowdOffset(), pointerDownOffset + dx));
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const { cx, cy } = canvasCoords(t.clientX, t.clientY);
+  if (!isDragging) handleTap(cx, cy);
+  isDragging = false;
+}, { passive: false });
+
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') return;
+  e.preventDefault();
+  const { cx, cy } = canvasCoords(e.clientX, e.clientY);
+  pointerDownX = cx; pointerDownY = cy;
+  pointerDownOffset = crowdOffset || 0;
+  isDragging = false;
+  canvas.setPointerCapture(e.pointerId);
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch') return;
+  if (!(e.buttons & 1)) return;
+  if (state !== 'playing') return;
+  const { cx } = canvasCoords(e.clientX, e.clientY);
+  const dx = pointerDownX - cx;
+  if (Math.abs(dx) > DRAG_THRESHOLD) isDragging = true;
+  if (isDragging) {
+    crowdOffset = Math.max(0, Math.min(maxCrowdOffset(), pointerDownOffset + dx));
+  }
+});
+
+canvas.addEventListener('pointerup', e => {
+  if (e.pointerType === 'touch') return;
+  e.preventDefault();
+  const { cx, cy } = canvasCoords(e.clientX, e.clientY);
+  if (!isDragging) handleTap(cx, cy);
+  isDragging = false;
+});
+
+document.addEventListener('touchstart', e => {
+  const ov = document.getElementById('fb-ov');
+  if (ov && ov.style.display === 'flex') return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const { cx, cy } = canvasCoords(t.clientX, t.clientY);
+  if (state === 'title') handleTap(cx, cy);
+}, { passive: false });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); handleTap(W / 2, H / 2); }
+  if (e.code === 'ArrowLeft')  { crowdOffset = Math.max(0, (crowdOffset || 0) - SLOT_W); }
+  if (e.code === 'ArrowRight') { crowdOffset = Math.min(maxCrowdOffset(), (crowdOffset || 0) + SLOT_W); }
+});
+
+// ---- Feedback overlay ----------------------------------------------------
+function showFeedback() {
+  document.getElementById('fb-ov').style.display = 'flex';
+}
+(function () {
+  const ov     = document.getElementById('fb-ov');
+  const stars  = document.getElementById('fb-stars');
+  const submit = document.getElementById('fb-submit');
+  const cancel = document.getElementById('fb-cancel');
+  const status = document.getElementById('fb-status');
+  let rating   = 0;
+
+  stars.addEventListener('click', e => {
+    const v = parseInt(e.target.dataset.v);
+    if (!v) return;
+    rating = v;
+    [...stars.children].forEach((s, i) => s.textContent = i < v ? '★' : '☆');
+  });
+
+  submit.addEventListener('click', () => {
+    const msg = document.getElementById('fb-text').value.trim();
+    const tgt = document.getElementById('fb-target').value;
+    if (!msg && !rating) { status.textContent = 'Add a rating or message.'; return; }
+    status.textContent = 'Sending…';
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', mode: 'no-cors',
+      body: JSON.stringify({ game: tgt || SLUG, rating, message: msg, score: totalEarned }),
+    }).finally(() => {
+      status.textContent = 'Sent! Thanks.';
+      setTimeout(() => {
+        ov.style.display = 'none'; status.textContent = ''; rating = 0;
+        [...stars.children].forEach(s => s.textContent = '☆');
+      }, 1800);
+    });
+  });
+
+  cancel.addEventListener('click', () => { ov.style.display = 'none'; });
+})();
+
+// ---- Test helpers --------------------------------------------------------
+window._wr = {
+  getState:         () => state,
+  getRound:         () => round,
+  getFigures:       () => figures,
+  getFugitiveIdx:   () => fugitiveIdx,
+  getClueKeys:      () => clueKeys,
+  getCrowdOffset:   () => crowdOffset,
+  getWrongGuesses:  () => wrongGuesses,
+  getTotalEarned:   () => totalEarned,
+  getRoundEarned:   () => roundEarned,
+  isResultCorrect:  () => resultCorrect,
+  ROUND_CFG, TOTAL_ROUNDS, WRONG_PENALTY, SLOT_W, CROWD_Y, FIGURE_BASE_Y,
+  HATS, BUILDS, ITEMS, FACES, TRAIT_LABELS,
+  startGame,
+  startRound,
+  handleTap,
+  figureAt,
+  figureScreenX,
+  maxCrowdOffset,
+  countDiffs,
+  matchesClues,
+  generateDecoy,
+  traitLabel,
+  drawFigure: (traits, cx, baseY, scale, highlight) => drawFigure(traits, cx, baseY, scale, highlight),
+};
+</script>
+</body>
+</html>
