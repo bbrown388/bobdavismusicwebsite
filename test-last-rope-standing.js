@@ -514,6 +514,77 @@ async function runTests() {
     assert(errors.length === 0, 'console errors: ' + errors.join('; '));
   });
 
+  // ── Suite 16: Kick mechanic ───────────────────────────────────────────────
+
+  await test('S51 KICK_FORCE constant is > 0', async () => {
+    const v = await page.evaluate(() => window._lrs.KICK_FORCE);
+    assert(v > 0, `KICK_FORCE=${v}`);
+  });
+
+  await test('S52 Left tap when latched adds leftward velocity and releases', async () => {
+    const [pvx1, ai] = await page.evaluate(() => {
+      window._lrs.startGame();
+      window._lrs.state = 'playing';
+      window._lrs.waterY = 900;
+      // Latch to a post
+      window._lrs.px = window._lrs.posts[3].x;
+      window._lrs.py = window._lrs.posts[3].y + 40;
+      window._lrs.pvx = 0; window._lrs.pvy = 0;
+      window._lrs.latch(3);
+      const pvxBefore = window._lrs.pvx;
+      window._lrs.handleTap(0); // tap left side (cx=0 < W/2)
+      return [window._lrs.pvx - pvxBefore, window._lrs.anchorIdx];
+    });
+    assert(pvx1 < 0, `left tap should add leftward velocity, got delta=${pvx1}`);
+    assert(ai === -1, `player should be released after kick, anchorIdx=${ai}`);
+  });
+
+  await test('S53 Right tap when latched adds rightward velocity and releases', async () => {
+    const [pvx1, ai] = await page.evaluate(() => {
+      window._lrs.startGame();
+      window._lrs.state = 'playing';
+      window._lrs.waterY = 900;
+      window._lrs.px = window._lrs.posts[3].x;
+      window._lrs.py = window._lrs.posts[3].y + 40;
+      window._lrs.pvx = 0; window._lrs.pvy = 0;
+      window._lrs.latch(3);
+      const pvxBefore = window._lrs.pvx;
+      window._lrs.handleTap(window._lrs.W); // tap right side (cx=W > W/2)
+      return [window._lrs.pvx - pvxBefore, window._lrs.anchorIdx];
+    });
+    assert(pvx1 > 0, `right tap should add rightward velocity, got delta=${pvx1}`);
+    assert(ai === -1, `player should be released after kick, anchorIdx=${ai}`);
+  });
+
+  await test('S54 Kick adds upward velocity on release', async () => {
+    const pvyDelta = await page.evaluate(() => {
+      window._lrs.startGame();
+      window._lrs.state = 'playing';
+      window._lrs.waterY = 900;
+      window._lrs.px = window._lrs.posts[3].x;
+      window._lrs.py = window._lrs.posts[3].y + 40;
+      window._lrs.pvx = 0; window._lrs.pvy = 0;
+      window._lrs.latch(3);
+      const pvyBefore = window._lrs.pvy;
+      window._lrs.handleTap(window._lrs.W / 2 + 1);
+      return window._lrs.pvy - pvyBefore;
+    });
+    assert(pvyDelta < 0, `kick should add upward (negative pvy) velocity, got delta=${pvyDelta}`);
+  });
+
+  await test('S55 touchstart on canvas starts game from title', async () => {
+    const s = await page.evaluate(() => {
+      window._lrs.state = 'title';
+      const canvas = document.getElementById('c');
+      const touch = new Touch({ identifier: 1, target: canvas, clientX: 180, clientY: 300 });
+      canvas.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [touch], changedTouches: [touch], bubbles: true, cancelable: true,
+      }));
+      return window._lrs.state;
+    });
+    assert(s === 'playing', `expected playing after touchstart, got ${s}`);
+  });
+
   // ── Summary ───────────────────────────────────────────────────────────────
 
   console.log(`\n  ${passed} passed, ${failed} failed`);
