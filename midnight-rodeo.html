@@ -6,8 +6,10 @@
 <title>Midnight Rodeo</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html { height: 100%; overflow: hidden; }
 body { background: #000; display: flex; justify-content: center; align-items: center;
-       height: 100vh; overflow: hidden; touch-action: none; }
+       height: 100%; overflow: hidden; touch-action: none;
+       position: fixed; width: 100%; }
 #wrap { position: relative; touch-action: none; }
 canvas { display: block; touch-action: none; cursor: pointer; }
 #fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -114,6 +116,7 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+window.addEventListener('load', resize); // re-run after full layout on iOS
 
 // ---- State ---------------------------------------------------------------
 let state;       // 'title' | 'playing' | 'dead'
@@ -468,9 +471,18 @@ function tapCoords(clientX, clientY) {
   handleTap((clientX - r.left) * s, (clientY - r.top) * s);
 }
 
-// Primary touch handler — fires on all mobile browsers; e.preventDefault() suppresses
-// the subsequent pointerdown so we don't handle the same tap twice.
+// Primary touch handler — fires on all mobile browsers.
 canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  e.stopPropagation(); // prevent document fallback from double-firing
+  const t = e.changedTouches[0];
+  tapCoords(t.clientX, t.clientY);
+}, { passive: false });
+
+// Document-level fallback — catches taps when canvas is mis-sized on iOS (0×0 or clipped).
+document.addEventListener('touchstart', e => {
+  const ov = document.getElementById('fb-ov');
+  if (ov && ov.style.display === 'flex') return; // feedback form is open
   e.preventDefault();
   const t = e.changedTouches[0];
   tapCoords(t.clientX, t.clientY);

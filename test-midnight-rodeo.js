@@ -724,13 +724,40 @@ async function suite38() {
   await teardown();
 }
 
+// Suite 39: document-level touchstart fallback starts game (simulates canvas mis-sized to 0px on iOS)
+async function suite39() {
+  console.log('\nSuite 39: document touchstart fallback starts game');
+  browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true });
+  page = await ctx.newPage();
+  await page.goto(FILE);
+  await page.waitForTimeout(300);
+
+  const st0 = await page.evaluate(() => window.__test.getState());
+  assert(st0 === 'title', 'initial state is title before document touch');
+
+  // Dispatch touchstart on the DOCUMENT (not the canvas) — simulates canvas being 0x0
+  await page.evaluate(() => {
+    const touch = new Touch({ identifier: 3, target: document.body, clientX: 180, clientY: 300 });
+    document.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true,
+      touches: [touch], changedTouches: [touch],
+    }));
+  });
+  await page.waitForTimeout(100);
+
+  const st1 = await page.evaluate(() => window.__test.getState());
+  assert(st1 === 'playing', 'document touchstart fallback starts game (got ' + st1 + ')');
+  await teardown();
+}
+
 // ---- Run all suites -------------------------------------------------------
 (async () => {
   const suites = [
     suite1, suite2, suite3, suite4, suite5, suite6, suite7, suite8, suite9, suite10,
     suite11, suite12, suite13, suite14, suite15, suite16, suite17, suite18, suite19, suite20,
     suite21, suite22, suite23, suite24, suite25, suite26, suite27, suite28, suite29, suite30,
-    suite31, suite32, suite33, suite34, suite35, suite36, suite37, suite38,
+    suite31, suite32, suite33, suite34, suite35, suite36, suite37, suite38, suite39,
   ];
   let passed = 0, failed = 0;
   for (const s of suites) {
