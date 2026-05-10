@@ -1,102 +1,66 @@
 {
-  "lastRunAt": "2026-05-10T08:00:02Z",
+  "lastRunAt": "2026-05-10T09:30:00Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 44: Trail Blaze",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Designing Game 44: Trail Blaze - player-drawn pathfinding through procedurally generated terrain"
-  },
-  "gamesBuilt": 43,
-  "lastGameTitle": "Wanted: Reward",
-  "lastGameFile": "wanted-reward.html",
+  "lastRunSummary": "Built Game 44: Trail Blaze - player-drawn pathfinding, 5 terrain types, A* comparison, escalating threats, 35 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 44,
+  "lastGameTitle": "Trail Blaze",
+  "lastGameFile": "trail-blaze.html",
   "gameQueue": [
-    {
-      "num": 44,
-      "title": "Trail Blaze",
-      "concept": "Wilderness pathfinding strategy: draw a trail through procedurally generated terrain (mountains, rivers, desert, forest) from a starting camp to a destination. Each terrain type has a travel-cost multiplier. Supplies drain per tile crossed. Find the path that reaches the destination before supplies run out. New route threats each round: seasonal floods, rockslides, rival wagon trains.",
-      "raisesBarOn": "First player-drawn pathfinding mechanic in series, first terrain-cost strategy layer, first game where the challenge is route optimization rather than reaction or memory",
-      "status": "planned"
-    },
     {
       "num": 45,
       "title": "Rattlesnake Round-Up",
       "concept": "Herpetologist wrangling: a pit of rattlesnakes with individual heat signatures visible through a thermal scope. Tap to pin a snake, then drag to bag it before it escapes. Each round adds more snakes, faster escapes, and species that require two-handed pinning (hold then drag). First multi-phase interaction (pin + drag) in series.",
       "raisesBarOn": "First multi-phase tap+drag interaction per entity, first thermal/heat-map visual layer, first timer-per-entity mechanic (each snake's pin fades)",
       "status": "planned"
+    },
+    {
+      "num": 46,
+      "title": "Prairie Telegraph",
+      "concept": "Semaphore signal relay: a chain of frontier outposts stretches across the plains. Decode incoming flag signals (arm positions = letters) and relay the message to the next station before the signal chain breaks. Each round adds more stations, faster signals, and interference (wind gusts that scramble flag positions). First semaphore/visual-signal decoding mechanic in series.",
+      "raisesBarOn": "First visual-symbol decoding game (semaphore vs Morse code audio in Wire Tap), first relay-chain game structure, first wind-interference mechanic on signal fidelity",
+      "status": "planned"
+    },
+    {
+      "num": 47,
+      "title": "Outlaw Auction",
+      "concept": "Bounty hunter bidding war: auctions for captured outlaws on a frontier circuit. Each outlaw has a secret bounty value revealed only after purchase. Read behavioral tells from rival bidders to estimate true value - eager bidders signal high value, patient ones signal low. Bluff, fold, or overbid. First hidden-value auction with behavioral AI in series.",
+      "raisesBarOn": "First hidden-information economic game (vs Cattle Auction which had known grades), first behavioral-tell reading mechanic on economic decisions, first bidding game where rivals reveal information through their bidding patterns",
+      "status": "planned"
     }
   ],
   "runLog": [
     {
-      "runAt": "2026-05-03T09:00:00.000Z",
-      "action": "new_game",
-      "game": "Dead Reckoning",
+      "runAt": "2026-05-08T08:25:00.000Z",
+      "action": "fix",
+      "game": "midnight-rodeo",
       "result": "success",
-      "summary": "Built Game 24: Dead Reckoning - celestial navigation, star bearing lines, 5-round terrain puzzle, 50 tests pass.",
-      "commitHash": "d7d6e9f"
+      "summary": "Fixed Midnight Rodeo: added touchstart handler; devices that do not fire pointerdown for touch now respond. 38 tests pass.",
+      "commitHash": "9547434"
     },
     {
-      "runAt": "2026-05-03T09:45:00.000Z",
-      "action": "new_game",
-      "game": "Fence Line",
+      "runAt": "2026-05-09T08:30:00.000Z",
+      "action": "fix",
+      "game": "last-rope-standing",
       "result": "success",
-      "summary": "Built Game 25: Fence Line - construction/placement mechanic, wind gusts, cattle gap-seek AI, 5 levels, 42 tests pass.",
-      "commitHash": "23c7df0"
+      "summary": "Fixed Last Rope Standing: directional kick mechanic (KICK_FORCE=500) gives players speed to reach higher platforms. 55 tests pass.",
+      "commitHash": "171f9d1"
     },
     {
-      "runAt": "2026-05-03T10:30:00.000Z",
-      "action": "new_game",
-      "game": "Dust Storm",
+      "runAt": "2026-05-09T08:45:00.000Z",
+      "action": "fix",
+      "game": "midnight-rodeo",
       "result": "success",
-      "summary": "Built Game 26: Dust Storm - fog-of-war visibility cone, lane-dodge stagecoach, 42 tests pass.",
-      "commitHash": "ab93339"
+      "summary": "Fixed Midnight Rodeo: iOS position:fixed viewport, load-event resize, document-level touch fallback, guard condition fix. 39 tests pass.",
+      "commitHash": "e47ade7"
     },
     {
-      "runAt": "2026-05-03T11:30:00.000Z",
+      "runAt": "2026-05-09T09:15:00.000Z",
       "action": "new_game",
-      "game": "River Run",
+      "game": "Wanted: Reward",
       "result": "success",
-      "summary": "Built Game 27: River Run - white-water raft, inertia model, current-reading swirls, 42 tests pass.",
-      "commitHash": "2c6b15b"
-    },
-    {
-      "runAt": "2026-05-04T08:30:00.000Z",
-      "action": "new_game",
-      "game": "Brand Iron",
-      "result": "success",
-      "summary": "Built Game 28: Brand Iron - path-tracing drag mechanic, heat sweet-zone gauge, 45 tests pass.",
-      "commitHash": "4e20960"
-    },
-    {
-      "runAt": "2026-05-04T09:30:00.000Z",
-      "action": "new_game",
-      "game": "Jail Break",
-      "result": "success",
-      "summary": "Built Game 29: Jail Break - turn-based stealth escape, vision cones, pick-lock, object-throw, shadow zones, 50 tests pass.",
-      "commitHash": "9a691f5"
-    },
-    {
-      "runAt": "2026-05-05T08:30:00.000Z",
-      "action": "new_game",
-      "game": "Tumbleweed Pinball",
-      "result": "success",
-      "summary": "Built Game 30: Tumbleweed Pinball - physics pinball engine, cactus bumpers, WANTED poster targets, chain multiplier (1x-8x), drain post deflector, 50 tests pass.",
-      "commitHash": "b111fa8"
-    },
-    {
-      "runAt": "2026-05-05T12:00:00.000Z",
-      "action": "new_game",
-      "game": "Pony Express",
-      "result": "success",
-      "summary": "Built Game 31: Pony Express - action-rhythm horse riding, 5 escalating BPM sections, 16th-note beat grid, speed-sync feedback loop, 50 tests pass.",
-      "commitHash": "6f90e9c"
-    },
-    {
-      "runAt": "2026-05-05T09:30:00.000Z",
-      "action": "new_game",
-      "game": "Barbed Wire",
-      "result": "success",
-      "summary": "Built Game 32: Barbed Wire - strategic wire-laying tower defense, post-node graph mechanic, MAX_CONN=2 constraint, 5 waves, 50 tests pass.",
-      "commitHash": "07acb6d"
+      "summary": "Built Game 43: Wanted: Reward - visual search + composite matching, 4-trait crowd silhouettes, economic payout, 35 tests pass.",
+      "commitHash": "e3d67a9"
     },
     {
       "runAt": "2026-05-05T14:00:00.000Z",
@@ -217,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 43: Wanted: Reward - visual search + composite matching, 4-trait crowd silhouettes, economic payout, 35 tests pass.",
       "commitHash": "e3d67a9"
+    },
+    {
+      "runAt": "2026-05-10T09:30:00.000Z",
+      "action": "new_game",
+      "game": "Trail Blaze",
+      "result": "success",
+      "summary": "Built Game 44: Trail Blaze - player-drawn pathfinding, 5 terrain types, A* comparison, escalating threats, 35 tests pass.",
+      "commitHash": "dfe0a5a"
     }
   ]
 }
