@@ -1,34 +1,27 @@
 {
-  "lastRunAt": "2026-05-09T08:00:01Z",
+  "lastRunAt": "2026-05-10T08:00:02Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Fixed Midnight Rodeo: added touchstart handler for mobile browsers that do not fire pointerdown on canvas. 38 tests pass.",
+  "lastRunSummary": "Built Game 43: Wanted: Reward - visual search + composite matching, 4-trait crowd silhouettes, economic payout, 35 tests pass.",
   "currentTask": {
     "context": "Director session starting - reading feedback and deciding next action",
     "action": "starting"
   },
-  "gamesBuilt": 41,
-  "lastGameTitle": "Gold Panner",
-  "lastGameFile": "gold-panner.html",
+  "gamesBuilt": 43,
+  "lastGameTitle": "Wanted: Reward",
+  "lastGameFile": "wanted-reward.html",
   "gameQueue": [
-    {
-      "num": 42,
-      "title": "Coyote Call",
-      "concept": "Audio pitch-matching predator lure: drag a slide-whistle to match the coyote howl frequency shown as an oscilloscope waveform. Hit three frequency markers in sequence to build trust and draw the pack in. Too far off and coyotes flee. 5 rounds of increasing pack intelligence and tighter tolerance windows.",
-      "raisesBarOn": "First real-time analog pitch-drag mechanic (continuous frequency slider vs tap), first game where audio matching IS the primary mechanic rather than a feedback cue, first predator/prey relational system in series",
-      "status": "planned"
-    },
-    {
-      "num": 43,
-      "title": "Wanted: Reward",
-      "concept": "Bounty hunter economics: a new wanted poster appears each round showing a fugitive's traits (hat color, build, scar, weapon). Scan a scrolling crowd of silhouettes for the match. First correct ID earns full reward; wrong IDs reduce the payout. Each round: more fugitives, similar-looking decoys, crowd density increases.",
-      "raisesBarOn": "First visual search mechanic in series (scan crowd vs memory test), first multi-trait composite matching, first economic payout mechanic tied to accuracy rather than speed alone",
-      "status": "planned"
-    },
     {
       "num": 44,
       "title": "Trail Blaze",
       "concept": "Wilderness pathfinding strategy: draw a trail through procedurally generated terrain (mountains, rivers, desert, forest) from a starting camp to a destination. Each terrain type has a travel-cost multiplier. Supplies drain per tile crossed. Find the path that reaches the destination before supplies run out. New route threats each round: seasonal floods, rockslides, rival wagon trains.",
       "raisesBarOn": "First player-drawn pathfinding mechanic in series, first terrain-cost strategy layer, first game where the challenge is route optimization rather than reaction or memory",
+      "status": "planned"
+    },
+    {
+      "num": 45,
+      "title": "Rattlesnake Round-Up",
+      "concept": "Herpetologist wrangling: a pit of rattlesnakes with individual heat signatures visible through a thermal scope. Tap to pin a snake, then drag to bag it before it escapes. Each round adds more snakes, faster escapes, and species that require two-handed pinning (hold then drag). First multi-phase interaction (pin + drag) in series.",
+      "raisesBarOn": "First multi-phase tap+drag interaction per entity, first thermal/heat-map visual layer, first timer-per-entity mechanic (each snake's pin fades)",
       "status": "planned"
     }
   ],
@@ -178,6 +171,14 @@
       "commitHash": "d848990"
     },
     {
+      "runAt": "2026-05-08T10:00:00.000Z",
+      "action": "new_game",
+      "game": "Coyote Call",
+      "result": "success",
+      "summary": "Built Game 42: Coyote Call - real-time pitch matching, oscilloscope dual-waveform, coyote howl synthesis, trust/scare dual meter, 26 tests pass.",
+      "commitHash": "710c9f4"
+    },
+    {
       "runAt": "2026-05-08T12:00:00Z",
       "action": "fix",
       "game": "midnight-rodeo",
@@ -192,6 +193,30 @@
       "result": "success",
       "summary": "Fixed Midnight Rodeo: added touchstart handler; devices that do not fire pointerdown for touch now respond. 38 tests pass.",
       "commitHash": "9547434"
+    },
+    {
+      "runAt": "2026-05-09T08:30:00.000Z",
+      "action": "fix",
+      "game": "last-rope-standing",
+      "result": "success",
+      "summary": "Fixed Last Rope Standing: directional kick mechanic (KICK_FORCE=500) gives players speed to reach higher platforms. 55 tests pass.",
+      "commitHash": "171f9d1"
+    },
+    {
+      "runAt": "2026-05-09T08:45:00.000Z",
+      "action": "fix",
+      "game": "midnight-rodeo",
+      "result": "success",
+      "summary": "Fixed Midnight Rodeo: iOS position:fixed viewport, load-event resize, document-level touch fallback, guard condition fix. 39 tests pass.",
+      "commitHash": "e47ade7"
+    },
+    {
+      "runAt": "2026-05-09T09:15:00.000Z",
+      "action": "new_game",
+      "game": "Wanted: Reward",
+      "result": "success",
+      "summary": "Built Game 43: Wanted: Reward - visual search + composite matching, 4-trait crowd silhouettes, economic payout, 35 tests pass.",
+      "commitHash": "e3d67a9"
     }
   ]
 }
