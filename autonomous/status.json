@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-11T08:16:33.392Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 46: Prairie Telegraph - semaphore relay chain, visual flag decoding, wind gusts, 25 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 47: Outlaw Auction",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 47: Outlaw Auction - hidden-value bounty bidding with behavioral AI tells"
+  },
   "gamesBuilt": 46,
   "lastGameTitle": "Prairie Telegraph",
   "lastGameFile": "prairie-telegraph.html",
