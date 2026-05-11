@@ -1,22 +1,12 @@
 {
   "lastRunAt": "2026-05-11T08:00:01Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 45 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 45: Rattlesnake Round-Up - tests passing, committing"
-  },
-  "gamesBuilt": 44,
-  "lastGameTitle": "Trail Blaze",
-  "lastGameFile": "trail-blaze.html",
+  "lastRunSummary": "Built Game 45: Rattlesnake Round-Up - multi-phase hold+drag snake wrangling, thermal scope view, 3 snake tiers, 24 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 45,
+  "lastGameTitle": "Rattlesnake Round-Up",
+  "lastGameFile": "rattlesnake-round-up.html",
   "gameQueue": [
-    {
-      "num": 45,
-      "title": "Rattlesnake Round-Up",
-      "concept": "Herpetologist wrangling: a pit of rattlesnakes with individual heat signatures visible through a thermal scope. Tap to pin a snake, then drag to bag it before it escapes. Each round adds more snakes, faster escapes, and species that require two-handed pinning (hold then drag). First multi-phase interaction (pin + drag) in series.",
-      "raisesBarOn": "First multi-phase tap+drag interaction per entity, first thermal/heat-map visual layer, first timer-per-entity mechanic (each snake's pin fades)",
-      "status": "planned"
-    },
     {
       "num": 46,
       "title": "Prairie Telegraph",
@@ -30,17 +20,16 @@
       "concept": "Bounty hunter bidding war: auctions for captured outlaws on a frontier circuit. Each outlaw has a secret bounty value revealed only after purchase. Read behavioral tells from rival bidders to estimate true value - eager bidders signal high value, patient ones signal low. Bluff, fold, or overbid. First hidden-value auction with behavioral AI in series.",
       "raisesBarOn": "First hidden-information economic game (vs Cattle Auction which had known grades), first behavioral-tell reading mechanic on economic decisions, first bidding game where rivals reveal information through their bidding patterns",
       "status": "planned"
+    },
+    {
+      "num": 48,
+      "title": "Hangman's Bluff",
+      "concept": "Interrogation deception game: you're an outlaw bluffing through a checkpoint. The sheriff asks questions - alibi, travel route, wanted poster ID. Each answer shifts your suspicion meter. Choose truths strategically and lies carefully. Wrong answers compound; consistent lies hold up better than mixed ones. First player-side deception / narrative-interrogation mechanic in series.",
+      "raisesBarOn": "First narrative interrogation mechanic where player is the deceiver (vs Wanted: Dead or Alive where player was investigator), first game with answer consistency tracking (lie memory), first branching-consequence dialogue system",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-08T08:25:00.000Z",
-      "action": "fix",
-      "game": "midnight-rodeo",
-      "result": "success",
-      "summary": "Fixed Midnight Rodeo: added touchstart handler; devices that do not fire pointerdown for touch now respond. 38 tests pass.",
-      "commitHash": "9547434"
-    },
     {
       "runAt": "2026-05-09T08:30:00.000Z",
       "action": "fix",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 44: Trail Blaze - player-drawn pathfinding, 5 terrain types, A* comparison, escalating threats, 35 tests pass.",
       "commitHash": "dfe0a5a"
+    },
+    {
+      "runAt": "2026-05-11T08:00:01Z",
+      "action": "new_game",
+      "game": "Rattlesnake Round-Up",
+      "result": "success",
+      "summary": "Built Game 45: Rattlesnake Round-Up - multi-phase hold+drag snake wrangling, thermal scope view, 3 snake tiers, 24 tests pass.",
+      "commitHash": "835538c"
     }
   ]
 }
