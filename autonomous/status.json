@@ -3,8 +3,8 @@
   "lastRunResult": "success",
   "lastRunSummary": "Building Game 47: Outlaw Auction",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Designing Game 47: Outlaw Auction - hidden-value bounty bidding with behavioral AI tells"
   },
   "gamesBuilt": 46,
   "lastGameTitle": "Prairie Telegraph",
