@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-12T10:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 48: Hangman's Bluff - interrogation deception, lie memory, 3-stage sheriff checkpoint, 37 tests pass",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 49: Lariat Spin",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 49: Lariat Spin - rotational rope physics, momentum-accumulation + precision-release"
+  },
   "gamesBuilt": 48,
   "lastGameTitle": "Hangman's Bluff",
   "lastGameFile": "hangmans-bluff.html",
