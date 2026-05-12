@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-12T09:30:00Z",
+  "lastRunAt": "2026-05-12T10:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 48 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 48: Hangmans Bluff - tests passing, committing"
-  },
-  "gamesBuilt": 47,
-  "lastGameTitle": "Outlaw Auction",
-  "lastGameFile": "outlaw-auction.html",
+  "lastRunSummary": "Built Game 48: Hangman's Bluff - interrogation deception, lie memory, 3-stage sheriff checkpoint, 37 tests pass",
+  "currentTask": null,
+  "gamesBuilt": 48,
+  "lastGameTitle": "Hangman's Bluff",
+  "lastGameFile": "hangmans-bluff.html",
   "gameQueue": [
-    {
-      "num": 48,
-      "title": "Hangman's Bluff",
-      "concept": "Interrogation deception game: you're an outlaw bluffing through a checkpoint. The sheriff asks questions - alibi, travel route, wanted poster ID. Each answer shifts your suspicion meter. Choose truths strategically and lies carefully. Wrong answers compound; consistent lies hold up better than mixed ones. First player-side deception / narrative-interrogation mechanic in series.",
-      "raisesBarOn": "First narrative interrogation mechanic where player is the deceiver (vs Wanted: Dead or Alive where player was investigator), first game with answer consistency tracking (lie memory), first branching-consequence dialogue system",
-      "status": "planned"
-    },
     {
       "num": 49,
       "title": "Lariat Spin",
@@ -30,17 +20,16 @@
       "concept": "Frontier melody construction puzzle. A saloon piano plays a partial tune; player must fill in the missing notes by tapping the correct keys in sequence before the next measure. Difficulty escalates with phrase length and tempo. First note-sequencing / melody-completion mechanic - distinct from rhythm (Pony Express) and pitch matching (Coyote Call).",
       "raisesBarOn": "First melody-completion mechanic (fill missing notes vs. hit beats vs. match pitch), first piano keyboard UI in series, first musical phrase-memory challenge",
       "status": "planned"
+    },
+    {
+      "num": 51,
+      "title": "Pinkerton Trail",
+      "concept": "Stealth pursuit game. You're a Pinkerton detective tailing a suspect through a frontier town. Follow without being spotted: hide behind barrels, time your movement to the suspect's glances, gather evidence before the suspect reaches safety. First tailing/pursuit stealth mechanic. Distinct from Jail Break (grid escape) and Moonshine Run (static hiding).",
+      "raisesBarOn": "First pursuit-based stealth (follower vs. evader, not escapee), first evidence-gathering integration with stealth action, first dynamic NPC awareness system based on player proximity and line-of-sight while moving",
+      "status": "planned"
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-08T10:00:00.000Z",
-      "action": "new_game",
-      "game": "Coyote Call",
-      "result": "success",
-      "summary": "Built Game 42: Coyote Call - real-time pitch matching, oscilloscope dual-waveform, coyote howl synthesis, trust/scare dual meter, 26 tests pass.",
-      "commitHash": "710c9f4"
-    },
     {
       "runAt": "2026-05-08T12:00:00Z",
       "action": "fix",
@@ -192,6 +181,14 @@
       "result": "success",
       "summary": "Built Game 47: Outlaw Auction - hidden-value bounty bidding, 5 behavioral AI rivals, bankroll management, 36 tests pass.",
       "commitHash": "ae32b90"
+    },
+    {
+      "runAt": "2026-05-12T10:00:00.000Z",
+      "action": "new_game",
+      "game": "Hangman's Bluff",
+      "result": "success",
+      "summary": "Built Game 48: Hangman's Bluff - interrogation deception, lie memory, 3-stage sheriff checkpoint, 37 tests pass.",
+      "commitHash": "329cdf0"
     }
   ]
 }
