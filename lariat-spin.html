@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Lariat Spin</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+    #fb-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.88); z-index: 10; justify-content: center;
+      align-items: center; flex-direction: column;
+    }
+    #fb-overlay.active { display: flex; }
+    #fb-overlay select, #fb-overlay button, #fb-overlay textarea {
+      margin-top: 8px; width: 280px; background: #1a0520; color: #FFE066;
+      border: 1px solid #FFE066; font-size: 14px; border-radius: 4px;
+    }
+    #fb-overlay select, #fb-overlay button { padding: 8px; cursor: pointer; }
+    #fb-overlay textarea { padding: 8px; height: 80px; resize: none; }
+    #fb-overlay label { color: #FFE066; font-family: Georgia, serif; font-size: 13px; margin-top: 8px; }
+    #fb-close { background: #2a0f30 !important; margin-top: 16px; }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-X1W0TNHM51');
+  </script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <label>How was Lariat Spin?</label>
+  <select id="fb-rating">
+    <option value="5">5 stars - loved it</option>
+    <option value="4">4 stars - really good</option>
+    <option value="3">3 stars - it's alright</option>
+    <option value="2">2 stars - needs work</option>
+    <option value="1">1 star - not for me</option>
+  </select>
+  <label>Feedback (optional):</label>
+  <textarea id="fb-text" placeholder="What did you think?"></textarea>
+  <button id="fb-submit">Submit</button>
+  <button id="fb-close">Close</button>
+</div>
+<script>
+'use strict';
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+const SLUG = 'lariat-spin';
+
+// roundRect polyfill for Chrome < 99
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    r = Math.min(r, Math.min(w, h) / 2);
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r);
+    this.lineTo(x + w, y + h - r);
+    this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    this.lineTo(x + r, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r);
+    this.lineTo(x, y + r);
+    this.quadraticCurveTo(x, y, x + r, y);
+    this.closePath();
+    return this;
+  };
+}
+
+// === PHYSICS CONFIG ===
+const TAP_IMPULSE    = 2.8;   // rad/s per tap
+const DRAG           = 0.78;  // decay exponent per second
+const MAX_OMEGA      = 16;    // visual cap for bar
+const OPTIMAL_MIN    = 8;     // sweet zone min
+const OPTIMAL_MAX    = 12;    // sweet zone max
+const MIN_RELEASE    = 6;     // minimum omega to throw
+const COLLAPSE_OMEGA = 14.5;  // above this: collapse
+const MIN_ROPE_R     = 22;    // rope ellipse semi-major min
+const MAX_ROPE_R     = 68;    // rope ellipse semi-major max
+const AIM_REACH      = 175;   // px — how far throw travels horizontally
+const THROW_SPEED    = 420;   // px/s rope travels
+const BEAT_FREQ      = 1.8;   // rhythm pulse Hz
+const RESULT_DUR     = 900;   // ms for catch/miss result
+const INTRO_DUR      = 1500;  // ms for round intro
+
+const COWBOY_X = W / 2;
+const COWBOY_Y = 460;
+const HAND_X   = COWBOY_X;
+const HAND_Y   = COWBOY_Y - 72;
+
+// === ROUNDS ===
+const ROUNDS = [
+  { catchesNeeded: 3, targetSpeed: 45,  targetY: 280, aimTolerance: 0.55 },
+  { catchesNeeded: 3, targetSpeed: 65,  targetY: 265, aimTolerance: 0.46 },
+  { catchesNeeded: 4, targetSpeed: 90,  targetY: 250, aimTolerance: 0.38 },
+  { catchesNeeded: 4, targetSpeed: 115, targetY: 240, aimTolerance: 0.30 },
+  { catchesNeeded: 5, targetSpeed: 145, targetY: 225, aimTolerance: 0.22 },
+];
+
+// Canvas
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+canvas.width  = W;
+canvas.height = H;
+function scaleCanvas() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+}
+scaleCanvas();
+window.addEventListener('resize', scaleCanvas);
+window.addEventListener('load', scaleCanvas);
+
+// Web Audio
+let audioCtx = null;
+function ac() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTap() {
+  try {
+    const a = ac(); const o = a.createOscillator(); const g = a.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(300, a.currentTime);
+    o.frequency.exponentialRampToValueAtTime(180, a.currentTime + 0.09);
+    g.gain.setValueAtTime(0.15, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.11);
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + 0.12);
+  } catch(e) {}
+}
+
+function playCatch() {
+  try {
+    const a = ac();
+    [261.6, 329.6, 392, 523.2].forEach((f, i) => {
+      const o = a.createOscillator(); const g = a.createGain();
+      o.type = 'triangle'; o.frequency.value = f;
+      const t = a.currentTime + i * 0.055;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.14, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      o.connect(g); g.connect(a.destination);
+      o.start(t); o.stop(t + 0.6);
+    });
+  } catch(e) {}
+}
+
+function playMiss() {
+  try {
+    const a = ac(); const o = a.createOscillator(); const g = a.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(320, a.currentTime);
+    o.frequency.exponentialRampToValueAtTime(120, a.currentTime + 0.4);
+    g.gain.setValueAtTime(0.18, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.42);
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + 0.44);
+  } catch(e) {}
+}
+
+function playCollapse() {
+  try {
+    const a = ac();
+    const buf = a.createBuffer(1, a.sampleRate * 0.3, a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = a.createBufferSource();
+    const bpf = a.createBiquadFilter(); bpf.type = 'bandpass';
+    bpf.frequency.value = 220; bpf.Q.value = 1.2;
+    const g = a.createGain(); g.gain.value = 0.28;
+    src.buffer = buf;
+    src.connect(bpf); bpf.connect(g); g.connect(a.destination);
+    src.start();
+  } catch(e) {}
+}
+
+// === GAME STATE ===
+let state;         // 'title'|'round_intro'|'spinning'|'thrown'|'result'|'gameover'|'win'
+let omega;         // angular velocity (rad/s)
+let theta;         // current rope angle
+let lives;
+let roundNum;
+let roundCatches;
+let totalScore;
+let target;        // { x, y, vx, hitFlash }
+let flyThrow;      // { sx, sy, tx, ty, t, duration } | null
+let resultTimer;
+let introTimer;
+let pulseT;        // 0..1 rhythm pulse phase
+let popups;        // [{text, x, y, t, color}]
+let collapsed;     // brief flag after collapse
+let collapseTimer;
+let wobble;        // rope wobble amplitude
+let stars;
+
+function startGame() {
+  omega        = 0;
+  theta        = -Math.PI / 2;
+  lives        = 3;
+  roundNum     = 0;
+  roundCatches = 0;
+  totalScore   = 0;
+  flyThrow     = null;
+  resultTimer  = 0;
+  introTimer   = INTRO_DUR;
+  pulseT       = 0;
+  popups       = [];
+  collapsed    = false;
+  collapseTimer= 0;
+  wobble       = 0;
+  target       = spawnTarget();
+  state        = 'round_intro';
+}
+
+function spawnTarget() {
+  const r = ROUNDS[roundNum];
+  const goRight = Math.random() < 0.5;
+  return {
+    x:  goRight ? -60 : W + 60,
+    y:  r.targetY,
+    vx: goRight ? r.targetSpeed : -r.targetSpeed,
+    hitFlash: 0,
+  };
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, t: 800, color: color || '#FFE066' });
+}
+
+function ropeRadius() {
+  return MIN_ROPE_R + (MAX_ROPE_R - MIN_ROPE_R) * Math.min(omega / COLLAPSE_OMEGA, 1);
+}
+
+function ropePos(angle, wob) {
+  const r = ropeRadius() + (wob || 0);
+  return { x: HAND_X + r * Math.cos(angle), y: HAND_Y + r * 0.40 * Math.sin(angle) };
+}
+
+function throwLandX(angle) {
+  return HAND_X + Math.cos(angle) * AIM_REACH;
+}
+
+// === UPDATE ===
+let lastTs = 0;
+function update(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+
+  popups = popups.filter(p => p.t > 0);
+  popups.forEach(p => { p.t -= dt * 1000; p.y -= 38 * dt; });
+
+  if (state === 'round_intro') {
+    introTimer -= dt * 1000;
+    if (introTimer <= 0) state = 'spinning';
+    return;
+  }
+
+  if (state === 'spinning') {
+    omega = Math.max(0, omega * Math.pow(DRAG, dt));
+    theta += omega * dt;
+    wobble *= Math.pow(0.82, dt);
+    pulseT = (pulseT + BEAT_FREQ * dt) % 1.0;
+    if (collapsed) {
+      collapseTimer -= dt * 1000;
+      if (collapseTimer <= 0) { collapsed = false; collapseTimer = 0; }
+    }
+    if (!collapsed && omega > COLLAPSE_OMEGA) {
+      triggerCollapse();
+    }
+    updateTarget(dt);
+    return;
+  }
+
+  if (state === 'thrown') {
+    flyThrow.t += dt;
+    const p = flyThrow.t / flyThrow.duration;
+    if (p >= 1) {
+      landThrow();
+    }
+    updateTarget(dt);
+    return;
+  }
+
+  if (state === 'result') {
+    resultTimer -= dt * 1000;
+    if (resultTimer <= 0) advanceAfterResult();
+    return;
+  }
+}
+
+function updateTarget(dt) {
+  if (!target) return;
+  target.x += target.vx * dt;
+  if (target.x > W + 80)  target.x = -80;
+  else if (target.x < -80) target.x = W + 80;
+  if (target.hitFlash > 0) target.hitFlash -= dt * 1000;
+}
+
+function triggerCollapse() {
+  omega = 0; wobble = 0;
+  collapsed = true; collapseTimer = 900;
+  playCollapse();
+  addPopup('ROPE DROPPED', HAND_X, HAND_Y - 40, '#E74C3C');
+}
+
+function doTap() {
+  if (state !== 'spinning') return;
+  if (collapsed) return;
+  omega = Math.min(omega + TAP_IMPULSE, COLLAPSE_OMEGA + 0.4);
+  wobble = Math.min(wobble + 9, 22);
+  pulseT = 0;
+  playTap();
+}
+
+function doThrow() {
+  if (state !== 'spinning') return;
+  if (omega < MIN_RELEASE) return;
+  if (collapsed) return;
+  const tip = ropePos(theta, 0);
+  const tx  = throwLandX(theta);
+  const ty  = target.y;
+  const dist = Math.sqrt(Math.pow(tx - tip.x, 2) + Math.pow(ty - tip.y, 2));
+  flyThrow = { sx: tip.x, sy: tip.y, tx, ty, t: 0, duration: dist / THROW_SPEED };
+  state = 'thrown';
+}
+
+function landThrow() {
+  const dx  = flyThrow.tx - target.x;
+  const tol = ROUNDS[roundNum].aimTolerance * 80;
+  if (Math.abs(dx) <= tol) {
+    roundCatches++;
+    totalScore++;
+    addPopup('CAUGHT!', W / 2, H / 2 - 60, '#FFE066');
+    playCatch();
+    target.hitFlash = 600;
+  } else {
+    lives--;
+    addPopup('MISSED', W / 2, H / 2 - 60, '#E74C3C');
+    playMiss();
+  }
+  flyThrow    = null;
+  state       = 'result';
+  resultTimer = RESULT_DUR;
+}
+
+function advanceAfterResult() {
+  if (lives <= 0) { state = 'gameover'; return; }
+  if (roundCatches >= ROUNDS[roundNum].catchesNeeded) {
+    if (roundNum >= ROUNDS.length - 1) { state = 'win'; return; }
+    roundNum++;
+    roundCatches = 0;
+    introTimer   = INTRO_DUR;
+    target       = spawnTarget();
+    omega        = 0; wobble = 0;
+    state        = 'round_intro';
+    return;
+  }
+  target = spawnTarget();
+  omega  = 0; wobble = 0;
+  state  = 'spinning';
+}
+
+// === DRAW ===
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+
+  if (state === 'title') {
+    drawCowboy(); drawTitle();
+  } else if (state === 'round_intro') {
+    drawTarget(); drawRope(); drawCowboy(); drawHUD(); drawRoundIntro();
+  } else if (state === 'spinning' || state === 'thrown' || state === 'result') {
+    drawTarget(); drawPulseRings(); drawRope(); drawCowboy();
+    drawAimIndicator(); drawFlyingThrow();
+    drawOmegaBar(); drawThrowButton(); drawHUD();
+  } else if (state === 'gameover') {
+    drawTarget(); drawCowboy(); drawEndScreen(false);
+  } else if (state === 'win') {
+    drawTarget(); drawCowboy(); drawEndScreen(true);
+  }
+
+  drawPopups();
+}
+
+function drawBackground() {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#050208');
+  sky.addColorStop(0.55, '#1a0d35');
+  sky.addColorStop(0.85, '#2a1500');
+  sky.addColorStop(1,    '#1a0a00');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  if (stars) {
+    stars.forEach(s => {
+      ctx.globalAlpha = s.a;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // Horizon glow
+  ctx.fillStyle = 'rgba(42,21,0,0.7)';
+  ctx.beginPath();
+  ctx.ellipse(W / 2, H + 30, W * 1.3, 130, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ground
+  const gnd = ctx.createLinearGradient(0, H - 90, 0, H);
+  gnd.addColorStop(0, '#2a1500');
+  gnd.addColorStop(1, '#140900');
+  ctx.fillStyle = gnd;
+  ctx.fillRect(0, H - 90, W, 90);
+
+  // Ground texture lines
+  ctx.strokeStyle = 'rgba(90,50,10,0.25)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const y = H - 75 + i * 14;
+    ctx.beginPath();
+    ctx.moveTo(0, y); ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawCowboy() {
+  ctx.save();
+  ctx.translate(COWBOY_X, COWBOY_Y);
+
+  // Shadow ellipse
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.ellipse(0, 32, 26, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Legs
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(-14, 8, 11, 32); ctx.fillRect(3, 8, 11, 32);
+
+  // Boots
+  ctx.fillStyle = '#3a1f05';
+  ctx.beginPath(); ctx.roundRect(-18, 36, 15, 10, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-1, 36, 15, 10, 3); ctx.fill();
+
+  // Coat/body
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath(); ctx.roundRect(-14, -14, 28, 24, 4); ctx.fill();
+
+  // Belt
+  ctx.fillStyle = '#1a0800';
+  ctx.fillRect(-14, 6, 28, 5);
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillRect(-3, 5, 6, 7);
+
+  // Head
+  ctx.fillStyle = '#2a0f20';
+  ctx.beginPath(); ctx.arc(0, -26, 12, 0, Math.PI * 2); ctx.fill();
+
+  // Hat brim
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(-17, -42, 34, 7);
+  // Hat crown
+  ctx.beginPath(); ctx.roundRect(-11, -60, 22, 20, 4); ctx.fill();
+  // Hat band
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-11, -42); ctx.lineTo(11, -42); ctx.stroke();
+
+  // Raised arm (right side, holding rope overhead)
+  ctx.fillStyle = '#2a1500';
+  ctx.save();
+  ctx.translate(12, -10);
+  ctx.rotate(-1.3);
+  ctx.beginPath(); ctx.roundRect(-4, -22, 8, 26, 3); ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawTarget() {
+  if (!target) return;
+  ctx.save();
+  ctx.translate(target.x, target.y);
+
+  const goRight = target.vx > 0;
+  if (!goRight) ctx.scale(-1, 1);
+
+  const flash = target.hitFlash > 0;
+  const bodyColor = flash ? '#FFE066' : '#2a0f30';
+  const detailColor = flash ? '#FFF' : '#C8A04A';
+
+  // Body
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath(); ctx.ellipse(0, 0, 40, 20, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Neck
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath(); ctx.ellipse(34, -4, 14, 11, 0.3, 0, Math.PI * 2); ctx.fill();
+
+  // Head
+  ctx.beginPath(); ctx.ellipse(50, -8, 12, 10, 0.2, 0, Math.PI * 2); ctx.fill();
+
+  // Snout
+  ctx.fillStyle = flash ? '#FFF' : '#1a0800';
+  ctx.beginPath(); ctx.ellipse(60, -6, 6, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Eye
+  ctx.fillStyle = flash ? '#FFD700' : '#C8A04A';
+  ctx.beginPath(); ctx.arc(54, -12, 2.5, 0, Math.PI * 2); ctx.fill();
+
+  // Horns (catch zone indicator)
+  ctx.strokeStyle = detailColor;
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(52, -18); ctx.quadraticCurveTo(62, -30, 50, -24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(46, -16); ctx.quadraticCurveTo(54, -27, 42, -21); ctx.stroke();
+
+  // Legs (4)
+  ctx.strokeStyle = bodyColor; ctx.lineWidth = 5;
+  [[-20, 0.18], [-8, -0.14], [6, 0.18], [18, -0.14]].forEach(([bx, ang]) => {
+    ctx.beginPath();
+    ctx.moveTo(bx, 18);
+    ctx.lineTo(bx + Math.sin(ang) * 20, 18 + Math.cos(ang) * 20);
+    ctx.stroke();
+  });
+
+  // Tail
+  ctx.strokeStyle = bodyColor; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-40, -2); ctx.quadraticCurveTo(-54, -16, -46, -26); ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawRope() {
+  if (collapsed) return;
+  ctx.save();
+  const r = ropeRadius();
+  const wob = wobble;
+  const segments = 52;
+
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = '#FFD700';
+  ctx.shadowBlur = omega >= OPTIMAL_MIN ? 8 : 3;
+
+  ctx.beginPath();
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2 + theta;
+    const wv = wob * Math.sin(a * 3 + theta * 2.5);
+    const rx = r + wv;
+    const ry = (r + wv) * 0.40;
+    const x  = HAND_X + rx * Math.cos(a);
+    const y  = HAND_Y + ry * Math.sin(a);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Tip node
+  const tip = ropePos(theta, 0);
+  const inSweet = omega >= OPTIMAL_MIN && omega <= OPTIMAL_MAX;
+  ctx.fillStyle = inSweet ? '#FFE066' : '#C8A04A';
+  ctx.shadowColor = '#FFE066'; ctx.shadowBlur = inSweet ? 10 : 0;
+  ctx.beginPath(); ctx.arc(tip.x, tip.y, 4.5, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawAimIndicator() {
+  if (state !== 'spinning') return;
+  if (omega < MIN_RELEASE) return;
+  if (collapsed) return;
+  const tip   = ropePos(theta, 0);
+  const aimX  = throwLandX(theta);
+  const aimY  = target.y;
+  const dx    = Math.abs(aimX - target.x);
+  const tol   = ROUNDS[roundNum].aimTolerance * 80;
+  const aligned  = dx <= tol;
+  const inSweet  = omega >= OPTIMAL_MIN && omega <= OPTIMAL_MAX;
+
+  ctx.save();
+  ctx.setLineDash([6, 9]);
+  ctx.strokeStyle = inSweet ? 'rgba(255,224,102,0.7)' : 'rgba(200,160,74,0.35)';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(aimX, aimY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (aligned) {
+    ctx.strokeStyle = '#FFE066';
+    ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 14;
+  } else {
+    ctx.strokeStyle = inSweet ? 'rgba(200,160,74,0.65)' : 'rgba(200,160,74,0.28)';
+  }
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(aimX, aimY, 20, 0, Math.PI * 2); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawPulseRings() {
+  if (state !== 'spinning') return;
+  if (omega < 1) return;
+  const phase = pulseT;
+  const alpha = (1 - phase) * 0.45;
+  const r     = 18 + phase * 52;
+  ctx.save();
+  ctx.strokeStyle = `rgba(200,160,74,${alpha})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(HAND_X, HAND_Y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawFlyingThrow() {
+  if (!flyThrow) return;
+  const p = Math.min(flyThrow.t / flyThrow.duration, 1);
+  const x = flyThrow.sx + (flyThrow.tx - flyThrow.sx) * p;
+  const y = flyThrow.sy + (flyThrow.ty - flyThrow.sy) * p - Math.sin(p * Math.PI) * 36;
+  const lr = 7 + p * 24;
+  ctx.save();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(x, y, lr, 0, Math.PI * 2); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawOmegaBar() {
+  const bx = 18, by = H - 104, bw = W - 36, bh = 20;
+  ctx.save();
+
+  // Track
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill();
+
+  // Sweet zone band
+  const sx1 = bx + (OPTIMAL_MIN / MAX_OMEGA) * bw;
+  const sx2 = bx + (OPTIMAL_MAX / MAX_OMEGA) * bw;
+  ctx.fillStyle = 'rgba(255,224,102,0.16)';
+  ctx.beginPath(); ctx.roundRect(sx1, by, sx2 - sx1, bh, 10); ctx.fill();
+
+  // Fill
+  const fw = Math.min(omega / MAX_OMEGA, 1) * bw;
+  let col;
+  if (omega < MIN_RELEASE)              col = '#5a3a10';
+  else if (omega < OPTIMAL_MIN)         col = '#C8A04A';
+  else if (omega <= OPTIMAL_MAX)        col = '#FFE066';
+  else if (omega < COLLAPSE_OMEGA - 1)  col = '#FF9F43';
+  else                                  col = '#E74C3C';
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.roundRect(bx, by, fw, bh, 10); ctx.fill();
+
+  // Border
+  ctx.strokeStyle = 'rgba(200,160,74,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = 'rgba(200,160,74,0.65)';
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText('SPIN', bx, by - 3);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,224,102,0.55)';
+  ctx.fillText('SWEET ZONE', (sx1 + sx2) / 2, by - 3);
+
+  ctx.restore();
+}
+
+function drawThrowButton() {
+  if (state !== 'spinning') return;
+  const bx = W / 2 - 64, by = H - 72, bw = 128, bh = 42;
+  const ready    = omega >= MIN_RELEASE && !collapsed;
+  const inSweet  = omega >= OPTIMAL_MIN && omega <= OPTIMAL_MAX;
+  const aimX     = throwLandX(theta);
+  const aligned  = target && Math.abs(aimX - target.x) <= ROUNDS[roundNum].aimTolerance * 80;
+
+  ctx.save();
+  ctx.globalAlpha = ready ? 1 : 0.35;
+  ctx.fillStyle = (ready && inSweet && aligned) ? '#8a5c00' : (ready ? '#2a1800' : '#0d0818');
+  ctx.strokeStyle = (ready && inSweet && aligned) ? '#FFE066' : '#C8A04A';
+  ctx.lineWidth = (ready && inSweet && aligned) ? 2.5 : 1.5;
+  if (ready && inSweet && aligned) {
+    ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 12;
+  }
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 9); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = ready ? '#FFE066' : '#7a5a30';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('THROW', W / 2, by + bh / 2);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.textBaseline = 'middle';
+
+  // Catches pill
+  const r = ROUNDS[roundNum];
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath(); ctx.roundRect(8, 8, 116, 28, 8); ctx.fill();
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 12px Georgia, serif'; ctx.textAlign = 'left';
+  ctx.fillText(`${roundCatches}/${r.catchesNeeded} CAUGHT`, 16, 22);
+
+  // Round pill
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath(); ctx.roundRect(W - 76, 8, 68, 28, 8); ctx.fill();
+  ctx.fillStyle = '#C8A04A'; ctx.textAlign = 'right';
+  ctx.fillText(`RD ${roundNum + 1}/5`, W - 14, 22);
+
+  // Lives hearts
+  const hx = W / 2 - 28;
+  ctx.font = '16px sans-serif'; ctx.textAlign = 'left';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < lives ? '#E74C3C' : 'rgba(120,50,50,0.4)';
+    ctx.fillText(i < lives ? '♥' : '♡', hx + i * 22, 22);
+  }
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawRoundIntro() {
+  ctx.save();
+  const alpha = introTimer > 900 ? 1 : introTimer / 900;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 34px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#C8A04A'; ctx.shadowBlur = 16;
+  ctx.fillText(`ROUND ${roundNum + 1}`, W / 2, H / 2 - 28);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText(`Rope ${ROUNDS[roundNum].catchesNeeded} steers`, W / 2, H / 2 + 14);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 46px Georgia, serif';
+  ctx.shadowColor = '#C8A04A'; ctx.shadowBlur = 22;
+  ctx.fillText('LARIAT SPIN', W / 2, H / 2 - 110);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Spin up your lasso.', W / 2, H / 2 - 52);
+  ctx.fillText('Throw when the ring aligns.', W / 2, H / 2 - 30);
+
+  // Instructions
+  ctx.fillStyle = 'rgba(200,160,74,0.7)';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('TAP to spin  -  THROW when aimed', W / 2, H / 2 - 6);
+
+  const best = parseInt(localStorage.getItem(SLUG + '_best') || '0', 10);
+  if (best > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText(`Best: ${best} catches`, W / 2, H / 2 + 18);
+  }
+
+  // Play button
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 72, H / 2 + 38, 144, 48, 10); ctx.fill();
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 19px Georgia, serif';
+  ctx.fillText('PLAY', W / 2, H / 2 + 62);
+  ctx.restore();
+}
+
+function drawEndScreen(win) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.80)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  if (win) {
+    ctx.fillStyle = '#FFE066';
+    ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 20;
+    ctx.font = 'bold 34px Georgia, serif';
+    ctx.fillText("ROPED 'EM ALL!", W / 2, H / 2 - 80);
+    ctx.shadowBlur = 0;
+  } else {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 32px Georgia, serif';
+    ctx.fillText('ROPE DROPPED', W / 2, H / 2 - 80);
+  }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText(`${totalScore} CATCHES`, W / 2, H / 2 - 28);
+
+  const best = parseInt(localStorage.getItem(SLUG + '_best') || '0', 10);
+  if (totalScore > best) {
+    localStorage.setItem(SLUG + '_best', String(totalScore));
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, H / 2 + 4);
+  } else if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText(`Best: ${best}`, W / 2, H / 2 + 4);
+  }
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 72, H / 2 + 36, 144, 44, 10); ctx.fill();
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText(win ? 'PLAY AGAIN' : 'TRY AGAIN', W / 2, H / 2 + 58);
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  popups.forEach(p => {
+    ctx.globalAlpha = Math.min(p.t / 350, 1);
+    ctx.fillStyle   = p.color;
+    ctx.font        = 'bold 19px Georgia, serif';
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// === INPUT ===
+function handleTap(x, y) {
+  if (state === 'title' || state === 'gameover' || state === 'win') {
+    startGame(); return;
+  }
+  if (state === 'round_intro' || state === 'result') return;
+  if (state !== 'spinning') return;
+
+  // THROW button region
+  const bx = W / 2 - 64, by = H - 72, bw = 128, bh = 42;
+  if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+    doThrow(); return;
+  }
+  doTap();
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  handleTap((e.clientX - rect.left) * (W / rect.width), (e.clientY - rect.top) * (H / rect.height));
+}, { passive: false });
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); }, { passive: false });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space')  { e.preventDefault(); handleTap(W / 2, H / 2); }
+  if (e.code === 'Enter')  { e.preventDefault(); doThrow(); }
+});
+
+// === STARS ===
+stars = Array.from({ length: 88 }, () => ({
+  x: Math.random() * W, y: Math.random() * H * 0.52,
+  r: Math.random() * 1.2 + 0.2, a: Math.random() * 0.75 + 0.15,
+}));
+
+// === MUSIC ===
+if (MUSIC_SRC) { const m = new Audio(MUSIC_SRC); m.loop = true; }
+
+// === FEEDBACK ===
+document.getElementById('fb-submit').addEventListener('click', async () => {
+  const rating = document.getElementById('fb-rating').value;
+  const msg    = document.getElementById('fb-text').value.trim();
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Lariat Spin', rating, message: msg }),
+    });
+  } catch(e) {}
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+
+// === MAIN LOOP ===
+state = 'title';
+popups = [];
+function loop(ts) {
+  try { update(ts); draw(); } catch(e) { console.error('loop error', e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// === PUBLIC API (tests) ===
+window.__ls = {
+  get state()        { return state;        },  set state(v)        { state = v;        },
+  get omega()        { return omega;        },  set omega(v)        { omega = v;        },
+  get theta()        { return theta;        },  set theta(v)        { theta = v;        },
+  get lives()        { return lives;        },  set lives(v)        { lives = v;        },
+  get roundNum()     { return roundNum;     },  set roundNum(v)     { roundNum = v;     },
+  get roundCatches() { return roundCatches; },  set roundCatches(v) { roundCatches = v; },
+  get totalScore()   { return totalScore;   },  set totalScore(v)   { totalScore = v;   },
+  get target()       { return target;       },  set target(v)       { target = v;       },
+  get flyThrow()     { return flyThrow;     },  set flyThrow(v)     { flyThrow = v;     },
+  get collapsed()    { return collapsed;    },
+  get wobble()       { return wobble;       },
+  get OPTIMAL_MIN()  { return OPTIMAL_MIN;  },
+  get OPTIMAL_MAX()  { return OPTIMAL_MAX;  },
+  get MIN_RELEASE()  { return MIN_RELEASE;  },
+  get COLLAPSE_OMEGA() { return COLLAPSE_OMEGA; },
+  get TAP_IMPULSE()  { return TAP_IMPULSE;  },
+  get AIM_REACH()    { return AIM_REACH;    },
+  get THROW_SPEED()  { return THROW_SPEED;  },
+  get ROUNDS()       { return ROUNDS;       },
+  doTap, doThrow, startGame, spawnTarget, triggerCollapse,
+  ropeRadius, ropePos, throwLandX,
+  calcScore() { return totalScore; },
+  advanceAfterResult, landThrow,
+};
+</script>
+</body>
+</html>
