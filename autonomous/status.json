@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-13T08:45:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 50: Tin Pan Alley - melody-completion piano puzzle, musical phrase-memory mechanic, 47 tests pass",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 51: Pinkerton Trail",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 51: Pinkerton Trail - stealth pursuit tailing mechanic"
+  },
   "gamesBuilt": 50,
   "lastGameTitle": "Tin Pan Alley",
   "lastGameFile": "tin-pan-alley.html",
