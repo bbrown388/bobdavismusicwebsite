@@ -1,19 +1,12 @@
 {
-  "lastRunAt": "2026-05-14T08:30:00.000Z",
+  "lastRunAt": "2026-05-14T09:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 51: Pinkerton Trail - stealth pursuit tailing, suspicion meter, 47 tests pass.",
+  "lastRunSummary": "Built Game 52: Frontier Forge - blacksmith 3-phase crafting (heat/strike/quench), material state simulation, 63 tests pass.",
   "currentTask": null,
-  "gamesBuilt": 51,
-  "lastGameTitle": "Pinkerton Trail",
-  "lastGameFile": "pinkerton-trail.html",
+  "gamesBuilt": 52,
+  "lastGameTitle": "Frontier Forge",
+  "lastGameFile": "frontier-forge.html",
   "gameQueue": [
-    {
-      "num": 52,
-      "title": "Frontier Forge",
-      "concept": "Blacksmith crafting simulation. Heat a bar of iron to the right temperature, hammer it into shape with timed strikes (too hard = flatten wrong), then quench to lock the shape. Each weapon/tool requires a different strike pattern. First precision-crafting multi-phase mechanic in series.",
-      "raisesBarOn": "First multi-phase sequential material transformation (heat -> strike -> quench), first pattern-memory + precision-timing hybrid, first material state simulation (iron color changes with temperature)",
-      "status": "planned"
-    },
     {
       "num": 53,
       "title": "Dust Bowl Derby",
@@ -26,6 +19,13 @@
       "title": "Smoke Signal",
       "concept": "Timed pattern communication puzzle. Create smoke signals by controlling fire intensity and a blanket-wave mechanic. Match signal patterns sent by a distant tribe before the wind changes direction. First timing-based visual communication mechanic in series.",
       "raisesBarOn": "First dual-input pattern generation (fire intensity + blanket timing), first environmental interference mechanic (wind direction scrambles pattern), first cross-distance communication framing",
+      "status": "planned"
+    },
+    {
+      "num": 55,
+      "title": "Cattle Baron",
+      "concept": "Resource management and territory expansion. Buy land parcels at auction, graze cattle to build value, defend against drought and rustlers. Turn-based economic strategy with risk/reward tradeoffs across 10 rounds. First territory-expansion economic strategy in series.",
+      "raisesBarOn": "First turn-based territory strategy (buy/graze/defend), first multi-round economic arc with compounding returns, first risk-layered resource management (drought probability increases with overgrazing)",
       "status": "planned"
     }
   ],
@@ -101,6 +101,14 @@
       "result": "success",
       "summary": "Built Game 51: Pinkerton Trail - stealth pursuit tailing, suspicion meter, evidence collection, 47 tests pass.",
       "commitHash": "0591b31"
+    },
+    {
+      "runAt": "2026-05-14T09:00:00.000Z",
+      "action": "new_game",
+      "game": "Frontier Forge",
+      "result": "success",
+      "summary": "Built Game 52: Frontier Forge - blacksmith 3-phase crafting (heat/strike/quench), material state simulation, 63 tests pass.",
+      "commitHash": "3d0e90d"
     }
   ]
 }
