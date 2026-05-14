@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-14T08:00:02Z",
+  "lastRunAt": "2026-05-14T08:30:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 51: Pinkerton Trail",
-  "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
-  },
-  "gamesBuilt": 50,
-  "lastGameTitle": "Tin Pan Alley",
-  "lastGameFile": "tin-pan-alley.html",
+  "lastRunSummary": "Built Game 51: Pinkerton Trail - stealth pursuit tailing, suspicion meter, 47 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 51,
+  "lastGameTitle": "Pinkerton Trail",
+  "lastGameFile": "pinkerton-trail.html",
   "gameQueue": [
-    {
-      "num": 51,
-      "title": "Pinkerton Trail",
-      "concept": "Stealth pursuit game. You're a Pinkerton detective tailing a suspect through a frontier town. Follow without being spotted: hide behind barrels, time your movement to the suspect's glances, gather evidence before the suspect reaches safety. First tailing/pursuit stealth mechanic. Distinct from Jail Break (grid escape) and Moonshine Run (static hiding).",
-      "raisesBarOn": "First pursuit-based stealth (follower vs. evader, not escapee), first evidence-gathering integration with stealth action, first dynamic NPC awareness system based on player proximity and line-of-sight while moving",
-      "status": "planned"
-    },
     {
       "num": 52,
       "title": "Frontier Forge",
@@ -29,6 +19,13 @@
       "title": "Dust Bowl Derby",
       "concept": "Top-down demolition derby in a frontier arena. RAM rivals off the dirt track before they ram you. Manage engine heat and body damage simultaneously. Rival AI uses bumper-target and avoidance behaviors. First vehicular combat / arena-survival mechanic in series.",
       "raisesBarOn": "First vehicular combat mechanic (offensive ramming vs. defensive racing), first arena-survival format with simultaneous dual-resource drain, first physics-impulse collision response used offensively",
+      "status": "planned"
+    },
+    {
+      "num": 54,
+      "title": "Smoke Signal",
+      "concept": "Timed pattern communication puzzle. Create smoke signals by controlling fire intensity and a blanket-wave mechanic. Match signal patterns sent by a distant tribe before the wind changes direction. First timing-based visual communication mechanic in series.",
+      "raisesBarOn": "First dual-input pattern generation (fire intensity + blanket timing), first environmental interference mechanic (wind direction scrambles pattern), first cross-distance communication framing",
       "status": "planned"
     }
   ],
@@ -96,6 +93,14 @@
       "result": "success",
       "summary": "Built Game 50: Tin Pan Alley - melody-completion piano puzzle, musical phrase-memory mechanic, 47 tests pass.",
       "commitHash": "6743ff8"
+    },
+    {
+      "runAt": "2026-05-14T08:30:00.000Z",
+      "action": "new_game",
+      "game": "Pinkerton Trail",
+      "result": "success",
+      "summary": "Built Game 51: Pinkerton Trail - stealth pursuit tailing, suspicion meter, evidence collection, 47 tests pass.",
+      "commitHash": "0591b31"
     }
   ]
 }
