@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Pinkerton Trail</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+    #fb-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.88); z-index: 10; justify-content: center;
+      align-items: center; flex-direction: column;
+    }
+    #fb-overlay.active { display: flex; }
+    #fb-overlay select, #fb-overlay button, #fb-overlay textarea {
+      margin-top: 8px; width: 280px; background: #1a0520; color: #FFE066;
+      border: 1px solid #FFE066; font-size: 14px; border-radius: 4px;
+    }
+    #fb-overlay select, #fb-overlay button { padding: 8px; cursor: pointer; }
+    #fb-overlay textarea { padding: 8px; height: 80px; resize: none; }
+    #fb-overlay label { color: #FFE066; font-family: Georgia, serif; font-size: 13px; margin-top: 8px; }
+    #fb-close { background: #2a0f30 !important; margin-top: 16px; }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-X1W0TNHM51');
+  </script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <label>How was Pinkerton Trail?</label>
+  <select id="fb-rating">
+    <option value="5">5 stars - loved it</option>
+    <option value="4">4 stars - really good</option>
+    <option value="3">3 stars - it's alright</option>
+    <option value="2">2 stars - needs work</option>
+    <option value="1">1 star - not for me</option>
+  </select>
+  <label>Feedback (optional):</label>
+  <textarea id="fb-text" placeholder="What did you think?"></textarea>
+  <button id="fb-submit">Submit</button>
+  <button id="fb-close">Close</button>
+</div>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+const SLUG = 'pinkerton-trail';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 360, H = 640;
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---- Audio ----
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function beep(freq, dur, type, vol) {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol || 0.25, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime + dur);
+  } catch(_) {}
+}
+function playCollect() {
+  beep(880, 0.12, 'sine', 0.22);
+  setTimeout(() => beep(1174, 0.12, 'sine', 0.18), 90);
+  setTimeout(() => beep(1319, 0.20, 'sine', 0.15), 180);
+}
+function playGlanceWarning() {
+  beep(220, 0.45, 'triangle', 0.14);
+  setTimeout(() => beep(185, 0.35, 'triangle', 0.09), 280);
+}
+function playBusted() {
+  beep(220, 0.28, 'sawtooth', 0.32);
+  setTimeout(() => beep(165, 0.45, 'sawtooth', 0.28), 240);
+  setTimeout(() => beep(110, 0.70, 'sawtooth', 0.22), 480);
+}
+function playWin() {
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.22, 'sine', 0.18), i * 110));
+}
+function playFootstep(who) {
+  try {
+    const ac = getAC();
+    const buf = ac.createBuffer(1, ac.sampleRate * 0.08, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ac.createBufferSource();
+    const filt = ac.createBiquadFilter();
+    filt.type = 'bandpass'; filt.frequency.value = who === 'player' ? 130 : 150; filt.Q.value = 0.6;
+    const g = ac.createGain(); g.gain.value = who === 'player' ? 0.10 : 0.07;
+    src.buffer = buf; src.connect(filt); filt.connect(g); g.connect(ac.destination);
+    src.start();
+  } catch(_) {}
+}
+function playHeartbeat(intensity) {
+  const vol = 0.06 + intensity * 0.18;
+  beep(58, 0.14, 'sine', vol);
+  setTimeout(() => beep(52, 0.11, 'sine', vol * 0.65), 140);
+}
+
+// ---- Constants ----
+const GROUND_Y      = 418;
+const PLAYER_SX     = 88;   // screen x where player stays
+const COVER_RANGE   = 52;   // world px to activate hide
+const COLLECT_RANGE = 48;   // world px to collect evidence
+const DEST_X        = 2350; // world x of safe house
+const CONE_DIST     = 255;  // how far suspect's vision reaches back
+const CLOSE_DIST    = 55;   // too close to suspect, always gets seen
+
+// Round configs: [suspectSpeed px/frame, glanceIntervalMs, glanceDurMs, evidenceNeeded, totalEvidence, suspRatePerSec]
+const ROUNDS = [
+  { speed: 0.50, gi: 5000, gd: 1350, need: 2, total: 4, sr: 52 },
+  { speed: 0.65, gi: 4500, gd: 1500, need: 3, total: 5, sr: 63 },
+  { speed: 0.80, gi: 4000, gd: 1600, need: 3, total: 5, sr: 74 },
+  { speed: 0.95, gi: 3500, gd: 1700, need: 4, total: 6, sr: 85 },
+  { speed: 1.10, gi: 3000, gd: 1800, need: 4, total: 6, sr: 96 },
+];
+
+// ---- Game state ----
+let state = 'title';   // title | round_intro | playing | gameover
+let roundNum  = 0;
+let score     = 0;
+let best      = parseInt(localStorage.getItem(SLUG + '_best') || '0');
+let popups    = [];
+
+// World
+let cameraX        = 0;
+let playerWorldX   = 0;
+let playerMoving   = false;
+let playerHiding   = false;
+let hidingAtIdx    = -1;
+let covers         = [];   // { worldX, type, w, h }
+let evidenceItems  = [];   // { worldX, collected }
+
+// Suspect
+let suspectWorldX  = 0;
+let suspectPhase   = 'walking';  // walking | warning | glancing | resuming
+let glanceTimer    = 0;
+let warningTimer   = 0;
+let coneOpacity    = 0;
+
+// Meters
+let suspicion      = 0;
+let evidenceCount  = 0;
+
+// Round result
+let roundResult    = null;  // null | 'win' | 'bust' | 'fail'
+let resultTimer    = 0;
+let roundScore     = 0;
+
+// Timers / animation
+let playerStepT    = 0;
+let suspectStepT   = 0;
+let playerWalk     = 0;
+let suspectWalk    = 0;
+let heartbeatT     = 0;
+let roundIntroT    = 0;
+let lastTime       = 0;
+
+// ---- World builder ----
+function buildRound(r) {
+  const cfg = ROUNDS[r];
+  covers = [];
+  evidenceItems = [];
+
+  // 7 cover objects spaced across the trail
+  const types = ['barrel','wagon','crates','barrel','wagon','barrel','crates'];
+  let cx = 240;
+  for (let i = 0; i < 7; i++) {
+    const t = types[i];
+    const w = t === 'wagon' ? 88 : t === 'crates' ? 62 : 40;
+    const h = t === 'wagon' ? 56 : t === 'crates' ? 44 : 50;
+    covers.push({ worldX: cx, type: t, w, h });
+    cx += 270 + i * 18;
+  }
+
+  // Evidence spread across trail (not at start or destination)
+  for (let i = 0; i < cfg.total; i++) {
+    const ex = 320 + Math.round((i / cfg.total) * 1700) + 60;
+    evidenceItems.push({ worldX: ex, collected: false });
+  }
+
+  playerWorldX  = 0;
+  suspectWorldX = 275;
+  cameraX       = playerWorldX - PLAYER_SX;
+  suspicion     = 0;
+  evidenceCount = 0;
+  playerMoving  = false;
+  playerHiding  = false;
+  hidingAtIdx   = -1;
+  suspectPhase  = 'walking';
+  glanceTimer   = cfg.gi;
+  warningTimer  = 0;
+  coneOpacity   = 0;
+  playerWalk    = 0; suspectWalk    = 0;
+  playerStepT   = 0; suspectStepT   = 0;
+  heartbeatT    = 0;
+  roundResult   = null;
+  resultTimer   = 0;
+  roundScore    = 0;
+}
+
+// ---- Logic helpers ----
+function nearestCoverIdx() {
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < covers.length; i++) {
+    const d = Math.abs(playerWorldX - covers[i].worldX);
+    if (d < COVER_RANGE && d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function isVisible() {
+  if (playerHiding) return false;
+  const gap = suspectWorldX - playerWorldX;
+  if (gap < 0 || gap > CONE_DIST) return false;
+  return true;
+}
+
+function toggleHide() {
+  if (playerHiding) {
+    playerHiding = false;
+    hidingAtIdx  = -1;
+  } else {
+    const idx = nearestCoverIdx();
+    if (idx >= 0) {
+      playerHiding = true;
+      hidingAtIdx  = idx;
+      playerMoving = false;
+    }
+  }
+}
+
+function endRound(result) {
+  if (roundResult !== null) return;
+  roundResult  = result;
+  resultTimer  = 2600;
+  playerMoving = false;
+  if (result === 'win') {
+    playWin();
+    roundScore = evidenceCount * 100 + Math.floor(Math.max(0, 100 - suspicion) * 1.4);
+    score += roundScore;
+    addPopup('EVIDENCE SECURED', '#FFE066', W / 2, H / 2 - 70);
+  } else {
+    playBusted();
+    addPopup(result === 'bust' ? 'BUSTED!' : 'LOST THE TRAIL', '#E74C3C', W / 2, H / 2 - 70);
+  }
+}
+
+function addPopup(text, color, x, y) {
+  popups.push({ text, color, x, y, vy: -45, t: 1400 });
+}
+
+// ---- Game flow ----
+function startGame() {
+  roundNum     = 0;
+  score        = 0;
+  popups       = [];
+  state        = 'round_intro';
+  roundIntroT  = 1600;
+  buildRound(0);
+}
+
+function startRound(r) {
+  buildRound(r);
+  state = 'playing';
+}
+
+// ---- Update ----
+function update(dt) {
+  const cfg = ROUNDS[roundNum];
+
+  if (roundResult !== null) {
+    resultTimer -= dt;
+    if (resultTimer <= 0) {
+      if (roundResult === 'win') {
+        if (roundNum >= ROUNDS.length - 1) {
+          if (score > best) { best = score; localStorage.setItem(SLUG + '_best', best); }
+          state = 'gameover';
+        } else {
+          roundNum++;
+          state       = 'round_intro';
+          roundIntroT = 1600;
+          buildRound(roundNum);
+        }
+      } else {
+        if (score > best) { best = score; localStorage.setItem(SLUG + '_best', best); }
+        state = 'gameover';
+      }
+    }
+    return;
+  }
+
+  // ---- Suspect AI ----
+  if (suspectPhase === 'walking' || suspectPhase === 'resuming') {
+    suspectWorldX += cfg.speed * dt / 16.67;
+    suspectWalk   += dt * 0.006;
+    suspectStepT  -= dt;
+    if (suspectStepT <= 0) { playFootstep('suspect'); suspectStepT = 370 / cfg.speed; }
+
+    glanceTimer -= dt;
+    if (suspectPhase === 'resuming' && glanceTimer > 0) suspectPhase = 'walking';
+
+    if (glanceTimer <= 0) {
+      suspectPhase = 'warning';
+      warningTimer = 820;
+      playGlanceWarning();
+    }
+
+    if (suspectWorldX >= DEST_X) {
+      endRound(evidenceCount >= cfg.need ? 'win' : 'fail');
+      return;
+    }
+  } else if (suspectPhase === 'warning') {
+    suspectWorldX += cfg.speed * 0.25 * dt / 16.67;
+    suspectWalk   += dt * 0.002;
+    warningTimer  -= dt;
+    if (warningTimer <= 0) {
+      suspectPhase = 'glancing';
+      glanceTimer  = cfg.gd;
+      coneOpacity  = 1;
+    }
+  } else if (suspectPhase === 'glancing') {
+    glanceTimer -= dt;
+    if (isVisible()) {
+      suspicion = Math.min(100, suspicion + cfg.sr * dt / 1000);
+      // Too close: extra penalty
+      if (suspectWorldX - playerWorldX < CLOSE_DIST) {
+        suspicion = Math.min(100, suspicion + 40 * dt / 1000);
+      }
+      if (suspicion >= 100) { endRound('bust'); return; }
+    }
+    if (glanceTimer <= 0) {
+      suspectPhase = 'resuming';
+      glanceTimer  = cfg.gi + (Math.random() * 600 - 300);
+      coneOpacity  = 0;
+    }
+  }
+
+  // Suspicion drain
+  if (suspectPhase !== 'glancing' || playerHiding) {
+    suspicion = Math.max(0, suspicion - 7 * dt / 1000);
+  }
+
+  // Too close always raises suspicion (suspect hears footsteps)
+  if (!playerHiding && suspectWorldX - playerWorldX < CLOSE_DIST) {
+    suspicion = Math.min(100, suspicion + 20 * dt / 1000);
+    if (suspicion >= 100) { endRound('bust'); return; }
+  }
+
+  // ---- Player ----
+  if (playerMoving && !playerHiding) {
+    const pSpeed = cfg.speed * 1.38;
+    playerWorldX += pSpeed * dt / 16.67;
+    playerWalk   += dt * 0.009;
+    playerStepT  -= dt;
+    if (playerStepT <= 0) { playFootstep('player'); playerStepT = 290; }
+
+    // Can't pass suspect
+    playerWorldX = Math.min(playerWorldX, suspectWorldX - CLOSE_DIST);
+
+    // Evidence auto-collect
+    for (const ev of evidenceItems) {
+      if (!ev.collected && Math.abs(playerWorldX - ev.worldX) < COLLECT_RANGE) {
+        ev.collected = true;
+        evidenceCount++;
+        playCollect();
+        addPopup('+CLUE', '#FFE066', ev.worldX - cameraX, GROUND_Y - 70);
+        if (evidenceCount >= cfg.need) {
+          // Don't end round yet — wait for suspect to reach destination
+        }
+      }
+    }
+  }
+
+  // Lost the trail
+  if (suspectWorldX - playerWorldX > 420 && evidenceCount < cfg.need) {
+    endRound('fail');
+    return;
+  }
+
+  cameraX = playerWorldX - PLAYER_SX;
+
+  // Heartbeat
+  if (suspicion > 38) {
+    const t = (suspicion - 38) / 62;
+    const interval = 1150 - t * 720;
+    heartbeatT -= dt;
+    if (heartbeatT <= 0) { playHeartbeat(t); heartbeatT = interval; }
+  }
+
+  // Popups
+  for (const p of popups) { p.t -= dt; p.y += p.vy * dt / 1000; }
+  popups = popups.filter(p => p.t > 0);
+}
+
+// ---- Draw helpers ----
+function rrFill(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+function rrStroke(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.stroke();
+}
+
+// ---- Draw functions ----
+function drawSky() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, 245);
+  g.addColorStop(0, '#050208');
+  g.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 245);
+  ctx.fillStyle = 'rgba(255,255,220,0.75)';
+  [[28,18],[82,44],[128,14],[192,36],[248,19],[308,41],[338,26],[52,62],[182,9],[282,54],[95,88],[228,72]].forEach(([x,y]) => {
+    ctx.beginPath(); ctx.arc(x, y, 1.1, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawBuildings() {
+  ctx.save();
+  // Far layer (parallax 0.38x)
+  const farOff = cameraX * 0.38;
+  const far = [
+    [0,145,178],[200,108,142],[382,152,198],[628,118,158],[828,142,188],
+    [1062,128,168],[1284,148,208],[1542,122,162],[1744,138,178],[1972,112,144],[2162,152,194],
+  ];
+  for (const [wx,h,w] of far) {
+    const sx = wx - farOff;
+    if (sx < -w || sx > W) continue;
+    ctx.fillStyle = '#1a0520';
+    ctx.fillRect(sx, 245 - h, w, h);
+    ctx.fillStyle = 'rgba(255,230,100,0.12)';
+    for (let i = 0; i < Math.floor(w / 38); i++) ctx.fillRect(sx + 9 + i * 36, 255 - h + 14, 16, 20);
+  }
+  // Near silhouette (parallax 0.65x)
+  const nearOff = cameraX * 0.65;
+  const near = [
+    [0,78,195],[252,93,178],[482,73,162],[702,88,198],[952,83,172],
+    [1182,92,178],[1422,78,162],[1652,88,178],[1892,84,172],[2152,92,196],
+  ];
+  for (const [wx,h,w] of near) {
+    const sx = wx - nearOff;
+    if (sx < -w || sx > W) continue;
+    ctx.fillStyle = '#130410';
+    ctx.fillRect(sx, 245, w, h);
+    ctx.fillStyle = '#2a1500';
+    ctx.fillRect(sx, 248, w, 11);
+  }
+  ctx.restore();
+}
+
+function drawGround() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, GROUND_Y + 8, 0, H);
+  g.addColorStop(0, '#3a1f05');
+  g.addColorStop(1, '#2a1500');
+  ctx.fillStyle = g; ctx.fillRect(0, GROUND_Y + 8, W, H - GROUND_Y - 8);
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, GROUND_Y + 9); ctx.lineTo(W, GROUND_Y + 9); ctx.stroke();
+  // boardwalk planks hint
+  ctx.strokeStyle = 'rgba(90,48,16,0.35)'; ctx.lineWidth = 1;
+  for (let px = -((cameraX * 0.5) % 30); px < W; px += 30) {
+    ctx.beginPath(); ctx.moveTo(px, GROUND_Y + 9); ctx.lineTo(px, H); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawLanterns() {
+  ctx.save();
+  for (let lx = 160; lx < DEST_X + 100; lx += 340) {
+    const sx = lx - cameraX;
+    if (sx < -40 || sx > W + 40) continue;
+    const flicker = 0.28 + 0.10 * Math.sin(Date.now() * 0.003 + lx * 0.01);
+    const gr = ctx.createRadialGradient(sx, 312, 3, sx, 312, 62);
+    gr.addColorStop(0, `rgba(255,200,80,${flicker})`);
+    gr.addColorStop(1, 'rgba(255,200,80,0)');
+    ctx.fillStyle = gr; ctx.fillRect(sx - 62, 252, 124, 122);
+    ctx.strokeStyle = '#3a1f05'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(sx, 245); ctx.lineTo(sx, 306); ctx.stroke();
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(sx - 6, 306, 12, 12);
+  }
+  ctx.restore();
+}
+
+function drawDestination() {
+  ctx.save();
+  const sx = DEST_X - cameraX;
+  if (sx < -90 || sx > W + 90) { ctx.restore(); return; }
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(sx - 65, 275, 130, 150);
+  ctx.fillStyle = '#3a1f05';
+  ctx.fillRect(sx - 24, 352, 48, 73);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SAFE HOUSE', sx, 292);
+  ctx.restore();
+}
+
+function drawCovers() {
+  ctx.save();
+  const nearIdx = nearestCoverIdx();
+  for (let i = 0; i < covers.length; i++) {
+    const c = covers[i];
+    const sx = c.worldX - cameraX;
+    if (sx < -c.w - 8 || sx > W + 8) continue;
+    const highlight = (nearIdx === i && !playerHiding) || (playerHiding && hidingAtIdx === i);
+
+    if (c.type === 'barrel') {
+      ctx.fillStyle = '#3a1f05';
+      ctx.beginPath(); ctx.ellipse(sx, GROUND_Y + 7, c.w/2, 9, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#5a3010';
+      ctx.fillRect(sx - c.w/2, GROUND_Y - c.h + 7, c.w, c.h);
+      ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 2;
+      [0.1, 0.45, 0.8].forEach(t => {
+        const ry = GROUND_Y - c.h + 7 + t * c.h;
+        ctx.beginPath(); ctx.moveTo(sx - c.w/2, ry); ctx.lineTo(sx + c.w/2, ry); ctx.stroke();
+      });
+    } else if (c.type === 'wagon') {
+      ctx.fillStyle = '#3a1500';
+      ctx.fillRect(sx - c.w/2, GROUND_Y - c.h + 4, c.w, c.h - 14);
+      [-c.w/2+13, c.w/2-13].forEach(ox => {
+        ctx.strokeStyle = '#5a3010'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(sx + ox, GROUND_Y + 2, 13, 0, Math.PI*2); ctx.stroke();
+        ctx.lineWidth = 1.5;
+        for (let a = 0; a < 4; a++) {
+          ctx.beginPath(); ctx.moveTo(sx + ox, GROUND_Y + 2);
+          ctx.lineTo(sx + ox + Math.cos(a * Math.PI/2)*11, GROUND_Y + 2 + Math.sin(a * Math.PI/2)*11); ctx.stroke();
+        }
+      });
+    } else {
+      ctx.fillStyle = '#4a2800';
+      ctx.fillRect(sx - c.w/2, GROUND_Y - c.h + 4, c.w, c.h);
+      ctx.fillRect(sx - c.w/2 + 3, GROUND_Y - c.h/2 + 2, c.w - 6, c.h/2 - 4);
+      ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(sx - c.w/2, GROUND_Y - c.h + 4, c.w, c.h);
+    }
+
+    if (highlight) {
+      ctx.strokeStyle = 'rgba(255,230,100,0.65)'; ctx.lineWidth = 2;
+      ctx.setLineDash([4,3]);
+      ctx.strokeRect(sx - c.w/2 - 5, GROUND_Y - c.h, c.w + 10, c.h + 8);
+      ctx.setLineDash([]);
+      if (!playerHiding) {
+        ctx.fillStyle = 'rgba(255,230,100,0.88)';
+        ctx.font = 'bold 10px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('HIDE', sx, GROUND_Y - c.h - 5);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawEvidence() {
+  ctx.save();
+  const t = Date.now() * 0.003;
+  for (const ev of evidenceItems) {
+    if (ev.collected) continue;
+    const sx = ev.worldX - cameraX;
+    if (sx < -22 || sx > W + 22) continue;
+    const bob = Math.sin(t + ev.worldX * 0.01) * 3;
+    const gr = ctx.createRadialGradient(sx, GROUND_Y - 14, 2, sx, GROUND_Y - 14, 19);
+    gr.addColorStop(0, 'rgba(255,230,80,0.52)');
+    gr.addColorStop(1, 'rgba(255,230,80,0)');
+    ctx.fillStyle = gr; ctx.fillRect(sx - 20, GROUND_Y - 33, 40, 38);
+    // Envelope
+    ctx.fillStyle = '#FFE066';
+    ctx.fillRect(sx - 9, GROUND_Y - 25 + bob, 18, 12);
+    ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1;
+    ctx.strokeRect(sx - 9, GROUND_Y - 25 + bob, 18, 12);
+    ctx.beginPath();
+    ctx.moveTo(sx - 9, GROUND_Y - 25 + bob);
+    ctx.lineTo(sx,     GROUND_Y - 19 + bob);
+    ctx.lineTo(sx + 9, GROUND_Y - 25 + bob);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSuspect() {
+  ctx.save();
+  const sx = suspectWorldX - cameraX;
+  if (sx < -50 || sx > W + 50) { ctx.restore(); return; }
+  const glancing = suspectPhase === 'glancing' || suspectPhase === 'warning';
+  const bob = glancing ? 0 : Math.sin(suspectWalk) * 2;
+  const legSw = glancing ? 0 : Math.sin(suspectWalk) * 8;
+  const facing = glancing ? -1 : 1;
+
+  // Vision cone
+  if (glancing && coneOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = coneOpacity * 0.26;
+    const gr = ctx.createLinearGradient(sx, 0, sx - CONE_DIST, 0);
+    gr.addColorStop(0, '#FF4500');
+    gr.addColorStop(1, 'rgba(255,69,0,0)');
+    ctx.fillStyle = gr;
+    const spread = CONE_DIST * Math.tan(Math.PI / 5.5);
+    ctx.beginPath();
+    ctx.moveTo(sx, GROUND_Y - 65);
+    ctx.lineTo(sx - CONE_DIST, GROUND_Y - 65 - spread);
+    ctx.lineTo(sx - CONE_DIST, GROUND_Y - 65 + spread);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.translate(sx, GROUND_Y - 8 + bob);
+  ctx.scale(facing, 1);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.ellipse(0, 0, 15, 5, 0, 0, Math.PI*2); ctx.fill();
+
+  // Legs
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(-5 + legSw, -30, 9, 30);
+  ctx.fillRect(-3 - legSw, -30, 9, 30);
+  // Body
+  ctx.fillStyle = '#2a0f30';
+  ctx.fillRect(-10, -70, 20, 42);
+  // Head
+  ctx.beginPath(); ctx.arc(0, -80, 10, 0, Math.PI*2); ctx.fill();
+  // Hat
+  ctx.fillRect(-13, -94, 26, 8);
+  ctx.fillRect(-7, -108, 14, 16);
+  // Eye when glancing
+  if (glancing) {
+    ctx.fillStyle = '#FF5500';
+    ctx.beginPath(); ctx.arc(5, -81, 3.5, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+
+  // Warning pulse above suspect
+  if (suspectPhase === 'warning') {
+    const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.016);
+    ctx.save();
+    ctx.fillStyle = `rgba(255,140,0,${pulse})`;
+    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    // Draw an eye shape with canvas (no emoji)
+    ctx.fillRect(sx - 9, GROUND_Y - 126, 18, 2);
+    ctx.beginPath(); ctx.arc(sx, GROUND_Y - 121, 7, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1a0520';
+    ctx.beginPath(); ctx.arc(sx, GROUND_Y - 121, 3, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawPlayer() {
+  ctx.save();
+  const sx = PLAYER_SX;
+  const bob = playerMoving ? Math.sin(playerWalk) * 2 : 0;
+  const legSw = playerMoving ? Math.sin(playerWalk) * 7 : 0;
+
+  ctx.globalAlpha = playerHiding ? 0.32 : 1.0;
+  ctx.translate(sx, GROUND_Y - 8 + bob);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.ellipse(0, 0, 13, 4, 0, 0, Math.PI*2); ctx.fill();
+
+  // Legs
+  ctx.fillStyle = '#0d0218';
+  ctx.fillRect(-5 + legSw, -28, 8, 28);
+  ctx.fillRect(-2 - legSw, -28, 8, 28);
+  // Long coat
+  ctx.fillStyle = '#1a0520';
+  ctx.fillRect(-12, -74, 24, 46);
+  // Coat tails
+  ctx.fillStyle = '#0d0218';
+  ctx.beginPath(); ctx.moveTo(-12,-28); ctx.lineTo(-16,-6); ctx.lineTo(-6,-6); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo( 12,-28); ctx.lineTo( 16,-6); ctx.lineTo( 6,-6); ctx.closePath(); ctx.fill();
+  // Head
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.arc(0, -84, 9, 0, Math.PI*2); ctx.fill();
+  // Wide-brim detective hat
+  ctx.fillRect(-15, -96, 30, 7);
+  ctx.fillRect(-7, -110, 14, 16);
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  const cfg = ROUNDS[roundNum];
+
+  // Score - center top
+  ctx.fillStyle = 'rgba(8,4,18,0.78)';
+  rrFill(W/2 - 55, 8, 110, 28, 14);
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 16px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText(score, W/2, 28);
+
+  // Clues - left
+  ctx.fillStyle = 'rgba(8,4,18,0.78)';
+  rrFill(8, 8, 92, 28, 14);
+  ctx.fillStyle = evidenceCount >= cfg.need ? '#FF9F43' : '#FFE066';
+  ctx.font = 'bold 12px Arial, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('CLUES ' + evidenceCount + '/' + cfg.need, 54, 27);
+
+  // Round - right
+  ctx.fillStyle = 'rgba(8,4,18,0.78)';
+  rrFill(W - 78, 8, 70, 28, 14);
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 13px Arial, sans-serif';
+  ctx.fillText((roundNum + 1) + '/5', W - 43, 27);
+
+  // Suspicion bar
+  const mX = 10, mY = 46, mW = W - 20, mH = 7;
+  ctx.fillStyle = 'rgba(8,4,18,0.72)';
+  rrFill(mX - 2, mY - 2, mW + 4, mH + 4, 5);
+  if (suspicion > 0) {
+    ctx.fillStyle = suspicion > 70 ? '#E74C3C' : suspicion > 40 ? '#FF9F43' : '#5cb85c';
+    rrFill(mX, mY, (suspicion / 100) * mW, mH, 3);
+  }
+  ctx.fillStyle = 'rgba(255,230,100,0.6)'; ctx.font = '9px Arial,sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('SUSPICION', mX, mY - 2);
+
+  // Alert text
+  if (suspectPhase === 'warning' || suspectPhase === 'glancing') {
+    ctx.fillStyle = suspectPhase === 'glancing' ? '#E74C3C' : '#FF9F43';
+    ctx.font = 'bold 12px Arial, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(suspectPhase === 'glancing' ? 'LOOKING BACK!' : 'LOOK OUT!', W / 2, 80);
+  }
+
+  // HIDE button (when near cover or currently hiding)
+  const nearIdx = nearestCoverIdx();
+  if (nearIdx >= 0 || playerHiding) {
+    ctx.fillStyle = playerHiding ? 'rgba(200,50,10,0.88)' : 'rgba(22,8,42,0.88)';
+    rrFill(260, 538, 90, 40, 12);
+    ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.5;
+    rrStroke(260, 538, 90, 40, 12);
+    ctx.fillStyle = '#FFE066'; ctx.font = 'bold 14px Georgia, serif'; ctx.textAlign = 'center';
+    ctx.fillText(playerHiding ? 'UNHIDE' : 'HIDE', 305, 563);
+  }
+
+  // Move hint
+  ctx.fillStyle = playerMoving ? 'rgba(200,80,0,0.75)' : 'rgba(8,4,18,0.62)';
+  rrFill(10, H - 52, 102, 38, 12);
+  ctx.fillStyle = playerMoving ? '#FF9F43' : 'rgba(255,230,100,0.72)';
+  ctx.font = 'bold 12px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText(playerMoving ? 'MOVING' : 'HOLD:MOVE', 61, H - 28);
+
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.t / 380);
+    ctx.fillStyle = p.color; ctx.font = 'bold 18px Georgia, serif'; ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.restore();
+}
+
+// ---- Screen draws ----
+function drawTitle() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#050208'); g.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,255,220,0.68)';
+  [[28,18],[82,44],[128,14],[192,36],[248,19],[308,41],[338,26],[52,62],[182,9],[282,54],[100,92],[225,74],[335,84]].forEach(([x,y]) => {
+    ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 40px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('PINKERTON', W/2, 195);
+  ctx.fillText('TRAIL', W/2, 244);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '15px Georgia, serif';
+  ctx.fillText('Follow the suspect.', W/2, 288);
+  ctx.fillText('Collect evidence. Stay hidden.', W/2, 310);
+  if (best > 0) {
+    ctx.fillStyle = 'rgba(255,230,100,0.58)'; ctx.font = '13px Arial, sans-serif';
+    ctx.fillText('BEST: ' + best, W/2, 348);
+  }
+  ctx.fillStyle = '#FFE066'; rrFill(W/2 - 70, 385, 140, 50, 18);
+  ctx.fillStyle = '#1a0520'; ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('PLAY', W/2, 418);
+  ctx.fillStyle = 'rgba(200,160,74,0.68)'; ctx.font = '12px Georgia, serif';
+  ctx.fillText('Hold screen to follow suspect', W/2, 473);
+  ctx.fillText('Tap HIDE near cover when they look', W/2, 492);
+  ctx.fillText('Press H to hide   Space to move', W/2, 511);
+  ctx.restore();
+}
+
+function drawRoundIntro() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#050208'); g.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 28px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('ROUND ' + (roundNum + 1), W/2, H/2 - 24);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '15px Georgia, serif';
+  ctx.fillText('Collect ' + ROUNDS[roundNum].need + ' pieces of evidence', W/2, H/2 + 18);
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.93)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 30px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('CASE CLOSED', W/2, 195);
+  ctx.font = 'bold 50px Georgia, serif';
+  ctx.fillText(score, W/2, 275);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '16px Arial, sans-serif';
+  ctx.fillText('Best: ' + best, W/2, 313);
+  const isRec = score > 0 && score >= best;
+  if (isRec) {
+    const p = 0.6 + 0.4 * Math.sin(Date.now() * 0.006);
+    ctx.fillStyle = `rgba(255,159,67,${p})`; ctx.font = 'bold 20px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W/2, 355);
+  }
+  ctx.fillStyle = '#FFE066'; rrFill(W/2 - 82, 395, 164, 50, 18);
+  ctx.fillStyle = '#1a0520'; ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W/2, 427);
+  ctx.fillStyle = 'rgba(255,230,100,0.12)'; rrFill(W/2 - 82, 460, 164, 40, 14);
+  ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1; rrStroke(W/2 - 82, 460, 164, 40, 14);
+  ctx.fillStyle = '#FFE066'; ctx.font = '15px Georgia, serif';
+  ctx.fillText('SHARE', W/2, 485);
+  ctx.restore();
+}
+
+// ---- Main loop ----
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (state === 'title')       { drawTitle();     return; }
+  if (state === 'round_intro') { drawRoundIntro(); return; }
+  if (state === 'gameover')    { drawGameOver();   return; }
+
+  drawSky();
+  drawBuildings();
+  drawGround();
+  drawLanterns();
+  drawDestination();
+  drawCovers();
+  drawEvidence();
+  drawSuspect();
+  drawPlayer();
+  drawHUD();
+  drawPopups();
+
+  if (roundResult !== null) {
+    ctx.fillStyle = 'rgba(0,0,0,0.68)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = roundResult === 'win' ? '#FFE066' : '#E74C3C';
+    ctx.font = 'bold 28px Georgia, serif'; ctx.textAlign = 'center';
+    const msg = roundResult === 'win' ? 'EVIDENCE SECURED' : roundResult === 'bust' ? 'BUSTED!' : 'LOST THE TRAIL';
+    ctx.fillText(msg, W/2, H/2 - 16);
+    if (roundResult === 'win') {
+      ctx.fillStyle = '#C8A04A'; ctx.font = '17px Arial, sans-serif';
+      ctx.fillText('+' + roundScore + ' pts', W/2, H/2 + 20);
+    }
+  }
+}
+
+function loop(ts) {
+  try {
+    const dt = Math.min(ts - lastTime, 50);
+    lastTime = ts;
+    if (state === 'round_intro') {
+      roundIntroT -= dt;
+      if (roundIntroT <= 0) startRound(roundNum);
+    }
+    if (state === 'playing') update(dt);
+    draw();
+  } catch(e) {
+    console.error('[loop]', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---- Input ----
+function ptFromEvent(e) {
+  const r = canvas.getBoundingClientRect();
+  const sx = W / r.width, sy = H / r.height;
+  const src = e.touches ? e.touches[0] : e;
+  return { x: (src.clientX - r.left) * sx, y: (src.clientY - r.top) * sy };
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const { x, y } = ptFromEvent(e);
+  if (state === 'title') { startGame(); return; }
+  if (state === 'gameover') {
+    if (y >= 395 && y <= 445) { startGame(); return; }
+    if (y >= 460 && y <= 500 && navigator.share)
+      navigator.share({ title: 'Pinkerton Trail', text: 'I scored ' + score + ' on Pinkerton Trail!' });
+    return;
+  }
+  if (state !== 'playing') return;
+  // HIDE button: x=260..350, y=538..578
+  if (x >= 260 && x <= 350 && y >= 538 && y <= 578 && (nearestCoverIdx() >= 0 || playerHiding)) {
+    toggleHide(); return;
+  }
+  // Move: lower half, not over hide button
+  if (y > H * 0.45) {
+    if (playerHiding) { playerHiding = false; hidingAtIdx = -1; }
+    playerMoving = true;
+  }
+});
+
+canvas.addEventListener('pointerup',     e => { e.preventDefault(); playerMoving = false; });
+canvas.addEventListener('pointercancel', e => { e.preventDefault(); playerMoving = false; });
+
+window.addEventListener('keydown', e => {
+  if ((e.code === 'Space' || e.key === ' ') && !e.repeat) {
+    e.preventDefault();
+    if (state === 'title' || state === 'gameover') { startGame(); return; }
+    if (state === 'playing') {
+      if (playerHiding) { playerHiding = false; hidingAtIdx = -1; }
+      playerMoving = true;
+    }
+  }
+  if ((e.key === 'h' || e.key === 'H') && state === 'playing') toggleHide();
+});
+
+window.addEventListener('keyup', e => {
+  if (e.code === 'Space' || e.key === ' ') playerMoving = false;
+});
+
+// Feedback
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const rating = document.getElementById('fb-rating').value;
+  const message = document.getElementById('fb-text').value;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, mode: 'no-cors',
+    body: JSON.stringify({ game: 'Pinkerton Trail', rating, message, score })
+  });
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+document.getElementById('fb-close').addEventListener('click', () =>
+  document.getElementById('fb-overlay').classList.remove('active')
+);
+
+// Test API
+window.__pt = {
+  get state()          { return state; },          set state(v)          { state = v; },
+  get roundNum()       { return roundNum; },        set roundNum(v)       { roundNum = v; },
+  get score()          { return score; },           set score(v)          { score = v; },
+  get suspicion()      { return suspicion; },       set suspicion(v)      { suspicion = v; },
+  get evidenceCount()  { return evidenceCount; },   set evidenceCount(v)  { evidenceCount = v; },
+  get playerWorldX()   { return playerWorldX; },    set playerWorldX(v)   { playerWorldX = v; },
+  get suspectWorldX()  { return suspectWorldX; },   set suspectWorldX(v)  { suspectWorldX = v; },
+  get suspectPhase()   { return suspectPhase; },    set suspectPhase(v)   { suspectPhase = v; },
+  get playerHiding()   { return playerHiding; },    set playerHiding(v)   { playerHiding = v; },
+  get playerMoving()   { return playerMoving; },    set playerMoving(v)   { playerMoving = v; },
+  get cameraX()        { return cameraX; },
+  get covers()         { return covers; },
+  get evidenceItems()  { return evidenceItems; },
+  get roundResult()    { return roundResult; },
+  get glanceTimer()    { return glanceTimer; },     set glanceTimer(v)    { glanceTimer = v; },
+  get roundIntroT()    { return roundIntroT; },     set roundIntroT(v)    { roundIntroT = v; },
+  get coneOpacity()    { return coneOpacity; },
+  startGame, startRound, buildRound, update, isVisible, nearestCoverIdx, toggleHide, endRound,
+};
+
+lastTime = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
