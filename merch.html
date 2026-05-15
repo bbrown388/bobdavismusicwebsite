@@ -78,11 +78,12 @@ body {
 /* ── Product image ────────────────── */
 .product-img-wrap {
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 4/3;
   position: relative;
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(255,215,0,0.04);
+  background: rgba(255,255,255,0.07);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
 }
 .product-img {
   width: 100%;
@@ -103,9 +104,9 @@ body {
   width: 100%;
 }
 .product-price {
-  font-size: 14px;
-  color: #907860;
-  font-style: italic;
+  font-size: 16px;
+  color: #b09878;
+  font-weight: 600;
 }
 
 /* ── Variant buttons ──────────────── */
@@ -152,13 +153,13 @@ body {
 /* ── Add to cart button ───────────── */
 .add-btn {
   width: 100%;
-  padding: 11px 16px;
-  background: rgba(255,215,0,0.1);
-  border: 1px solid rgba(255,215,0,0.35);
+  padding: 13px 16px;
+  background: rgba(255,215,0,0.24);
+  border: 1px solid rgba(255,215,0,0.6);
   border-radius: 8px;
   color: #FFD700;
   font-family: Georgia, serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: bold;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -167,7 +168,7 @@ body {
   margin-top: auto;
 }
 .add-btn:hover:not(:disabled) {
-  background: rgba(255,215,0,0.18);
+  background: rgba(255,215,0,0.34);
   filter: brightness(1.1);
 }
 .add-btn:disabled { opacity: 0.45; cursor: default; }
@@ -360,7 +361,7 @@ body {
 footer {
   margin-top: 40px;
   text-align: center;
-  color: #2a1a14;
+  color: #776650;
   font-size: 12px;
   letter-spacing: 1px;
 }
@@ -443,6 +444,65 @@ footer {
   text-decoration: line-through;
 }
 
+/* ── Trust line ───────────────────── */
+.trust-line {
+  font-size: 12px;
+  color: #776650;
+  letter-spacing: 0.5px;
+  text-align: center;
+  margin-top: -16px;
+  margin-bottom: 20px;
+  font-style: italic;
+}
+
+/* ── Product description ──────────── */
+.product-desc {
+  font-size: 12px;
+  color: #9a7a64;
+  line-height: 1.6;
+  text-align: center;
+  width: 100%;
+  margin: 0;
+}
+
+/* ── Option selected label ────────── */
+.opt-current {
+  color: #FFD700;
+  font-style: normal;
+}
+
+/* ── Hidden color overflow ────────── */
+.color-hidden { display: none; }
+
+/* ── Thumbnail overflow count ─────── */
+.thumb-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #9a7a64;
+  font-size: 11px;
+  font-style: italic;
+  cursor: default;
+  user-select: none;
+}
+
+/* ── Focus indicators ─────────────── */
+.size-btn:focus-visible,
+.img-thumb:focus-visible,
+.add-btn:focus-visible,
+.variant-btn:focus-visible,
+.cart-toggle:focus-visible,
+.checkout-btn:focus-visible {
+  outline: 2px solid rgba(255,215,0,0.85);
+  outline-offset: 2px;
+}
+
 @media (max-width: 400px) {
   .cart-drawer { width: 100%; right: -100%; }
   .product-grid { grid-template-columns: 1fr; }
@@ -478,7 +538,7 @@ footer {
   }
 
   .product-img-wrap {
-    background: rgba(139,105,20,0.06);
+    background: rgba(139,105,20,0.08);
   }
 
   .product-name {
@@ -486,7 +546,8 @@ footer {
   }
 
   .product-price {
-    color: #7a5030;
+    color: #6a3e18;
+    font-weight: 600;
   }
 
   .variant-btn {
@@ -508,13 +569,13 @@ footer {
   }
 
   .add-btn {
-    background: rgba(139,105,20,0.12);
-    border-color: rgba(139,105,20,0.45);
-    color: #6a4000;
+    background: rgba(139,105,20,0.2);
+    border-color: rgba(139,105,20,0.65);
+    color: #5a3400;
   }
 
   .add-btn:hover:not(:disabled) {
-    background: rgba(139,105,20,0.22);
+    background: rgba(139,105,20,0.32);
   }
 
   .img-thumb {
@@ -640,6 +701,27 @@ footer {
   footer {
     color: #c8b890;
   }
+
+  .trust-line { color: #9a6838; }
+
+  .product-desc { color: #7a5030; }
+
+  .opt-current { color: #5a3400; }
+
+  .thumb-count {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.12);
+    color: #9a6838;
+  }
+
+  .size-btn:focus-visible,
+  .img-thumb:focus-visible,
+  .add-btn:focus-visible,
+  .variant-btn:focus-visible,
+  .cart-toggle:focus-visible,
+  .checkout-btn:focus-visible {
+    outline-color: rgba(139,105,20,0.9);
+  }
 }
 </style>
 <!-- Google tag (gtag.js) -->
@@ -657,6 +739,7 @@ footer {
 </nav>
 
 <p class="section-label">Merch</p>
+<p class="trust-line">Designed &amp; sold by Bob Davis &middot; Ships 3&ndash;5 business days</p>
 
 <div class="product-grid" id="product-grid">
   <p class="status-msg">Loading...</p>
@@ -719,7 +802,7 @@ async function loadProducts() {
       products(first: 20, sortKey: CREATED_AT, reverse: true) {
         edges {
           node {
-            id title
+            id title description
             priceRange { minVariantPrice { amount currencyCode } }
             options { name values }
             images(first: 20) { edges { node { url altText } } }
@@ -790,20 +873,26 @@ function buildCard(p) {
   _cards[sid] = { variants, options, selected: initSelected };
 
   const mainImgHtml = mainImg
-    ? `<img class="product-img" id="img-${sid}" src="${mainImg.url}" alt="${mainImg.altText || p.title}" loading="lazy">`
+    ? `<img class="product-img" id="img-${sid}" src="${mainImg.url}" alt="${mainImg.altText || p.title}">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
+  // Thumbnail strip — cap at 6, show overflow count
+  const MAX_THUMBS = 6;
+  const visibleImgs = allImages.slice(0, MAX_THUMBS);
+  const extraImgs = allImages.length - MAX_THUMBS;
   const thumbsHtml = allImages.length > 1
     ? `<div class="img-thumbs" id="ithumbs-${sid}">
-        ${allImages.map((img, i) => `<button class="img-thumb${i === 0 ? ' active' : ''}"
+        ${visibleImgs.map((img, i) => `<button class="img-thumb${i === 0 ? ' active' : ''}"
           data-img-url="${img.url}" data-img-alt="${img.altText || ''}"
           onclick="selectThumb(this,'${sid}')">
           <img src="${img.url}" alt="${img.altText || ''}" loading="lazy">
         </button>`).join('')}
+        ${extraImgs > 0 ? `<div class="thumb-count">+${extraImgs}</div>` : ''}
       </div>`
     : '';
 
-  // Color pill buttons
+  // Color pill buttons — show first 5, collapse rest
+  const MAX_COLORS = 5;
   let colorHtml = '';
   if (colorOpt && !isDefault) {
     const seen = new Map();
@@ -813,13 +902,22 @@ function buildCard(p) {
     });
     if (seen.size > 1) {
       const initColor = initSelected[colorOpt.name];
-      colorHtml = `<div class="option-label">Color</div>
+      const colorEntries = [...seen.entries()];
+      const visibleColors = colorEntries.slice(0, MAX_COLORS);
+      const hiddenColors  = colorEntries.slice(MAX_COLORS);
+      const renderBtn = ([val, v], hidden) => `<button
+        class="size-btn${val === initColor ? ' active' : ''}${hidden ? ' color-hidden' : ''}"
+        data-opt="${colorOpt.name}" data-val="${val}"
+        data-img-url="${v.image?.url || ''}" data-img-alt="${v.image?.altText || ''}"
+        onclick="selectOpt(this,'${sid}')">${val}</button>`;
+      const moreBtn = hiddenColors.length > 0
+        ? `<button class="size-btn more-btn" onclick="showMoreColors('${sid}')">+${hiddenColors.length} more</button>`
+        : '';
+      colorHtml = `<div class="option-label">Color: <span class="opt-current" id="clabel-${sid}">${initColor || ''}</span></div>
         <div class="size-picker" id="cthumbs-${sid}">
-          ${[...seen.entries()].map(([val, v]) => `<button
-            class="size-btn${val === initColor ? ' active' : ''}"
-            data-opt="${colorOpt.name}" data-val="${val}"
-            data-img-url="${v.image?.url || ''}" data-img-alt="${v.image?.altText || ''}"
-            onclick="selectOpt(this,'${sid}')">${val}</button>`).join('')}
+          ${visibleColors.map(e => renderBtn(e, false)).join('')}
+          ${hiddenColors.map(e => renderBtn(e, true)).join('')}
+          ${moreBtn}
         </div>`;
     }
   }
@@ -829,7 +927,7 @@ function buildCard(p) {
   if (sizeOpt && !isDefault) {
     const initColor = initSelected[colorOpt?.name];
     const initSize  = initSelected[sizeOpt.name];
-    sizeHtml = `<div class="option-label">Size</div>
+    sizeHtml = `<div class="option-label">Size: <span class="opt-current" id="slabel-${sid}">${initSize || ''}</span></div>
       <div class="size-picker" id="spicker-${sid}">
         ${sizeOpt.values.map(sv => {
           const ok = variants.some(v => {
@@ -855,12 +953,17 @@ function buildCard(p) {
     </div>`;
   }
 
+  const descHtml = p.description
+    ? `<p class="product-desc">${p.description.length > 110 ? p.description.slice(0, 110) + '…' : p.description}</p>`
+    : '';
+
   return `
     <div class="product-card">
       <div class="product-img-wrap">${mainImgHtml}</div>
       ${thumbsHtml}
       <div class="product-name">${p.title}</div>
       <div class="product-price">${price}</div>
+      ${descHtml}
       ${colorHtml}${sizeHtml}${legacyHtml}
       <button class="add-btn" id="add-${sid}"
         data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
@@ -886,12 +989,21 @@ function selectOpt(btn, sid) {
     .forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 
+  // Update inline option label
   const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
   const sizeOpt  = card.options.find(o => /^size$/i.test(o.name));
+  if (colorOpt && optName === colorOpt.name) {
+    const lbl = document.getElementById(`clabel-${sid}`);
+    if (lbl) lbl.textContent = optVal;
+  }
+  if (sizeOpt && optName === sizeOpt.name) {
+    const lbl = document.getElementById(`slabel-${sid}`);
+    if (lbl) lbl.textContent = optVal;
+  }
 
   // Color changed — swap image and refresh size availability
   if (colorOpt && optName === colorOpt.name) {
-    if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
+    if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt || '');
     if (sizeOpt) {
       const selectedColor = card.selected[colorOpt.name];
       const selectedSize  = card.selected[sizeOpt.name];
@@ -941,6 +1053,13 @@ function selectThumb(btn, sid) {
     .forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt, true);
+}
+
+function showMoreColors(sid) {
+  const container = document.getElementById(`cthumbs-${sid}`);
+  if (!container) return;
+  container.querySelectorAll('.color-hidden').forEach(b => b.classList.remove('color-hidden'));
+  container.querySelector('.more-btn')?.remove();
 }
 
 function swapMainImage(sid, url, alt, skipThumbSync) {
