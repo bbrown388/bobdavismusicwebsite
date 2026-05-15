@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dust Bowl Derby</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+
+// Arena geometry
+const ARENA_CX = 180, ARENA_CY = 285;
+const ARENA_RX = 150, ARENA_RY = 210;
+
+// Car constants
+const BASE_SPEED  = 88;   // px/s
+const BOOST_SPEED = 165;  // px/s while boosting
+const STEER_RATE  = 2.8;  // rad/s
+const CAR_R       = 12;   // collision radius (pixels)
+const CAR_W = 24, CAR_H = 14;
+
+// Resources
+const HEAT_RISE      = 48;    // /s while boosting
+const HEAT_FALL      = 20;    // /s while not boosting
+const STALL_HEAT     = 100;   // heat that triggers stall
+const STALL_DURATION = 1600;  // ms stall duration
+const MAX_DAMAGE     = 100;
+
+// Rival AI
+const RIVAL_SPEED       = 74;
+const RIVAL_BOOST_SPEED = 138;
+const RIVAL_STEER       = 2.3;
+const RIVAL_BOOST_PROB  = 0.003;  // per frame
+const RIVAL_BOOST_DUR   = 1200;   // ms
+
+// Round config: rivals per round (0-indexed)
+const ROUND_RIVALS = [1, 2, 3];
+const NUM_ROUNDS   = 3;
+
+// Rival car colors (dark earth tones)
+const RIVAL_COLORS  = ['#5a1e0a', '#1e3a0a', '#0a1e3a'];
+const RIVAL_ACCENTS = ['#c84a1e', '#4ac81e', '#1e4ac8'];
+
+// Button layout
+const BTN_Y  = H - 54;
+const BTN_H  = 42;
+const LBTN   = { x: 10,       w: 90 };
+const BBTN   = { x: W/2 - 42, w: 84 };
+const RBTN   = { x: W - 100,  w: 90 };
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  wrap.style.width    = (W * s) + 'px';
+  wrap.style.height   = (H * s) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ── Audio ──────────────────────────────────────────────────────────────────
+let audioCtx = null, engineOsc = null, engineGain = null;
+
+function ensureAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function startEngineAudio() {
+  if (!audioCtx) return;
+  if (engineOsc) { try { engineOsc.stop(); } catch(e) {} }
+  engineGain = audioCtx.createGain();
+  engineGain.gain.value = 0.055;
+  engineGain.connect(audioCtx.destination);
+  engineOsc = audioCtx.createOscillator();
+  engineOsc.type = 'sawtooth';
+  engineOsc.frequency.value = 80;
+  engineOsc.connect(engineGain);
+  engineOsc.start();
+}
+
+function stopEngineAudio() {
+  if (engineGain) engineGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.15);
+}
+
+function setEngineFreq(f) {
+  if (engineOsc) engineOsc.frequency.setTargetAtTime(f, audioCtx.currentTime, 0.05);
+}
+
+function playCollision(intensity) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // Noise thud
+  const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.14), audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 350;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.35 * intensity, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  src.connect(lp); lp.connect(g); g.connect(audioCtx.destination); src.start();
+  // Pitch hit
+  const osc = audioCtx.createOscillator(); osc.type = 'triangle';
+  osc.frequency.setValueAtTime(110, t); osc.frequency.exponentialRampToValueAtTime(42, t + 0.1);
+  const g2 = audioCtx.createGain();
+  g2.gain.setValueAtTime(0.28 * intensity, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  osc.connect(g2); g2.connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.15);
+}
+
+function playBoost() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator(); osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(55, t); osc.frequency.linearRampToValueAtTime(110, t + 0.18);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  osc.connect(g); g.connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.25);
+}
+
+function playStall() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator(); osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(78, t); osc.frequency.exponentialRampToValueAtTime(28, t + 0.45);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+  osc.connect(g); g.connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.5);
+}
+
+function playEliminate() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [440, 352, 280].forEach((f, i) => {
+    const osc = audioCtx.createOscillator(); osc.type = 'square'; osc.frequency.value = f;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.13, t + i * 0.1); g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.2);
+    osc.connect(g); g.connect(audioCtx.destination); osc.start(t + i * 0.1); osc.stop(t + i * 0.1 + 0.25);
+  });
+}
+
+function playWin() {
+  if (!audioCtx) return;
+  [523, 659, 784, 1047].forEach((f, i) => {
+    const t = audioCtx.currentTime + i * 0.13;
+    const osc = audioCtx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = f;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.connect(g); g.connect(audioCtx.destination); osc.start(t); osc.stop(t + 0.32);
+  });
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+let state             = 'title';
+let score             = 0;
+let round             = 0;
+let bestScore         = parseInt(localStorage.getItem('dust_bowl_derby_best') || '0', 10);
+let intermissionTimer = 0;
+let player            = {};
+let rivals            = [];
+let particles         = [];
+let popups            = [];
+let barrels           = [];
+let leftHeld          = false;
+let rightHeld         = false;
+let boostHeld         = false;
+let activeTouches     = new Map();
+
+function makeCar(x, y, angle, color, accent) {
+  return {
+    x, y, angle,
+    vx: 0, vy: 0,
+    speed: BASE_SPEED,
+    heat: 0, damage: 0,
+    color, accent,
+    alive: true,
+    stallTimer:   0,
+    boostActive:  false,
+    boostTimer:   0,
+    boostCooldown: 0,
+  };
+}
+
+function spawnBarrels() {
+  barrels = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    barrels.push({
+      x: ARENA_CX + Math.cos(a) * ARENA_RX * 0.70,
+      y: ARENA_CY + Math.sin(a) * ARENA_RY * 0.70,
+      r: 10,
+    });
+  }
+}
+
+function spawnRound(r) {
+  const count = ROUND_RIVALS[r];
+  rivals = [];
+  const pa = Math.atan2(player.y - ARENA_CY, player.x - ARENA_CX);
+  for (let i = 0; i < count; i++) {
+    const a = pa + Math.PI + (i - (count - 1) / 2) * 1.3;
+    const rx = ARENA_CX + Math.cos(a) * ARENA_RX * 0.58;
+    const ry = ARENA_CY + Math.sin(a) * ARENA_RY * 0.58;
+    rivals.push(makeCar(rx, ry, a + Math.PI, RIVAL_COLORS[i], RIVAL_ACCENTS[i]));
+  }
+}
+
+function startGame() {
+  gtag('event', 'game_start', { game_name: 'Dust Bowl Derby' });
+  state             = 'playing';
+  score             = 0;
+  round             = 0;
+  intermissionTimer = 0;
+  particles         = [];
+  popups            = [];
+  leftHeld          = false;
+  rightHeld         = false;
+  boostHeld         = false;
+  activeTouches.clear();
+  player = makeCar(ARENA_CX, ARENA_CY - ARENA_RY * 0.52, -Math.PI / 2, '#c8a04a', '#ffe066');
+  spawnBarrels();
+  spawnRound(0);
+  ensureAudio();
+  startEngineAudio();
+}
+
+function addPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, life: 1.0 });
+}
+
+function addDust(x, y, n, speed) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = speed * (0.4 + Math.random() * 0.7);
+    const br = 28 + Math.floor(Math.random() * 28);
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: 1.0,
+      r: 3 + Math.random() * 5,
+      col: `hsl(28,55%,${br}%)`,
+    });
+  }
+}
+
+// ── Physics ────────────────────────────────────────────────────────────────
+function isInsideArena(x, y) {
+  const nx = (x - ARENA_CX) / ARENA_RX;
+  const ny = (y - ARENA_CY) / ARENA_RY;
+  return nx * nx + ny * ny <= 1;
+}
+
+function pushInsideArena(car) {
+  const dx = car.x - ARENA_CX;
+  const dy = car.y - ARENA_CY;
+  const nx = dx / ARENA_RX, ny = dy / ARENA_RY;
+  const d2 = nx * nx + ny * ny;
+  if (d2 <= 0.90 * 0.90) return;
+  const d  = Math.sqrt(d2);
+  const ux = nx / d, uy = ny / d;
+  car.x = ARENA_CX + ux * ARENA_RX * 0.88;
+  car.y = ARENA_CY + uy * ARENA_RY * 0.88;
+  const dot = car.vx * ux + car.vy * uy;
+  if (dot > 0) { car.vx -= 1.6 * dot * ux; car.vy -= 1.6 * dot * uy; }
+  addDust(car.x, car.y, 4, 28);
+}
+
+function collide(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist >= CAR_R * 2 || dist < 0.01) return false;
+  const nx = dx / dist, ny = dy / dist;
+  const relV = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+  const impulse = relV;
+  a.vx -= nx * impulse; a.vy -= ny * impulse;
+  b.vx += nx * impulse; b.vy += ny * impulse;
+  const overlap = CAR_R * 2 - dist;
+  a.x -= nx * overlap * 0.52; a.y -= ny * overlap * 0.52;
+  b.x += nx * overlap * 0.52; b.y += ny * overlap * 0.52;
+  const impactSpeed = Math.abs(relV);
+  const dmg = clamp(Math.round(impactSpeed / 9), 2, 14);
+  a.damage = clamp(a.damage + dmg, 0, MAX_DAMAGE);
+  b.damage = clamp(b.damage + dmg, 0, MAX_DAMAGE);
+  addDust((a.x + b.x) / 2, (a.y + b.y) / 2, 10, 55);
+  playCollision(clamp(impactSpeed / 90, 0.3, 1.0));
+  return true;
+}
+
+// ── Update ──────────────────────────────────────────────────────────────────
+function updatePlayerCar(dt) {
+  const car = player;
+  if (!car.alive) return;
+  if (car.stallTimer > 0) {
+    car.stallTimer -= dt * 1000;
+    car.vx = 0; car.vy = 0;
+    setEngineFreq(28);
+    return;
+  }
+  if (car.boostCooldown > 0) car.boostCooldown -= dt * 1000;
+  const boosting = boostHeld && car.boostCooldown <= 0;
+  if (leftHeld  && !rightHeld) car.angle -= STEER_RATE * dt;
+  if (rightHeld && !leftHeld)  car.angle += STEER_RATE * dt;
+  if (boosting) {
+    car.heat = clamp(car.heat + HEAT_RISE * dt, 0, STALL_HEAT);
+    if (car.heat >= STALL_HEAT) {
+      car.stallTimer   = STALL_DURATION;
+      car.boostCooldown = 2800;
+      car.heat          = 78;
+      playStall();
+      addPopup(car.x, car.y - 28, 'STALLED!', '#e74c3c');
+    }
+    car.speed = BOOST_SPEED;
+  } else {
+    car.heat  = clamp(car.heat - HEAT_FALL * dt, 0, STALL_HEAT);
+    car.speed = BASE_SPEED;
+  }
+  setEngineFreq(boosting ? 155 : 78 + car.speed * 0.38);
+  car.vx = Math.cos(car.angle) * car.speed;
+  car.vy = Math.sin(car.angle) * car.speed;
+  car.x += car.vx * dt;
+  car.y += car.vy * dt;
+  pushInsideArena(car);
+}
+
+function updateRival(rival, dt) {
+  if (!rival.alive) return;
+  if (rival.stallTimer > 0) {
+    rival.stallTimer -= dt * 1000;
+    rival.vx = 0; rival.vy = 0;
+    return;
+  }
+  rival.boostTimer -= dt * 1000;
+  if (rival.boostTimer <= 0) rival.boostActive = false;
+  if (!rival.boostActive && Math.random() < RIVAL_BOOST_PROB) {
+    rival.boostActive = true;
+    rival.boostTimer  = RIVAL_BOOST_DUR;
+  }
+  // Steer toward player
+  const targetAngle = Math.atan2(player.y - rival.y, player.x - rival.x);
+  let diff = targetAngle - rival.angle;
+  while (diff >  Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  rival.angle += Math.sign(diff) * Math.min(Math.abs(diff), RIVAL_STEER * dt);
+  // Rival heat management
+  if (rival.boostActive) {
+    rival.heat = clamp(rival.heat + HEAT_RISE * 0.55 * dt, 0, STALL_HEAT);
+    if (rival.heat >= STALL_HEAT) {
+      rival.stallTimer  = STALL_DURATION * 0.75;
+      rival.boostActive = false;
+      rival.heat        = 62;
+    }
+  } else {
+    rival.heat = clamp(rival.heat - HEAT_FALL * dt, 0, STALL_HEAT);
+  }
+  rival.speed = rival.boostActive ? RIVAL_BOOST_SPEED : RIVAL_SPEED;
+  rival.vx = Math.cos(rival.angle) * rival.speed;
+  rival.vy = Math.sin(rival.angle) * rival.speed;
+  rival.x += rival.vx * dt;
+  rival.y += rival.vy * dt;
+  pushInsideArena(rival);
+}
+
+function update(dt) {
+  if (state !== 'playing') return;
+  if (intermissionTimer > 0) {
+    intermissionTimer -= dt * 1000;
+    return;
+  }
+  updatePlayerCar(dt);
+  for (const r of rivals) updateRival(r, dt);
+  // Collisions
+  for (const r of rivals) {
+    if (!r.alive) continue;
+    collide(player, r);
+  }
+  for (let i = 0; i < rivals.length; i++) {
+    for (let j = i + 1; j < rivals.length; j++) {
+      if (rivals[i].alive && rivals[j].alive) collide(rivals[i], rivals[j]);
+    }
+  }
+  // Barrel bumps
+  for (const b of barrels) {
+    for (const car of [player, ...rivals]) {
+      if (!car.alive || car.stallTimer > 0) continue;
+      const dx = car.x - b.x, dy = car.y - b.y;
+      const d = Math.hypot(dx, dy);
+      if (d < CAR_R + b.r && d > 0.01) {
+        const nx = dx / d, ny = dy / d;
+        const ov = CAR_R + b.r - d;
+        car.x += nx * ov; car.y += ny * ov;
+        const dot = car.vx * nx + car.vy * ny;
+        if (dot < 0) { car.vx -= 1.4 * dot * nx; car.vy -= 1.4 * dot * ny; }
+        car.damage = clamp(car.damage + 3, 0, MAX_DAMAGE);
+        addDust(car.x, car.y, 5, 32);
+      }
+    }
+  }
+  // Check eliminations
+  for (const r of rivals) {
+    if (r.alive && r.damage >= MAX_DAMAGE) {
+      r.alive = false;
+      score += 500;
+      addPopup(r.x, r.y - 28, 'WRECKED!', '#ff9f43');
+      playEliminate();
+      addDust(r.x, r.y, 22, 85);
+    }
+  }
+  // Check player loss
+  if (player.damage >= MAX_DAMAGE) {
+    state = 'gameover';
+    stopEngineAudio();
+    if (score > bestScore) { bestScore = score; localStorage.setItem('dust_bowl_derby_best', bestScore); }
+    return;
+  }
+  // Check round clear
+  if (rivals.every(r => !r.alive)) {
+    const clearedNum = round + 1;
+    round++;
+    if (round >= NUM_ROUNDS) {
+      state = 'gameover';
+      score += 1200;
+      stopEngineAudio();
+      playWin();
+      if (score > bestScore) { bestScore = score; localStorage.setItem('dust_bowl_derby_best', bestScore); }
+    } else {
+      score += 350;
+      addPopup(W / 2, H / 2 - 20, `ROUND ${clearedNum} CLEAR!`, '#ffe066');
+      intermissionTimer = 2600;
+      player.damage = clamp(player.damage - 22, 0, MAX_DAMAGE);
+      player.heat   = clamp(player.heat   - 32, 0, STALL_HEAT);
+      spawnRound(round);
+    }
+  }
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.93; p.vy *= 0.93;
+    p.life -= dt * 1.6;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  // Popups
+  for (let i = popups.length - 1; i >= 0; i--) {
+    popups[i].y  -= 32 * dt;
+    popups[i].life -= dt * 1.1;
+    if (popups[i].life <= 0) popups.splice(i, 1);
+  }
+}
+
+// ── Drawing ─────────────────────────────────────────────────────────────────
+function drawBg() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0d0820');
+  g.addColorStop(0.35, '#1a0d35');
+  g.addColorStop(1, '#2a1500');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawArena() {
+  ctx.save();
+  // Floor
+  const fg = ctx.createRadialGradient(ARENA_CX, ARENA_CY, 15, ARENA_CX, ARENA_CY, ARENA_RX);
+  fg.addColorStop(0, '#3c2010');
+  fg.addColorStop(0.6, '#2a1508');
+  fg.addColorStop(1, '#1c0d04');
+  ctx.beginPath();
+  ctx.ellipse(ARENA_CX, ARENA_CY, ARENA_RX, ARENA_RY, 0, 0, Math.PI * 2);
+  ctx.fillStyle = fg; ctx.fill();
+  // Dirt tracks (inner wear marks)
+  ctx.strokeStyle = 'rgba(70,35,10,0.35)'; ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.ellipse(ARENA_CX, ARENA_CY, ARENA_RX * 0.6, ARENA_RY * 0.6, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Border
+  ctx.beginPath();
+  ctx.ellipse(ARENA_CX, ARENA_CY, ARENA_RX, ARENA_RY, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = '#c8a04a'; ctx.lineWidth = 6; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,224,102,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.restore();
+}
+
+function drawBarrels() {
+  ctx.save();
+  for (const b of barrels) {
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#7a3a12'; ctx.fill();
+    ctx.strokeStyle = '#c8a04a'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.55, 0, Math.PI * 2);
+    ctx.strokeStyle = '#4a2008'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawCar(car) {
+  if (!car.alive) {
+    // Wreck: dark scatter marks
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = '#1a0802';
+    ctx.beginPath(); ctx.ellipse(car.x, car.y, CAR_W * 0.8, CAR_H * 0.8, car.angle, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    return;
+  }
+  ctx.save();
+  ctx.translate(car.x, car.y);
+  ctx.rotate(car.angle);
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(2, 2, CAR_W / 2 + 3, CAR_H / 2 + 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Body
+  ctx.fillStyle = car.color;
+  ctx.beginPath(); ctx.roundRect(-CAR_W / 2, -CAR_H / 2, CAR_W, CAR_H, 4); ctx.fill();
+  // Accent stripe
+  ctx.fillStyle = car.accent;
+  ctx.fillRect(CAR_W / 2 - 8, -CAR_H / 2 + 2, 5, CAR_H - 4);
+  // Windshield
+  ctx.fillStyle = 'rgba(180,210,240,0.45)';
+  ctx.fillRect(CAR_W / 2 - 10, -CAR_H / 2 + 3, 6, CAR_H - 6);
+  // Wheels
+  ctx.fillStyle = '#111';
+  [[-CAR_W / 2 + 1, -CAR_H / 2 - 1], [-CAR_W / 2 + 1, CAR_H / 2 - 3],
+   [CAR_W / 2 - 7,  -CAR_H / 2 - 1], [CAR_W / 2 - 7,  CAR_H / 2 - 3]].forEach(([wx, wy]) => {
+    ctx.fillRect(wx, wy, 6, 4);
+  });
+  // Boost exhaust
+  if (car.boostActive || (car === player && boostHeld && car.boostCooldown <= 0)) {
+    const f = 0.5 + Math.sin(Date.now() / 55) * 0.3;
+    ctx.fillStyle = `rgba(255,140,0,${f})`;
+    ctx.beginPath();
+    ctx.ellipse(-CAR_W / 2 - 5, 0, 7 + f * 4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Stall flicker
+  if (car.stallTimer > 0 && Math.sin(Date.now() / 70) > 0) {
+    ctx.fillStyle = 'rgba(231,76,60,0.45)';
+    ctx.beginPath(); ctx.roundRect(-CAR_W / 2, -CAR_H / 2, CAR_W, CAR_H, 4); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawParticles() {
+  ctx.save();
+  for (const p of particles) {
+    ctx.globalAlpha = p.life * 0.75;
+    ctx.fillStyle   = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  ctx.textAlign = 'center';
+  for (const p of popups) {
+    ctx.globalAlpha  = p.life;
+    ctx.font         = 'bold 15px Georgia,serif';
+    ctx.strokeStyle  = 'rgba(0,0,0,0.65)';
+    ctx.lineWidth    = 3;
+    ctx.strokeText(p.text, p.x, p.y);
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Heat bar (left)
+  const hx = 10, hy = 10, hw = 95, hh = 18;
+  ctx.fillStyle = 'rgba(0,0,0,0.52)';
+  ctx.beginPath(); ctx.roundRect(hx, hy, hw, hh, 4); ctx.fill();
+  const hp = player.heat / STALL_HEAT;
+  ctx.fillStyle = hp > 0.8 ? '#e74c3c' : hp > 0.5 ? '#ff9f43' : '#f4c842';
+  ctx.beginPath(); ctx.roundRect(hx + 2, hy + 2, (hw - 4) * hp, hh - 4, 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 8px sans-serif';
+  ctx.textAlign = 'left'; ctx.fillText('ENGINE', hx + 4, hy + hh - 4);
+
+  // Damage bar (right)
+  const dx = W - 10 - 95, dy = 10, dw = 95, dh = 18;
+  ctx.fillStyle = 'rgba(0,0,0,0.52)';
+  ctx.beginPath(); ctx.roundRect(dx, dy, dw, dh, 4); ctx.fill();
+  const dp = player.damage / MAX_DAMAGE;
+  ctx.fillStyle = dp > 0.7 ? '#e74c3c' : dp > 0.4 ? '#ff9f43' : '#2ecc71';
+  ctx.beginPath(); ctx.roundRect(dx + 2, dy + 2, (dw - 4) * dp, dh - 4, 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 8px sans-serif';
+  ctx.textAlign = 'right'; ctx.fillText('DAMAGE', dx + dw - 4, dy + dh - 4);
+
+  // Score + round
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillStyle = '#ffe066';
+  ctx.fillText(score, W / 2, 24);
+  ctx.font = 'bold 10px Georgia,serif';
+  ctx.fillStyle = '#c8a04a';
+  ctx.fillText(`ROUND ${round + 1} / ${NUM_ROUNDS}`, W / 2, 40);
+
+  // Rival health bars (above each car)
+  for (const r of rivals) {
+    if (!r.alive) continue;
+    const bx = r.x - 18, by = r.y - CAR_R - 14;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx, by, 36, 7);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(bx + 1, by + 1, 34 * (r.damage / MAX_DAMAGE), 5);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 0.5;
+    ctx.strokeRect(bx, by, 36, 7);
+  }
+
+  // Intermission overlay
+  if (intermissionTimer > 0) {
+    const clearedRound = round; // round already incremented
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+    ctx.font = 'bold 26px Georgia,serif'; ctx.fillStyle = '#ffe066';
+    ctx.fillText(`ROUND ${clearedRound} CLEAR!`, W / 2, H / 2 - 18);
+    ctx.font = 'bold 16px Georgia,serif'; ctx.fillStyle = '#c8a04a';
+    ctx.fillText(`ROUND ${clearedRound + 1} STARTING...`, W / 2, H / 2 + 18);
+  }
+
+  // Control buttons
+  const by = BTN_Y;
+  function drawBtn(bx, bw, held, label, icon) {
+    ctx.fillStyle = held ? 'rgba(200,160,70,0.42)' : 'rgba(255,255,255,0.09)';
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, BTN_H, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = held ? '#ffe066' : '#bbb';
+    ctx.font = 'bold 10px Georgia,serif'; ctx.fillText(label, bx + bw / 2, by + 13);
+    ctx.font = '20px sans-serif'; ctx.fillText(icon, bx + bw / 2, by + 33);
+  }
+  drawBtn(LBTN.x, LBTN.w, leftHeld,  'LEFT',  '◄');
+  drawBtn(BBTN.x, BBTN.w, boostHeld, 'BOOST', '⚡');
+  drawBtn(RBTN.x, RBTN.w, rightHeld, 'RIGHT', '►');
+
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#1a0d35');
+  bg.addColorStop(0.4, '#3a1f05');
+  bg.addColorStop(1, '#2a1500');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // Dust haze
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = 'rgba(190,120,40,0.06)';
+    ctx.beginPath();
+    ctx.ellipse(40 + i * 65, 360 + Math.sin(Date.now() / 1800 + i) * 28, 85, 45, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#c8a04a'; ctx.shadowBlur = 22;
+  ctx.font = 'bold 44px Georgia,serif'; ctx.fillStyle = '#ffe066';
+  ctx.fillText('DUST BOWL', W / 2, 182);
+  ctx.font = 'bold 50px Georgia,serif'; ctx.fillStyle = '#c8a04a';
+  ctx.fillText('DERBY', W / 2, 244);
+  ctx.shadowBlur = 0;
+  ctx.font = 'italic 13px Georgia,serif'; ctx.fillStyle = '#c8a04a';
+  ctx.fillText('Last car standing wins', W / 2, 278);
+  ctx.font = '12px Georgia,serif'; ctx.fillStyle = '#ddd';
+  ctx.fillText('◄ LEFT  /  RIGHT ►  to steer', W / 2, 342);
+  ctx.fillText('BOOST ⚡ to ram — watch your heat!', W / 2, 362);
+  ctx.fillText('Survive 3 rounds to become Derby Champ', W / 2, 382);
+  if (bestScore > 0) {
+    ctx.font = 'bold 13px Georgia,serif'; ctx.fillStyle = '#ff9f43';
+    ctx.fillText(`Best: ${bestScore}`, W / 2, 422);
+  }
+  const pulse = 0.65 + Math.sin(Date.now() / 380) * 0.3;
+  ctx.globalAlpha = pulse;
+  ctx.font = 'bold 20px Georgia,serif'; ctx.fillStyle = '#ffe066';
+  ctx.fillText('TAP TO START', W / 2, 500);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.78)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  const won = round >= NUM_ROUNDS;
+  ctx.font = 'bold 30px Georgia,serif';
+  ctx.fillStyle = won ? '#ffe066' : '#e74c3c';
+  ctx.fillText(won ? 'DERBY CHAMP!' : 'WRECKED', W / 2, 220);
+  ctx.font = 'bold 22px Georgia,serif'; ctx.fillStyle = '#fff';
+  ctx.fillText(`Score: ${score}`, W / 2, 272);
+  if (score >= bestScore) {
+    const pulse = 0.65 + Math.sin(Date.now() / 280) * 0.3;
+    ctx.globalAlpha = pulse;
+    ctx.font = 'bold 15px Georgia,serif'; ctx.fillStyle = '#ff9f43';
+    ctx.fillText('NEW RECORD!', W / 2, 308);
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.font = '13px Georgia,serif'; ctx.fillStyle = '#c8a04a';
+    ctx.fillText(`Best: ${bestScore}`, W / 2, 308);
+  }
+  ctx.font = '13px Georgia,serif'; ctx.fillStyle = '#aaa';
+  ctx.fillText(`Survived ${round} round${round !== 1 ? 's' : ''}`, W / 2, 340);
+  // Play Again
+  ctx.fillStyle = '#c8a04a';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 80, 370, 160, 44, 8); ctx.fill();
+  ctx.font = 'bold 15px Georgia,serif'; ctx.fillStyle = '#1a0d04';
+  ctx.fillText('PLAY AGAIN', W / 2, 397);
+  // Share
+  ctx.fillStyle = 'rgba(255,255,255,0.13)';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 62, 428, 124, 36, 8); ctx.fill();
+  ctx.font = '13px Georgia,serif'; ctx.fillStyle = '#fff';
+  ctx.fillText('SHARE', W / 2, 450);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (state === 'title')    { drawTitle();   return; }
+  if (state === 'gameover') {
+    drawBg(); drawArena(); drawBarrels();
+    for (const r of rivals) drawCar(r);
+    drawCar(player); drawParticles(); drawGameOver();
+    return;
+  }
+  drawBg(); drawArena(); drawBarrels();
+  drawParticles();
+  for (const r of rivals) drawCar(r);
+  drawCar(player);
+  drawPopups(); drawHUD();
+}
+
+// ── Input ────────────────────────────────────────────────────────────────────
+function hitBtn(sx, sy, btn) {
+  return sy >= BTN_Y && sy <= BTN_Y + BTN_H && sx >= btn.x && sx <= btn.x + btn.w;
+}
+
+function getTouchBtn(sx, sy) {
+  if (hitBtn(sx, sy, LBTN)) return 'left';
+  if (hitBtn(sx, sy, BBTN)) return 'boost';
+  if (hitBtn(sx, sy, RBTN)) return 'right';
+  return null;
+}
+
+function canvasCoords(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    sx: (clientX - rect.left) * (W / rect.width),
+    sy: (clientY - rect.top)  * (H / rect.height),
+  };
+}
+
+function onTouchStart(e) {
+  e.preventDefault();
+  if (state === 'title')    { ensureAudio(); startGame(); return; }
+  if (state === 'gameover') {
+    const { sx, sy } = canvasCoords(
+      e.changedTouches ? e.changedTouches[0].clientX : e.clientX,
+      e.changedTouches ? e.changedTouches[0].clientY : e.clientY,
+    );
+    if (sx >= W / 2 - 80 && sx <= W / 2 + 80 && sy >= 370 && sy <= 414) { ensureAudio(); startGame(); }
+    if (sx >= W / 2 - 62 && sx <= W / 2 + 62 && sy >= 428 && sy <= 464) {
+      navigator.share && navigator.share({ title: 'Dust Bowl Derby', text: `I scored ${score} in Dust Bowl Derby!`, url: location.href });
+    }
+    return;
+  }
+  const touches = e.changedTouches || [e];
+  for (const t of touches) {
+    const { sx, sy } = canvasCoords(t.clientX, t.clientY);
+    const btn = getTouchBtn(sx, sy);
+    if (btn) {
+      const id = t.identifier !== undefined ? t.identifier : 'mouse';
+      activeTouches.set(id, btn);
+      if (btn === 'left')  leftHeld  = true;
+      if (btn === 'right') rightHeld = true;
+      if (btn === 'boost') { boostHeld = true; ensureAudio(); playBoost(); }
+    }
+  }
+}
+
+function onTouchEnd(e) {
+  e.preventDefault();
+  const touches = e.changedTouches || [e];
+  for (const t of touches) {
+    const id = t.identifier !== undefined ? t.identifier : 'mouse';
+    const btn = activeTouches.get(id);
+    if (btn === 'left')  leftHeld  = false;
+    if (btn === 'right') rightHeld = false;
+    if (btn === 'boost') boostHeld = false;
+    activeTouches.delete(id);
+  }
+}
+
+canvas.addEventListener('touchstart',  onTouchStart, { passive: false });
+canvas.addEventListener('touchend',    onTouchEnd,   { passive: false });
+canvas.addEventListener('touchcancel', onTouchEnd,   { passive: false });
+canvas.addEventListener('mousedown',   onTouchStart, { passive: false });
+canvas.addEventListener('mouseup',     onTouchEnd,   { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (state === 'title')    { ensureAudio(); startGame(); return; }
+  if (e.code === 'ArrowLeft')  { leftHeld  = true;  e.preventDefault(); }
+  if (e.code === 'ArrowRight') { rightHeld = true;  e.preventDefault(); }
+  if (e.code === 'Space')      { boostHeld = true;  e.preventDefault(); ensureAudio(); playBoost(); }
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft')  leftHeld  = false;
+  if (e.code === 'ArrowRight') rightHeld = false;
+  if (e.code === 'Space')      boostHeld = false;
+});
+
+// ── Game Loop ────────────────────────────────────────────────────────────────
+let lastT = 0;
+function loop(t = 0) {
+  try {
+    const dt = Math.min((t - lastT) / 1000, 0.05);
+    lastT = t;
+    update(dt);
+    draw();
+  } catch (err) {
+    console.error(err);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ── Feedback Overlay ─────────────────────────────────────────────────────────
+(function buildFeedback() {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:100;justify-content:center;align-items:center;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#1a0d04;border:2px solid #c8a04a;border-radius:12px;padding:20px;width:300px;font-family:Georgia,serif;color:#fff;';
+  box.innerHTML = `<h3 style="color:#ffe066;margin:0 0 12px;font-size:18px;">Rate Dust Bowl Derby</h3>
+<div id="fbs" style="font-size:28px;letter-spacing:4px;cursor:pointer;margin-bottom:12px;">&#9734;&#9734;&#9734;&#9734;&#9734;</div>
+<textarea id="fbm" placeholder="Any feedback? (optional)" style="width:100%;height:68px;background:#2a1500;color:#fff;border:1px solid #c8a04a;border-radius:6px;padding:8px;font-size:13px;resize:none;box-sizing:border-box;"></textarea>
+<div style="display:flex;gap:8px;margin-top:10px;">
+<button id="fbsend" style="flex:1;background:#c8a04a;color:#1a0d04;border:none;border-radius:6px;padding:10px;font-weight:bold;font-size:14px;cursor:pointer;">SEND</button>
+<button id="fbcancel" style="flex:1;background:rgba(255,255,255,0.1);color:#fff;border:1px solid #c8a04a;border-radius:6px;padding:10px;font-size:14px;cursor:pointer;">CANCEL</button>
+</div>
+<p id="fbst" style="font-size:12px;color:#c8a04a;margin-top:8px;min-height:16px;"></p>`;
+  ov.appendChild(box); document.body.appendChild(ov);
+  let rating = 0;
+  const stars = box.querySelector('#fbs');
+  stars.addEventListener('click', e => {
+    rating = Math.ceil((e.offsetX / stars.offsetWidth) * 5);
+    stars.innerHTML = '&#9733;'.repeat(rating) + '&#9734;'.repeat(5 - rating);
+  });
+  box.querySelector('#fbsend').addEventListener('click', () => {
+    const msg = box.querySelector('#fbm').value.trim();
+    const st  = box.querySelector('#fbst');
+    if (!rating) { st.textContent = 'Please pick a star rating.'; return; }
+    st.textContent = 'Sending...';
+    fetch(FEEDBACK_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Dust Bowl Derby', rating, message: msg }) })
+      .then(() => { st.textContent = 'Thanks!'; setTimeout(() => { ov.style.display = 'none'; }, 1100); })
+      .catch(() => { st.textContent = 'Sent.'; setTimeout(() => { ov.style.display = 'none'; }, 1100); });
+  });
+  box.querySelector('#fbcancel').addEventListener('click', () => { ov.style.display = 'none'; });
+  const btn = document.createElement('div');
+  btn.style.cssText = 'position:fixed;bottom:10px;right:10px;color:#c8a04a;font-size:20px;cursor:pointer;z-index:50;opacity:0.55;';
+  btn.innerHTML = '&#9733;'; btn.title = 'Rate this game';
+  btn.addEventListener('click', () => { ov.style.display = 'flex'; });
+  document.body.appendChild(btn);
+})();
+
+// ── Test API ─────────────────────────────────────────────────────────────────
+window.__dbd = {
+  get state()             { return state; },
+  set state(v)            { state = v; },
+  get score()             { return score; },
+  set score(v)            { score = v; },
+  get round()             { return round; },
+  set round(v)            { round = v; },
+  get player()            { return player; },
+  get rivals()            { return rivals; },
+  get particles()         { return particles; },
+  get popups()            { return popups; },
+  get barrels()           { return barrels; },
+  get leftHeld()          { return leftHeld; },
+  set leftHeld(v)         { leftHeld = v; },
+  get rightHeld()         { return rightHeld; },
+  set rightHeld(v)        { rightHeld = v; },
+  get boostHeld()         { return boostHeld; },
+  set boostHeld(v)        { boostHeld = v; },
+  get bestScore()         { return bestScore; },
+  set bestScore(v)        { bestScore = v; },
+  get intermissionTimer() { return intermissionTimer; },
+  set intermissionTimer(v){ intermissionTimer = v; },
+  // Constants
+  ARENA_CX, ARENA_CY, ARENA_RX, ARENA_RY,
+  CAR_R, BASE_SPEED, BOOST_SPEED, MAX_DAMAGE, STALL_HEAT,
+  RIVAL_COLORS, ROUND_RIVALS, NUM_ROUNDS,
+  HEAT_RISE, HEAT_FALL, RIVAL_SPEED, RIVAL_BOOST_SPEED,
+  // Functions
+  startGame, update, spawnRound, collide, isInsideArena, pushInsideArena,
+  addDust, addPopup,
+};
+</script>
+</body>
+</html>
