@@ -39,14 +39,14 @@ body {
   font-size: 11px;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: #555;
+  color: #888;
   text-align: center;
   margin-bottom: 16px;
 }
 
 .games-caveat {
   font-size: 13px;
-  color: #705848;
+  color: #9a7a64;
   text-align: center;
   font-style: italic;
   margin-bottom: 24px;
@@ -87,7 +87,7 @@ body {
 
 .game-num {
   font-size: 10px;
-  color: #444;
+  color: #776650;
   letter-spacing: 2px;
   text-transform: uppercase;
   margin-bottom: 3px;
@@ -101,7 +101,7 @@ body {
 
 .game-desc {
   font-size: 12px;
-  color: #705848;
+  color: #9a7a64;
   line-height: 1.5;
 }
 
@@ -111,6 +111,55 @@ footer {
   color: #2a1a14;
   font-size: 12px;
   letter-spacing: 1px;
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    background: linear-gradient(180deg, #F2E8D0 0%, #EADDb8 100%);
+    color: #1e0e06;
+  }
+
+  .back-link {
+    color: #9a6838;
+  }
+
+  .back-link:hover {
+    color: #8B6914;
+  }
+
+  .section-label {
+    color: #9a6838;
+  }
+
+  .games-caveat {
+    color: #7a5030;
+  }
+
+  .game-card {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(139,105,20,0.3);
+  }
+
+  .game-card:hover {
+    background: rgba(139,105,20,0.08);
+    border-color: rgba(139,105,20,0.6);
+  }
+
+  .game-num {
+    color: #b09070;
+  }
+
+  .game-title {
+    color: #8B6914;
+  }
+
+  .game-desc {
+    color: #6a4028;
+  }
+
+  footer {
+    color: #c8b890;
+  }
 }
 </style>
 <!-- Google tag (gtag.js) -->
