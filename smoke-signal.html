@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Smoke Signal</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; touch-action: none; }
+canvas { display: block; }
+#fb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 100; }
+#fb-overlay.hidden { display: none; }
+#fb-box { background: #1a0d00; border: 2px solid #C8A04A; border-radius: 12px; padding: 20px; width: 320px; color: #FFE066; font-family: Georgia, serif; }
+#fb-box h2 { font-size: 18px; margin-bottom: 12px; }
+#fb-box select, #fb-box textarea { width: 100%; margin: 6px 0; padding: 8px; background: #2a1500; color: #FFE066; border: 1px solid #C8A04A; border-radius: 6px; font-family: Georgia, serif; font-size: 14px; }
+#fb-box textarea { height: 80px; resize: none; }
+#fb-box button { margin: 4px 4px 0 0; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-family: Georgia, serif; font-size: 14px; font-weight: bold; }
+#fb-submit { background: #C8A04A; color: #1a0d00; }
+#fb-cancel { background: #3a1f05; color: #FFE066; }
+#fb-status { font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay" class="hidden">
+  <div id="fb-box">
+    <h2>Leave Feedback</h2>
+    <select id="fb-target">
+      <option value="general">General / next game</option>
+      <option value="Cattle Baron">Upcoming: Cattle Baron (Game 55)</option>
+      <option value="Dead Eye">Upcoming: Dead Eye (Game 56)</option>
+      <option value="Smoke Signal">Existing: Smoke Signal</option>
+      <option value="Dust Bowl Derby">Existing: Dust Bowl Derby</option>
+      <option value="Frontier Forge">Existing: Frontier Forge</option>
+      <option value="Pinkerton Trail">Existing: Pinkerton Trail</option>
+      <option value="Tin Pan Alley">Existing: Tin Pan Alley</option>
+      <option value="Lariat Spin">Existing: Lariat Spin</option>
+    </select>
+    <select id="fb-rating">
+      <option value="5">&#9733;&#9733;&#9733;&#9733;&#9733; Excellent</option>
+      <option value="4">&#9733;&#9733;&#9733;&#9733;&#9734; Good</option>
+      <option value="3">&#9733;&#9733;&#9733;&#9734;&#9734; OK</option>
+      <option value="2">&#9733;&#9733;&#9734;&#9734;&#9734; Weak</option>
+      <option value="1">&#9733;&#9734;&#9734;&#9734;&#9734; Poor</option>
+    </select>
+    <textarea id="fb-msg" placeholder="What do you think?"></textarea>
+    <div><button id="fb-submit">Send</button><button id="fb-cancel">Cancel</button></div>
+    <div id="fb-status"></div>
+  </div>
+</div>
+<script>
+'use strict';
+const W = 360, H = 640;
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+
+// ── Canvas setup ──────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Round config ──────────────────────────────────────────────────────────────
+const ROUNDS = [
+  { seqLen: 3, threshold: 700, windInterval: 11000, watchGap: 1100 },
+  { seqLen: 4, threshold: 650, windInterval: 9500,  watchGap: 1000 },
+  { seqLen: 4, threshold: 600, windInterval: 8500,  watchGap: 950  },
+  { seqLen: 5, threshold: 550, windInterval: 7500,  watchGap: 900  },
+  { seqLen: 5, threshold: 500, windInterval: 6500,  watchGap: 850  },
+];
+const NUM_ROUNDS = 5;
+const WIND_BURST_DUR = 2200;
+
+// ── Positions ─────────────────────────────────────────────────────────────────
+const MESA_X = 268, MESA_Y = 192;
+const FIRE_X = 112, FIRE_Y = 478;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let state = 'title', round = 1, score = 0, lives = 3;
+let bestScore = parseInt(localStorage.getItem('smoke_signal_best') || '0');
+let targetSeq = [], playerSeq = [], seqIdx = 0;
+let watchIdx = 0, watchTimer = 0;
+let holdActive = false, holdStart = 0, holdLocked = false, holdLockTimer = 0;
+let windTimer = 11000, windBurst = false, windBurstTimer = 0, windDir = 1;
+let smokeObjs = [], flameParticles = [], windParticles = [], popups = [];
+let phaseMsgTimer = 0, phaseMsg = '';
+let roundResultTimer = 0, roundResultMsg = '';
+let signalIndicators = [];
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+let audioCtx;
+function getAC() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  }
+  return audioCtx;
+}
+
+function tone(freq, type, dur, gain) {
+  gain = gain !== undefined ? gain : 0.25;
+  const ac = getAC(); if (!ac) return;
+  const osc = ac.createOscillator();
+  const g = ac.createGain();
+  osc.connect(g); g.connect(ac.destination);
+  osc.type = type; osc.frequency.value = freq;
+  g.gain.setValueAtTime(gain, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+  osc.start(); osc.stop(ac.currentTime + dur + 0.05);
+}
+
+function playSignalSound(type) {
+  if (type === 'puff') tone(294, 'sine', 0.38, 0.2);
+  else tone(220, 'sine', 0.72, 0.22);
+}
+
+function playBlanketDown() {
+  const ac = getAC(); if (!ac) return;
+  const len = Math.floor(ac.sampleRate * 0.12);
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const filt = ac.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = 1500;
+  const gn = ac.createGain(); gn.gain.value = 0.12;
+  src.connect(filt); filt.connect(gn); gn.connect(ac.destination);
+  src.start();
+}
+
+function playBlanketUp(type) {
+  const ac = getAC(); if (!ac) return;
+  const len = Math.floor(ac.sampleRate * 0.18);
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const filt = ac.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 1200; filt.Q.value = 0.8;
+  const gn = ac.createGain(); gn.gain.value = 0.14;
+  src.connect(filt); filt.connect(gn); gn.connect(ac.destination);
+  src.start();
+  setTimeout(() => playSignalSound(type), 120);
+}
+
+function playMatch(correct) {
+  if (correct) {
+    tone(523, 'triangle', 0.25, 0.22);
+    setTimeout(() => tone(659, 'triangle', 0.2, 0.18), 80);
+  } else {
+    tone(180, 'sawtooth', 0.42, 0.2);
+  }
+}
+
+function playWind() {
+  const ac = getAC(); if (!ac) return;
+  const dur = WIND_BURST_DUR / 1000;
+  const len = Math.floor(ac.sampleRate * dur);
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    const t = i / len;
+    const env = t < 0.2 ? t / 0.2 : t > 0.8 ? (1 - t) / 0.2 : 1;
+    d[i] = (Math.random() * 2 - 1) * env;
+  }
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const filt = ac.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 600;
+  const gn = ac.createGain(); gn.gain.value = 0.17;
+  src.connect(filt); filt.connect(gn); gn.connect(ac.destination);
+  src.start();
+}
+
+function playWin() {
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 'triangle', 0.45, 0.2), i * 100));
+}
+
+function playGameOver() {
+  [330, 294, 220].forEach((f, i) => setTimeout(() => tone(f, 'sine', 0.55, 0.22), i * 150));
+}
+
+function playRoundClear() {
+  [392, 523, 659].forEach((f, i) => setTimeout(() => tone(f, 'triangle', 0.35, 0.18), i * 110));
+}
+
+// ── Smoke objects ─────────────────────────────────────────────────────────────
+function makeSmokeObj(x, y, type, fromMesa) {
+  const isCloud = type === 'cloud';
+  const count = isCloud ? 7 : 4;
+  const sp = isCloud ? 14 : 7;
+  const blobs = [];
+  for (let i = 0; i < count; i++) {
+    blobs.push({
+      ox: (Math.random() - 0.5) * sp,
+      oy: (Math.random() - 0.5) * sp * 0.6,
+      r: isCloud ? 7 + Math.random() * 6 : 3 + Math.random() * 4,
+      maxR: isCloud ? 17 + Math.random() * 9 : 7 + Math.random() * 6,
+    });
+  }
+  return {
+    x, y, blobs,
+    vx: (Math.random() - 0.5) * 0.22,
+    vy: isCloud ? -0.36 : -0.60,
+    life: 1.0,
+    decay: isCloud ? 0.19 : 0.31,
+    type,
+    fromMesa,
+  };
+}
+
+function updateSmokeObjs(dt) {
+  for (const s of smokeObjs) {
+    s.life -= s.decay * dt;
+    s.x += s.vx;
+    s.y += s.vy;
+    if (windBurst) s.x += windDir * 0.32;
+    for (const b of s.blobs) b.r = Math.min(b.r * (1 + dt * 0.75), b.maxR);
+  }
+  smokeObjs = smokeObjs.filter(s => s.life > 0);
+}
+
+function emitWatchSmoke(type) {
+  const count = type === 'cloud' ? 3 : 2;
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      if (smokeObjs) {
+        smokeObjs.push(makeSmokeObj(MESA_X + (Math.random() - 0.5) * 10, MESA_Y - 10, type, true));
+      }
+    }, i * 200);
+  }
+}
+
+function emitReplaySmoke() {
+  if (Math.random() < 0.3) {
+    smokeObjs.push({
+      x: FIRE_X + (Math.random() - 0.5) * 12,
+      y: FIRE_Y - 18,
+      blobs: [{ ox: 0, oy: 0, r: 3 + Math.random() * 2, maxR: 5 + Math.random() * 3 }],
+      vx: (Math.random() - 0.5) * 0.28,
+      vy: -0.48 - Math.random() * 0.3,
+      life: 0.85,
+      decay: 0.55,
+      type: 'micro',
+      fromMesa: false,
+    });
+  }
+}
+
+// ── Flame particles ───────────────────────────────────────────────────────────
+function spawnFlame(active) {
+  return {
+    x: FIRE_X + (Math.random() - 0.5) * (active ? 20 : 14),
+    y: FIRE_Y - Math.random() * 6,
+    vx: (Math.random() - 0.5) * 0.65,
+    vy: -(0.75 + Math.random() * (active ? 1.7 : 1.15)),
+    size: active ? 5 + Math.random() * 6 : 3 + Math.random() * 4,
+    life: 1.0,
+    decay: 0.7 + Math.random() * 0.6,
+    hue: 18 + Math.random() * 25,
+    sat: 82 + Math.random() * 18,
+    lit: 45 + Math.random() * 30,
+  };
+}
+
+function updateFlames(dt, active) {
+  if (Math.random() < (active ? 0.65 : 0.42)) flameParticles.push(spawnFlame(active));
+  for (const f of flameParticles) {
+    f.life -= f.decay * dt;
+    f.x += f.vx;
+    f.y += f.vy;
+    f.vy -= 0.015;
+  }
+  flameParticles = flameParticles.filter(f => f.life > 0);
+}
+
+// ── Wind particles ────────────────────────────────────────────────────────────
+function spawnWind() {
+  return {
+    x: windDir > 0 ? -25 : W + 25,
+    y: 30 + Math.random() * 560,
+    vx: windDir * (2.2 + Math.random() * 2.0),
+    vy: (Math.random() - 0.5) * 0.3,
+    life: 1.0,
+    decay: 0.38 + Math.random() * 0.28,
+    len: 22 + Math.random() * 32,
+  };
+}
+
+function updateWindParticles(dt) {
+  if (windBurst && Math.random() < 0.38) windParticles.push(spawnWind());
+  for (const w of windParticles) {
+    w.life -= w.decay * dt;
+    w.x += w.vx;
+    w.y += w.vy;
+  }
+  windParticles = windParticles.filter(w => w.life > 0);
+}
+
+// ── Popups ────────────────────────────────────────────────────────────────────
+function addPopup(x, y, text, color) {
+  popups.push({ x, y, vy: -1.15, text, color, life: 1.0, decay: 1.1 });
+}
+
+function updatePopups(dt) {
+  for (const p of popups) { p.life -= p.decay * dt; p.y += p.vy; }
+  popups = popups.filter(p => p.life > 0);
+}
+
+// ── Draw functions ────────────────────────────────────────────────────────────
+function drawBackground() {
+  ctx.save();
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.62);
+  sky.addColorStop(0, '#060110');
+  sky.addColorStop(0.45, '#1a0830');
+  sky.addColorStop(1, '#3d1a05');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H * 0.62);
+
+  const glow = ctx.createLinearGradient(0, H * 0.44, 0, H * 0.62);
+  glow.addColorStop(0, 'rgba(180,85,10,0.28)');
+  glow.addColorStop(1, 'rgba(180,85,10,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, H * 0.44, W, H * 0.18);
+
+  const ground = ctx.createLinearGradient(0, H * 0.62, 0, H);
+  ground.addColorStop(0, '#1e0c02');
+  ground.addColorStop(1, '#0d0501');
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, H * 0.62, W, H * 0.38);
+
+  ctx.fillStyle = 'rgba(55,25,5,0.35)';
+  for (let i = 0; i < 9; i++) {
+    const rx = 15 + i * 40, ry = H * 0.635 + Math.sin(i * 1.9) * 11;
+    ctx.beginPath();
+    ctx.ellipse(rx, ry, 9 + (i % 3) * 3, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMesa() {
+  ctx.save();
+  ctx.fillStyle = '#0c0408';
+  ctx.beginPath();
+  ctx.moveTo(188, 232);
+  ctx.lineTo(206, 198);
+  ctx.lineTo(222, 184);
+  ctx.lineTo(244, 172);
+  ctx.lineTo(260, 164);
+  ctx.lineTo(270, 158);
+  ctx.lineTo(282, 160);
+  ctx.lineTo(298, 170);
+  ctx.lineTo(314, 184);
+  ctx.lineTo(332, 200);
+  ctx.lineTo(360, 222);
+  ctx.lineTo(360, 262);
+  ctx.lineTo(188, 262);
+  ctx.closePath();
+  ctx.fill();
+
+  const mfg = ctx.createRadialGradient(MESA_X, MESA_Y + 3, 2, MESA_X, MESA_Y + 3, 24);
+  mfg.addColorStop(0, 'rgba(255,155,25,0.9)');
+  mfg.addColorStop(0.4, 'rgba(220,95,8,0.4)');
+  mfg.addColorStop(1, 'rgba(180,55,0,0)');
+  ctx.fillStyle = mfg;
+  ctx.beginPath();
+  ctx.arc(MESA_X, MESA_Y + 3, 24, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,195,75,0.92)';
+  ctx.beginPath();
+  ctx.moveTo(MESA_X - 5, MESA_Y + 5);
+  ctx.lineTo(MESA_X + 5, MESA_Y + 5);
+  ctx.lineTo(MESA_X, MESA_Y - 6);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#090306';
+  ctx.beginPath();
+  ctx.moveTo(0, 238);
+  ctx.lineTo(42, 228);
+  ctx.lineTo(78, 234);
+  ctx.lineTo(102, 222);
+  ctx.lineTo(132, 230);
+  ctx.lineTo(176, 238);
+  ctx.lineTo(192, 244);
+  ctx.lineTo(0, 248);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPlayerFire() {
+  ctx.save();
+  ctx.fillStyle = '#2a1400';
+  ctx.beginPath(); ctx.ellipse(FIRE_X - 16, FIRE_Y + 6, 12, 7, -0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1e0e00';
+  ctx.beginPath(); ctx.ellipse(FIRE_X + 18, FIRE_Y + 5, 11, 7, 0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#281200';
+  ctx.beginPath(); ctx.ellipse(FIRE_X, FIRE_Y + 8, 18, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.strokeStyle = '#3d2000'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(FIRE_X - 14, FIRE_Y + 3); ctx.lineTo(FIRE_X + 16, FIRE_Y + 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(FIRE_X - 8, FIRE_Y + 4); ctx.lineTo(FIRE_X + 10, FIRE_Y - 10); ctx.stroke();
+
+  const fg = ctx.createRadialGradient(FIRE_X, FIRE_Y - 5, 2, FIRE_X, FIRE_Y - 5, 44);
+  fg.addColorStop(0, 'rgba(255,135,18,0.62)');
+  fg.addColorStop(0.5, 'rgba(200,75,0,0.26)');
+  fg.addColorStop(1, 'rgba(150,38,0,0)');
+  ctx.fillStyle = fg;
+  ctx.beginPath(); ctx.arc(FIRE_X, FIRE_Y - 5, 44, 0, Math.PI * 2); ctx.fill();
+
+  for (const f of flameParticles) {
+    ctx.globalAlpha = f.life * 0.82;
+    ctx.fillStyle = `hsl(${f.hue},${f.sat}%,${f.lit}%)`;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.size * f.life, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawSmokeObjs() {
+  ctx.save();
+  for (const s of smokeObjs) {
+    const alpha = s.life * (s.type === 'micro' ? 0.42 : 0.62);
+    const base = s.fromMesa ? 195 : 175;
+    const colR = base, colG = base - 15, colB = base - 35;
+    for (const b of s.blobs) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `rgb(${colR},${colG},${colB})`;
+      ctx.beginPath();
+      ctx.arc(s.x + b.ox, s.y + b.oy, b.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawWindParticles() {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(195,175,155,0.55)';
+  ctx.lineWidth = 1.4;
+  for (const w of windParticles) {
+    ctx.globalAlpha = w.life * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(w.x, w.y);
+    ctx.lineTo(w.x - w.vx * w.len * 0.14, w.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 30);
+
+  ctx.font = '18px Georgia, serif';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < lives ? '#E74C3C' : '#3a1f05';
+    ctx.fillText('♥', 18 + i * 24, 30);
+  }
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia, serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('Round ' + round + '/' + NUM_ROUNDS, W - 12, 30);
+  ctx.restore();
+}
+
+function drawSequenceBar() {
+  if (!signalIndicators || signalIndicators.length === 0) return;
+  ctx.save();
+  const n = signalIndicators.length;
+  const spacing = Math.min(30, (W - 60) / Math.max(n - 1, 1));
+  const startX = W / 2 - (n - 1) * spacing / 2;
+  for (let i = 0; i < n; i++) {
+    const ind = signalIndicators[i];
+    const cx = startX + i * spacing;
+    const cy = 54;
+    let fill, stroke;
+    if (ind.status === 'pending') {
+      fill = '#1a0d00'; stroke = '#4a2a00';
+    } else if (ind.status === 'shown') {
+      fill = ind.type === 'cloud' ? 'rgba(200,160,80,0.3)' : 'rgba(200,160,80,0.18)';
+      stroke = '#C8A04A';
+    } else if (ind.status === 'correct') {
+      fill = 'rgba(40,180,60,0.28)'; stroke = '#4CAF50';
+    } else {
+      fill = 'rgba(200,40,30,0.28)'; stroke = '#E74C3C';
+    }
+    const r = ind.type === 'cloud' ? 10 : 7;
+    ctx.strokeStyle = stroke; ctx.fillStyle = fill; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHoldGauge() {
+  if (!holdActive) return;
+  const now = performance.now();
+  const elapsed = now - holdStart;
+  const cfg = ROUNDS[round - 1];
+  const pct = Math.min(elapsed / cfg.threshold, 1.45);
+  const isCloud = elapsed >= cfg.threshold;
+
+  ctx.save();
+  const cx = FIRE_X, cy = FIRE_Y + 34;
+  const r = 20;
+  ctx.strokeStyle = '#2a1000'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI * 2 - Math.PI / 2); ctx.stroke();
+
+  const endA = -Math.PI / 2 + pct * Math.PI * 2;
+  ctx.strokeStyle = isCloud ? '#FF9F43' : '#FFE066';
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, endA); ctx.stroke();
+
+  ctx.fillStyle = isCloud ? '#FF9F43' : '#FFE066';
+  ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(isCloud ? 'CLOUD' : 'PUFF', cx, cy);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawWindIndicator() {
+  ctx.save();
+  const x = W - 32, y = 56;
+  const al = windBurst ? 0.95 : 0.45;
+  ctx.globalAlpha = al;
+  ctx.fillStyle = windBurst ? '#FFE066' : '#C8A04A';
+  ctx.font = 'bold 17px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(windDir > 0 ? '→' : '←', x, y + 4);
+
+  if (!windBurst && state !== 'title') {
+    const cfg = ROUNDS[round - 1];
+    const pct = Math.max(windTimer, 0) / cfg.windInterval;
+    ctx.globalAlpha = 0.48;
+    ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y + 1, 11, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPhaseMsg() {
+  if (phaseMsgTimer <= 0 || !phaseMsg) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(phaseMsgTimer * 2.2, 1);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(phaseMsg, W / 2, H / 2 - 55);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  for (const p of popups) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 19px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHoldArea() {
+  if (state !== 'replaying') return;
+  ctx.save();
+  const baseY = H - 96;
+  const areaH = 86;
+  const isHeld = holdActive && !holdLocked;
+  const done = seqIdx >= (targetSeq ? targetSeq.length : 0);
+
+  ctx.fillStyle = holdLocked || done ? '#110800' : (isHeld ? 'rgba(200,155,55,0.22)' : 'rgba(75,38,8,0.18)');
+  roundRect(ctx, 18, baseY, W - 36, areaH, 13);
+  ctx.fill();
+
+  ctx.strokeStyle = holdLocked || done ? '#2a1400' : (isHeld ? '#FFE066' : '#C8A04A');
+  ctx.lineWidth = isHeld ? 2.2 : 1.2;
+  roundRect(ctx, 18, baseY, W - 36, areaH, 13);
+  ctx.stroke();
+
+  ctx.fillStyle = (holdLocked || done) ? '#4a2a00' : (isHeld ? '#FFE066' : '#C8A04A');
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center';
+  const txt = done ? 'Done!' : (holdLocked ? 'Wait...' : (isHeld ? 'Sending...' : 'Hold to Signal'));
+  ctx.fillText(txt, W / 2, baseY + areaH / 2 + 7);
+
+  if (!holdLocked && !done && !isHeld && targetSeq && seqIdx < targetSeq.length) {
+    const next = targetSeq[seqIdx];
+    ctx.fillStyle = '#8a5520';
+    ctx.font = '12px Georgia, serif';
+    ctx.fillText(next === 'cloud' ? 'Long hold = Cloud' : 'Short tap = Puff', W / 2, baseY + areaH - 12);
+  }
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawRoundResult() {
+  if (roundResultTimer <= 0 || !roundResultMsg) return;
+  ctx.save();
+  const al = Math.min(roundResultTimer * 1.4, 0.9);
+  ctx.globalAlpha = al;
+  ctx.fillStyle = 'rgba(5,2,0,0.92)';
+  roundRect(ctx, W / 2 - 114, H / 2 - 44, 228, 84, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1.5;
+  roundRect(ctx, W / 2 - 114, H / 2 - 44, 228, 84, 12);
+  ctx.stroke();
+  ctx.globalAlpha = Math.min(roundResultTimer * 1.4, 1);
+  ctx.fillStyle = roundResultMsg.includes('PERFECT') ? '#FFE066' : '#C8A04A';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(roundResultMsg, W / 2, H / 2 + 5);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitleScreen() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.76)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 38px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Smoke Signal', W / 2, H / 2 - 82);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Watch the tribe\'s smoke pattern.', W / 2, H / 2 - 46);
+  ctx.fillText('Then match it signal by signal.', W / 2, H / 2 - 24);
+
+  ctx.fillStyle = '#8a5520';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('Short hold = Puff   Long hold = Cloud', W / 2, H / 2 + 2);
+
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1.5;
+  ctx.fillStyle = 'rgba(200,160,80,0.2)';
+  ctx.beginPath(); ctx.arc(W / 2 - 52, H / 2 + 28, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '12px Georgia, serif';
+  ctx.fillText('Puff', W / 2 - 52, H / 2 + 48);
+
+  ctx.fillStyle = 'rgba(200,160,80,0.2)';
+  ctx.beginPath(); ctx.arc(W / 2 + 52, H / 2 + 28, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Cloud', W / 2 + 52, H / 2 + 48);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore, W / 2, H / 2 + 72);
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 17px Georgia, serif';
+  ctx.fillText('Tap to Play', W / 2, H / 2 + 106);
+  ctx.restore();
+}
+
+function drawWinScreen() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 36px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Signal Complete!', W / 2, H / 2 - 82);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '18px Georgia, serif';
+  ctx.fillText('Score: ' + score, W / 2, H / 2 - 40);
+  if (score >= bestScore && score > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, H / 2 - 12);
+  } else if (bestScore > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore, W / 2, H / 2 - 12);
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('Tap to Play Again', W / 2, H / 2 + 50);
+  ctx.restore();
+}
+
+function drawGameOverScreen() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 32px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Signal Lost', W / 2, H / 2 - 82);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '18px Georgia, serif';
+  ctx.fillText('Score: ' + score, W / 2, H / 2 - 40);
+  if (bestScore > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('Best: ' + bestScore, W / 2, H / 2 - 12);
+  }
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('Tap to Play Again', W / 2, H / 2 + 50);
+  ctx.restore();
+}
+
+// ── Game logic ────────────────────────────────────────────────────────────────
+function generateSequence(len) {
+  const seq = [];
+  for (let i = 0; i < len; i++) seq.push(Math.random() < 0.5 ? 'puff' : 'cloud');
+  return seq;
+}
+
+function classifyHold(durationMs) {
+  const cfg = ROUNDS[Math.max(0, round - 1)];
+  return durationMs >= cfg.threshold ? 'cloud' : 'puff';
+}
+
+function beginWatch() {
+  state = 'watching';
+  watchIdx = 0;
+  watchTimer = 500;
+  phaseMsg = 'WATCH CAREFULLY';
+  phaseMsgTimer = 1.0;
+}
+
+function beginReplay() {
+  state = 'replaying';
+  playerSeq = [];
+  seqIdx = 0;
+  holdActive = false;
+  holdLocked = false;
+  holdLockTimer = 0;
+  for (const ind of signalIndicators) ind.status = 'pending';
+  phaseMsg = 'YOUR TURN';
+  phaseMsgTimer = 1.0;
+}
+
+function startHold(now) {
+  if (state !== 'replaying') return;
+  if (holdLocked) return;
+  if (seqIdx >= targetSeq.length) return;
+  holdActive = true;
+  holdStart = now;
+  playBlanketDown();
+}
+
+function endHold(now) {
+  if (!holdActive) return;
+  holdActive = false;
+  const dur = now - holdStart;
+  const type = classifyHold(dur);
+  const correct = type === targetSeq[seqIdx];
+  playerSeq.push(type);
+  signalIndicators[seqIdx].status = correct ? 'correct' : 'wrong';
+  playBlanketUp(type);
+  setTimeout(() => playMatch(correct), 200);
+
+  if (!correct) {
+    lives--;
+    addPopup(FIRE_X, FIRE_Y - 52, 'MISS', '#E74C3C');
+    if (lives <= 0) {
+      holdLocked = true;
+      setTimeout(() => { saveScore(); state = 'gameover'; playGameOver(); }, 700);
+      return;
+    }
+  } else {
+    score += 100;
+    addPopup(FIRE_X, FIRE_Y - 52, type === 'cloud' ? 'CLOUD +100' : 'PUFF +100', '#4CAF50');
+  }
+
+  seqIdx++;
+  if (seqIdx >= targetSeq.length) {
+    holdLocked = true;
+    evaluateFullSequence();
+  } else {
+    holdLocked = true;
+    holdLockTimer = 580;
+  }
+}
+
+function evaluateFullSequence() {
+  const allCorrect = playerSeq.every((s, i) => s === targetSeq[i]);
+  if (allCorrect) {
+    score += 500;
+    roundResultMsg = round < NUM_ROUNDS ? 'PERFECT! +500' : 'SIGNAL COMPLETE! +500';
+    playRoundClear();
+  } else {
+    roundResultMsg = 'Round ' + round + ' done';
+  }
+  roundResultTimer = 1.85;
+  setTimeout(() => {
+    if (round >= NUM_ROUNDS) {
+      saveScore();
+      state = 'win';
+      playWin();
+    } else {
+      round++;
+      startRound();
+    }
+  }, 1950);
+}
+
+function startRound() {
+  const cfg = ROUNDS[round - 1];
+  targetSeq = generateSequence(cfg.seqLen);
+  playerSeq = [];
+  seqIdx = 0;
+  signalIndicators = targetSeq.map(t => ({ type: t, status: 'pending' }));
+  windTimer = cfg.windInterval;
+  windBurst = false;
+  windBurstTimer = 0;
+  windDir = Math.random() < 0.5 ? 1 : -1;
+  holdActive = false;
+  holdLocked = false;
+  holdLockTimer = 0;
+  beginWatch();
+}
+
+function startGame() {
+  state = 'watching';
+  round = 1;
+  score = 0;
+  lives = 3;
+  smokeObjs = [];
+  flameParticles = [];
+  windParticles = [];
+  popups = [];
+  phaseMsgTimer = 0;
+  phaseMsg = '';
+  roundResultTimer = 0;
+  roundResultMsg = '';
+  holdActive = false;
+  holdLocked = false;
+  holdLockTimer = 0;
+  holdStart = 0;
+  windBurst = false;
+  windBurstTimer = 0;
+  windDir = 1;
+  startRound();
+}
+
+function saveScore() {
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('smoke_signal_best', bestScore);
+  }
+}
+
+// ── Update ────────────────────────────────────────────────────────────────────
+function update(dt) {
+  if (state === 'title' || state === 'win' || state === 'gameover') {
+    updateFlames(dt, false);
+    updateSmokeObjs(dt);
+    updateWindParticles(dt);
+    updatePopups(dt);
+    return;
+  }
+
+  const cfg = ROUNDS[round - 1];
+  if (!windBurst) {
+    windTimer -= dt * 1000;
+    if (windTimer <= 0) {
+      windBurst = true;
+      windBurstTimer = WIND_BURST_DUR;
+      windDir = Math.random() < 0.5 ? 1 : -1;
+      playWind();
+    }
+  } else {
+    windBurstTimer -= dt * 1000;
+    if (windBurstTimer <= 0) {
+      windBurst = false;
+      windTimer = cfg.windInterval;
+    }
+  }
+
+  if (holdLocked && holdLockTimer > 0) {
+    holdLockTimer -= dt * 1000;
+    if (holdLockTimer <= 0) holdLocked = false;
+  }
+
+  if (phaseMsgTimer > 0) phaseMsgTimer -= dt;
+  if (roundResultTimer > 0) roundResultTimer -= dt;
+
+  if (state === 'watching') {
+    watchTimer -= dt * 1000;
+    if (watchTimer <= 0) {
+      if (watchIdx < targetSeq.length) {
+        const sigType = targetSeq[watchIdx];
+        signalIndicators[watchIdx].status = 'shown';
+        emitWatchSmoke(sigType);
+        playSignalSound(sigType);
+        watchIdx++;
+        const gap = cfg.watchGap + (sigType === 'cloud' ? 500 : 280);
+        watchTimer = gap;
+      } else {
+        state = 'replayPending';
+        phaseMsg = 'YOUR TURN';
+        phaseMsgTimer = 1.2;
+        setTimeout(() => { if (state === 'replayPending') beginReplay(); }, 1350);
+      }
+    }
+  }
+
+  const flameActive = holdActive && state === 'replaying';
+  updateFlames(dt, flameActive);
+  if (flameActive) emitReplaySmoke();
+  updateSmokeObjs(dt);
+  updateWindParticles(dt);
+  updatePopups(dt);
+}
+
+// ── Draw ──────────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+  drawMesa();
+  drawSmokeObjs();
+  drawWindParticles();
+  drawPlayerFire();
+
+  if (state !== 'title') {
+    drawHUD();
+    drawSequenceBar();
+    drawWindIndicator();
+  }
+  if (state === 'replaying') {
+    drawHoldGauge();
+    drawHoldArea();
+  }
+
+  drawPhaseMsg();
+  drawRoundResult();
+  drawPopups();
+
+  if (state === 'title') drawTitleScreen();
+  if (state === 'win') drawWinScreen();
+  if (state === 'gameover') drawGameOverScreen();
+}
+
+// ── Input ─────────────────────────────────────────────────────────────────────
+function onDown(e) {
+  if (e.preventDefault) e.preventDefault();
+  getAC();
+  if (state === 'title') { startGame(); return; }
+  if (state === 'win' || state === 'gameover') { startGame(); return; }
+  if (state === 'replaying') startHold(performance.now());
+}
+
+function onUp(e) {
+  if (e.preventDefault) e.preventDefault();
+  if (state === 'replaying' && holdActive) endHold(performance.now());
+}
+
+canvas.addEventListener('touchstart', onDown, { passive: false });
+canvas.addEventListener('touchend', onUp, { passive: false });
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mouseup', onUp);
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); onDown(e); } });
+window.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); onUp(e); } });
+
+// ── Main loop ─────────────────────────────────────────────────────────────────
+let lastT = 0;
+function loop(t) {
+  try {
+    const dt = Math.min((t - lastT) / 1000, 0.05);
+    lastT = t;
+    update(dt);
+    draw();
+  } catch (e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ── Test API ──────────────────────────────────────────────────────────────────
+window.__smoke = {
+  get state() { return state; }, set state(v) { state = v; },
+  get round() { return round; }, set round(v) { round = v; },
+  get score() { return score; }, set score(v) { score = v; },
+  get bestScore() { return bestScore; }, set bestScore(v) { bestScore = v; },
+  get lives() { return lives; }, set lives(v) { lives = v; },
+  get targetSeq() { return targetSeq; }, set targetSeq(v) { targetSeq = v; },
+  get playerSeq() { return playerSeq; }, set playerSeq(v) { playerSeq = v; },
+  get seqIdx() { return seqIdx; }, set seqIdx(v) { seqIdx = v; },
+  get watchIdx() { return watchIdx; }, set watchIdx(v) { watchIdx = v; },
+  get watchTimer() { return watchTimer; }, set watchTimer(v) { watchTimer = v; },
+  get windTimer() { return windTimer; }, set windTimer(v) { windTimer = v; },
+  get windBurst() { return windBurst; }, set windBurst(v) { windBurst = v; },
+  get windBurstTimer() { return windBurstTimer; }, set windBurstTimer(v) { windBurstTimer = v; },
+  get windDir() { return windDir; }, set windDir(v) { windDir = v; },
+  get holdActive() { return holdActive; }, set holdActive(v) { holdActive = v; },
+  get holdStart() { return holdStart; }, set holdStart(v) { holdStart = v; },
+  get holdLocked() { return holdLocked; }, set holdLocked(v) { holdLocked = v; },
+  get holdLockTimer() { return holdLockTimer; }, set holdLockTimer(v) { holdLockTimer = v; },
+  get signalIndicators() { return signalIndicators; }, set signalIndicators(v) { signalIndicators = v; },
+  get smokeObjs() { return smokeObjs; },
+  get flameParticles() { return flameParticles; },
+  get popups() { return popups; },
+  ROUNDS, NUM_ROUNDS, WIND_BURST_DUR, MESA_X, MESA_Y, FIRE_X, FIRE_Y,
+  startGame, update, generateSequence, classifyHold,
+  beginWatch, beginReplay, startHold, endHold, startRound,
+  evaluateFullSequence, emitWatchSmoke, emitReplaySmoke, addPopup,
+};
+</script>
+<script>
+document.getElementById('fb-submit').addEventListener('click', async () => {
+  const game = document.getElementById('fb-target').value;
+  const rating = parseInt(document.getElementById('fb-rating').value);
+  const message = document.getElementById('fb-msg').value.trim();
+  if (!message) { document.getElementById('fb-status').textContent = 'Please enter feedback.'; return; }
+  document.getElementById('fb-status').textContent = 'Sending...';
+  try {
+    const sc = (typeof score !== 'undefined') ? score : 0;
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game, rating, message, score: sc, source: 'smoke-signal' }),
+    });
+    document.getElementById('fb-status').textContent = 'Thanks!';
+    setTimeout(() => {
+      document.getElementById('fb-overlay').classList.add('hidden');
+      document.getElementById('fb-status').textContent = '';
+    }, 1200);
+  } catch (e) { document.getElementById('fb-status').textContent = 'Error. Try again.'; }
+});
+document.getElementById('fb-cancel').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.add('hidden');
+});
+</script>
+</body>
+</html>
