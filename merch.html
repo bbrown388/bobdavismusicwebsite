@@ -365,6 +365,117 @@ footer {
   letter-spacing: 1px;
 }
 
+/* ── Image thumbnail gallery ──────── */
+.img-thumbs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  width: 100%;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+  margin-bottom: 10px;
+}
+.img-thumbs::-webkit-scrollbar { display: none; }
+
+.img-thumb {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  background: rgba(255,255,255,0.04);
+  transition: border-color 0.15s;
+}
+.img-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.img-thumb.active { border-color: #FFD700; }
+.img-thumb:hover:not(.active) { border-color: rgba(255,215,0,0.45); }
+
+/* ── Option label ─────────────────── */
+.option-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #776650;
+  margin-bottom: 5px;
+  width: 100%;
+}
+
+/* ── Color thumbnail strip ────────── */
+.color-thumbs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.color-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  background: rgba(255,255,255,0.04);
+  transition: border-color 0.15s;
+}
+.color-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.color-thumb.active {
+  border-color: #FFD700;
+}
+.color-thumb:hover:not(.active) {
+  border-color: rgba(255,215,0,0.45);
+}
+
+/* ── Size picker ──────────────────── */
+.size-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-bottom: 2px;
+}
+.size-btn {
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: #C8B89A;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.size-btn:hover:not(:disabled) {
+  background: rgba(255,215,0,0.08);
+  border-color: rgba(255,215,0,0.3);
+  color: #E8DCC8;
+}
+.size-btn.active {
+  background: rgba(255,215,0,0.14);
+  border-color: rgba(255,215,0,0.55);
+  color: #FFD700;
+}
+.size-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+  text-decoration: line-through;
+}
+
 @media (max-width: 400px) {
   .cart-drawer { width: 100%; right: -100%; }
   .product-grid { grid-template-columns: 1fr; }
@@ -437,6 +548,48 @@ footer {
 
   .add-btn:hover:not(:disabled) {
     background: rgba(139,105,20,0.22);
+  }
+
+  .img-thumb {
+    background: rgba(0,0,0,0.06);
+  }
+
+  .img-thumb.active { border-color: #8B6914; }
+
+  .img-thumb:hover:not(.active) { border-color: rgba(139,105,20,0.5); }
+
+  .option-label {
+    color: #b09070;
+  }
+
+  .color-thumb {
+    background: rgba(0,0,0,0.06);
+  }
+
+  .color-thumb.active {
+    border-color: #8B6914;
+  }
+
+  .color-thumb:hover:not(.active) {
+    border-color: rgba(139,105,20,0.5);
+  }
+
+  .size-btn {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.15);
+    color: #3d2010;
+  }
+
+  .size-btn:hover:not(:disabled) {
+    background: rgba(139,105,20,0.1);
+    border-color: rgba(139,105,20,0.4);
+    color: #1e0e06;
+  }
+
+  .size-btn.active {
+    background: rgba(139,105,20,0.16);
+    border-color: rgba(139,105,20,0.6);
+    color: #6a4000;
   }
 
   .status-msg {
@@ -613,10 +766,13 @@ async function loadProducts() {
           node {
             id title
             priceRange { minVariantPrice { amount currencyCode } }
-            variants(first: 20) {
+            options { name values }
+            images(first: 20) { edges { node { url altText } } }
+            variants(first: 30) {
               edges {
                 node {
                   id title availableForSale
+                  selectedOptions { name value }
                   image { url altText }
                   priceV2 { amount currencyCode }
                 }
@@ -635,6 +791,8 @@ async function loadProducts() {
 }
 
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
+
+const _cards = {};
 
 function renderProducts(products) {
   const grid = document.getElementById('product-grid');
@@ -658,75 +816,203 @@ function renderProducts(products) {
 function buildCard(p) {
   const sid = safeId(p.id);
   const variants = p.variants.edges.map(e => e.node);
+  const options = p.options || [];
   const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
-  const multiVariant = variants.length > 1;
   const firstVariant = variants[0];
   const mainImg = firstVariant?.image || null;
+
+  const allImages = (p.images?.edges || []).map(e => e.node);
+  const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
+  const sizeOpt  = options.find(o => /^size$/i.test(o.name));
+  const isDefault = variants.length === 1 && variants[0].title === 'Default Title';
+
+  // Seed card state with first variant's selections
+  const initSelected = {};
+  if (!isDefault && firstVariant?.selectedOptions) {
+    firstVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
+  }
+  _cards[sid] = { variants, options, selected: initSelected };
 
   const mainImgHtml = mainImg
     ? `<img class="product-img" id="img-${sid}" src="${mainImg.url}" alt="${mainImg.altText || p.title}" loading="lazy">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
-  const variantHtml = multiVariant
-    ? `<div class="variant-buttons" id="vbtns-${sid}">
-         ${variants.map((v, i) => `
-           <button class="variant-btn${i === 0 ? ' active' : ''}"
-             data-vid="${v.id}"
-             data-img-url="${v.image?.url || ''}"
-             data-img-alt="${v.image?.altText || ''}"
-             data-price="${v.priceV2?.amount || ''}"
-             data-variant-name="${v.title}"
-             onclick="selectVariant(this,'${sid}')"
-             ${!v.availableForSale ? 'disabled' : ''}>
-             ${v.title}
-           </button>`).join('')}
-       </div>`
+  const thumbsHtml = allImages.length > 1
+    ? `<div class="img-thumbs" id="ithumbs-${sid}">
+        ${allImages.map((img, i) => `<button class="img-thumb${i === 0 ? ' active' : ''}"
+          data-img-url="${img.url}" data-img-alt="${img.altText || ''}"
+          onclick="selectThumb(this,'${sid}')">
+          <img src="${img.url}" alt="${img.altText || ''}" loading="lazy">
+        </button>`).join('')}
+      </div>`
     : '';
+
+  // Color thumbnail strip
+  let colorHtml = '';
+  if (colorOpt && !isDefault) {
+    const seen = new Map();
+    variants.forEach(v => {
+      const val = v.selectedOptions?.find(o => o.name === colorOpt.name)?.value;
+      if (val && !seen.has(val)) seen.set(val, v);
+    });
+    if (seen.size > 1) {
+      const initColor = initSelected[colorOpt.name];
+      colorHtml = `<div class="option-label">Color</div>
+        <div class="color-thumbs" id="cthumbs-${sid}">
+          ${[...seen.entries()].map(([val, v]) => `<button
+            class="color-thumb${val === initColor ? ' active' : ''}"
+            data-opt="${colorOpt.name}" data-val="${val}"
+            data-img-url="${v.image?.url || ''}" data-img-alt="${v.image?.altText || ''}"
+            title="${val}" onclick="selectOpt(this,'${sid}')">
+            ${v.image?.url ? `<img src="${v.image.url}" alt="${val}" loading="lazy">` : ''}
+          </button>`).join('')}
+        </div>`;
+    }
+  }
+
+  // Size picker
+  let sizeHtml = '';
+  if (sizeOpt && !isDefault) {
+    const initColor = initSelected[colorOpt?.name];
+    const initSize  = initSelected[sizeOpt.name];
+    sizeHtml = `<div class="option-label">Size</div>
+      <div class="size-picker" id="spicker-${sid}">
+        ${sizeOpt.values.map(sv => {
+          const ok = variants.some(v => {
+            const hasSize  = v.selectedOptions?.some(o => o.name === sizeOpt.name && o.value === sv);
+            const hasColor = !colorOpt || !initColor || v.selectedOptions?.some(o => o.name === colorOpt.name && o.value === initColor);
+            return hasSize && hasColor && v.availableForSale;
+          });
+          return `<button class="size-btn${sv === initSize ? ' active' : ''}"
+            data-opt="${sizeOpt.name}" data-val="${sv}"
+            onclick="selectOpt(this,'${sid}')" ${!ok ? 'disabled' : ''}>${sv}</button>`;
+        }).join('')}
+      </div>`;
+  }
+
+  // Fallback: flat variant buttons for products with unrecognised option types
+  let legacyHtml = '';
+  if (!colorOpt && !sizeOpt && variants.length > 1 && !isDefault) {
+    legacyHtml = `<div class="variant-buttons" id="vbtns-${sid}">
+      ${variants.map((v, i) => `<button class="variant-btn${i === 0 ? ' active' : ''}"
+        data-vid="${v.id}" data-img-url="${v.image?.url || ''}" data-img-alt="${v.image?.altText || ''}"
+        data-price="${v.priceV2?.amount || ''}" onclick="selectVariant(this,'${sid}')"
+        ${!v.availableForSale ? 'disabled' : ''}>${v.title}</button>`).join('')}
+    </div>`;
+  }
 
   return `
     <div class="product-card">
       <div class="product-img-wrap">${mainImgHtml}</div>
+      ${thumbsHtml}
       <div class="product-name">${p.title}</div>
       <div class="product-price">${price}</div>
-      ${variantHtml}
+      ${colorHtml}${sizeHtml}${legacyHtml}
       <button class="add-btn" id="add-${sid}"
-        data-sid="${sid}"
-        data-vid="${firstVariant?.id || ''}"
+        data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
         data-product-name="${p.title.replace(/"/g, '&quot;')}"
         data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
         data-currency="${p.priceRange.minVariantPrice.currencyCode}"
-        onclick="handleAdd(this)"
-        ${!available ? 'disabled' : ''}>
+        onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
         ${available ? 'Add to Cart' : 'Sold Out'}
       </button>
     </div>`;
 }
 
-function selectVariant(btn, sid) {
-  // Update active button
-  document.querySelectorAll(`#vbtns-${sid} .variant-btn`).forEach(b => b.classList.remove('active'));
+function selectOpt(btn, sid) {
+  const card = _cards[sid];
+  if (!card) return;
+  const optName = btn.dataset.opt;
+  const optVal  = btn.dataset.val;
+  card.selected[optName] = optVal;
+
+  // Mark active in this group
+  btn.closest('.color-thumbs, .size-picker')
+    ?.querySelectorAll('button')
+    .forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 
-  // Update add button's variant target and price
-  const addBtn = document.getElementById(`add-${sid}`);
-  addBtn.dataset.vid = btn.dataset.vid;
-  if (btn.dataset.price) addBtn.dataset.price = btn.dataset.price;
+  const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
+  const sizeOpt  = card.options.find(o => /^size$/i.test(o.name));
 
-  if (btn.dataset.imgUrl) {
-    swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
+  // Color changed — swap image and refresh size availability
+  if (colorOpt && optName === colorOpt.name) {
+    if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
+    if (sizeOpt) {
+      const selectedColor = card.selected[colorOpt.name];
+      const selectedSize  = card.selected[sizeOpt.name];
+      document.getElementById(`spicker-${sid}`)
+        ?.querySelectorAll('.size-btn')
+        .forEach(sb => {
+          const sv = sb.dataset.val;
+          const ok = card.variants.some(v => {
+            const hasColor = v.selectedOptions?.some(o => o.name === colorOpt.name && o.value === selectedColor);
+            const hasSize  = v.selectedOptions?.some(o => o.name === sizeOpt.name  && o.value === sv);
+            return hasColor && hasSize && v.availableForSale;
+          });
+          sb.disabled = !ok;
+          if (sv === selectedSize && !ok) {
+            sb.classList.remove('active');
+            delete card.selected[sizeOpt.name];
+          }
+        });
+    }
+  }
+
+  // Find matching variant and update Add to Cart
+  const match = card.variants.find(v =>
+    Object.entries(card.selected).every(([n, val]) =>
+      v.selectedOptions?.some(o => o.name === n && o.value === val)
+    )
+  );
+  const addBtn = document.getElementById(`add-${sid}`);
+  if (match && addBtn) {
+    addBtn.dataset.vid = match.id;
+    if (match.priceV2?.amount) addBtn.dataset.price = match.priceV2.amount;
   }
 }
 
-function swapMainImage(sid, url, alt) {
+function selectVariant(btn, sid) {
+  document.querySelectorAll(`#vbtns-${sid} .variant-btn`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const addBtn = document.getElementById(`add-${sid}`);
+  addBtn.dataset.vid = btn.dataset.vid;
+  if (btn.dataset.price) addBtn.dataset.price = btn.dataset.price;
+  if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
+}
+
+function selectThumb(btn, sid) {
+  document.getElementById(`ithumbs-${sid}`)
+    ?.querySelectorAll('.img-thumb')
+    .forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt, true);
+}
+
+function swapMainImage(sid, url, alt, skipThumbSync) {
   const imgEl = document.getElementById(`img-${sid}`);
   if (!imgEl || imgEl.src === url) return;
   imgEl.classList.add('fading');
-  setTimeout(() => {
-    imgEl.src = url;
-    imgEl.alt = alt || '';
-    imgEl.classList.remove('fading');
-  }, 150);
+  const start = Date.now();
+  const preload = new Image();
+  preload.onload = preload.onerror = () => {
+    const wait = Math.max(0, 150 - (Date.now() - start));
+    setTimeout(() => {
+      imgEl.src = url;
+      imgEl.alt = alt || '';
+      imgEl.classList.remove('fading');
+      if (!skipThumbSync) {
+        const thumbs = document.getElementById(`ithumbs-${sid}`);
+        thumbs?.querySelectorAll('.img-thumb').forEach(b => {
+          const match = b.dataset.imgUrl === url;
+          b.classList.toggle('active', match);
+          if (match) b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        });
+      }
+    }, wait);
+  };
+  preload.src = url;
 }
 
 
