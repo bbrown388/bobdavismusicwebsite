@@ -408,39 +408,6 @@ footer {
   width: 100%;
 }
 
-/* ── Color thumbnail strip ────────── */
-.color-thumbs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  width: 100%;
-  margin-bottom: 10px;
-}
-.color-thumb {
-  width: 48px;
-  height: 48px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 2px solid transparent;
-  cursor: pointer;
-  flex-shrink: 0;
-  padding: 0;
-  background: rgba(255,255,255,0.04);
-  transition: border-color 0.15s;
-}
-.color-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.color-thumb.active {
-  border-color: #FFD700;
-}
-.color-thumb:hover:not(.active) {
-  border-color: rgba(255,215,0,0.45);
-}
-
 /* ── Size picker ──────────────────── */
 .size-picker {
   display: flex;
@@ -560,18 +527,6 @@ footer {
 
   .option-label {
     color: #b09070;
-  }
-
-  .color-thumb {
-    background: rgba(0,0,0,0.06);
-  }
-
-  .color-thumb.active {
-    border-color: #8B6914;
-  }
-
-  .color-thumb:hover:not(.active) {
-    border-color: rgba(139,105,20,0.5);
   }
 
   .size-btn {
@@ -848,7 +803,7 @@ function buildCard(p) {
       </div>`
     : '';
 
-  // Color thumbnail strip
+  // Color pill buttons
   let colorHtml = '';
   if (colorOpt && !isDefault) {
     const seen = new Map();
@@ -859,14 +814,12 @@ function buildCard(p) {
     if (seen.size > 1) {
       const initColor = initSelected[colorOpt.name];
       colorHtml = `<div class="option-label">Color</div>
-        <div class="color-thumbs" id="cthumbs-${sid}">
+        <div class="size-picker" id="cthumbs-${sid}">
           ${[...seen.entries()].map(([val, v]) => `<button
-            class="color-thumb${val === initColor ? ' active' : ''}"
+            class="size-btn${val === initColor ? ' active' : ''}"
             data-opt="${colorOpt.name}" data-val="${val}"
             data-img-url="${v.image?.url || ''}" data-img-alt="${v.image?.altText || ''}"
-            title="${val}" onclick="selectOpt(this,'${sid}')">
-            ${v.image?.url ? `<img src="${v.image.url}" alt="${val}" loading="lazy">` : ''}
-          </button>`).join('')}
+            onclick="selectOpt(this,'${sid}')">${val}</button>`).join('')}
         </div>`;
     }
   }
@@ -928,7 +881,7 @@ function selectOpt(btn, sid) {
   card.selected[optName] = optVal;
 
   // Mark active in this group
-  btn.closest('.color-thumbs, .size-picker')
+  btn.closest('.size-picker')
     ?.querySelectorAll('button')
     .forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
