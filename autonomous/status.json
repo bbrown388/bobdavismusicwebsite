@@ -1,22 +1,12 @@
 {
   "lastRunAt": "2026-05-15T08:00:01Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Building Game 53: Dust Bowl Derby",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Designing Game 53: Dust Bowl Derby - top-down vehicular demolition derby"
-  },
-  "gamesBuilt": 52,
-  "lastGameTitle": "Frontier Forge",
-  "lastGameFile": "frontier-forge.html",
+  "lastRunSummary": "Built Game 53: Dust Bowl Derby - top-down vehicular demolition derby, dual-resource engine heat + body damage, 66 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 53,
+  "lastGameTitle": "Dust Bowl Derby",
+  "lastGameFile": "dust-bowl-derby.html",
   "gameQueue": [
-    {
-      "num": 53,
-      "title": "Dust Bowl Derby",
-      "concept": "Top-down demolition derby in a frontier arena. RAM rivals off the dirt track before they ram you. Manage engine heat and body damage simultaneously. Rival AI uses bumper-target and avoidance behaviors. First vehicular combat / arena-survival mechanic in series.",
-      "raisesBarOn": "First vehicular combat mechanic (offensive ramming vs. defensive racing), first arena-survival format with simultaneous dual-resource drain, first physics-impulse collision response used offensively",
-      "status": "planned"
-    },
     {
       "num": 54,
       "title": "Smoke Signal",
@@ -29,6 +19,13 @@
       "title": "Cattle Baron",
       "concept": "Resource management and territory expansion. Buy land parcels at auction, graze cattle to build value, defend against drought and rustlers. Turn-based economic strategy with risk/reward tradeoffs across 10 rounds. First territory-expansion economic strategy in series.",
       "raisesBarOn": "First turn-based territory strategy (buy/graze/defend), first multi-round economic arc with compounding returns, first risk-layered resource management (drought probability increases with overgrazing)",
+      "status": "planned"
+    },
+    {
+      "num": 56,
+      "title": "Dead Eye",
+      "concept": "Wind-drift shooting gallery. Aim a crosshair against continuous wind pull, lead moving targets across a frontier backdrop, and time shots to score hits before targets escape. Three target types (still/slow/fast) with escalating wind and density. First precision aiming + wind compensation mechanic in series.",
+      "raisesBarOn": "First ballistic aiming with continuous wind drift (crosshair pushed laterally, player compensates), first lead-target prediction mechanic, first gallery-shooter format",
       "status": "planned"
     }
   ],
@@ -112,6 +109,14 @@
       "result": "success",
       "summary": "Built Game 52: Frontier Forge - blacksmith 3-phase crafting (heat/strike/quench), material state simulation, 63 tests pass.",
       "commitHash": "3d0e90d"
+    },
+    {
+      "runAt": "2026-05-15T08:00:00.000Z",
+      "action": "new_game",
+      "game": "Dust Bowl Derby",
+      "result": "success",
+      "summary": "Built Game 53: Dust Bowl Derby - top-down vehicular demolition derby, dual-resource engine heat + body damage, 66 tests pass.",
+      "commitHash": "88e7604"
     }
   ]
 }
