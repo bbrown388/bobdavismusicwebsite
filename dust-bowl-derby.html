@@ -244,7 +244,7 @@ function startGame() {
   rightHeld         = false;
   boostHeld         = false;
   activeTouches.clear();
-  player = makeCar(ARENA_CX, ARENA_CY - ARENA_RY * 0.52, -Math.PI / 2, '#c8a04a', '#ffe066');
+  player = makeCar(ARENA_CX, ARENA_CY - ARENA_RY * 0.52, Math.PI / 2, '#c8a04a', '#ffe066');
   spawnBarrels();
   spawnRound(0);
   ensureAudio();

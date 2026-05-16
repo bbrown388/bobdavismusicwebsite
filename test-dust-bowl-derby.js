@@ -109,6 +109,18 @@ test('MAX_DAMAGE is 100', async () => {
 });
 
 // ── Suite 3: startGame ───────────────────────────────────────────────────────
+test('player starts facing toward arena center (downward), not into wall', async () => {
+  await page.evaluate(() => window.__dbd.startGame());
+  const { angle, py, cy } = await page.evaluate(() => ({
+    angle: window.__dbd.player.angle,
+    py: window.__dbd.player.y,
+    cy: window.__dbd.ARENA_CY,
+  }));
+  // Player spawns above center — vy must be positive (moving down toward rivals)
+  const vy = Math.sin(angle);
+  assert.ok(vy > 0, `player above center must face down (vy > 0); got angle=${angle.toFixed(3)} vy=${vy.toFixed(3)}`);
+});
+
 test('startGame sets state to playing', async () => {
   await page.evaluate(() => window.__dbd.startGame());
   const s = await page.evaluate(() => window.__dbd.state);
