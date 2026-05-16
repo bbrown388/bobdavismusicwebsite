@@ -72,9 +72,7 @@ async function testIndex() {
   const gamesHref = await gamesBtn.getAttribute('href');
   assert(gamesHref === 'games.html', `games button links to games.html (got "${gamesHref}")`);
 
-  // AI disclaimer visible
-  const disclaimerText = await page.locator('.games-note').textContent();
-  assert(disclaimerText.toLowerCase().includes('ai'), 'AI disclaimer text present');
+  // AI disclaimer is on games.html now — verified in testGames()
 
   // All link-btn elements have a non-empty href
   const hrefs = await page.locator('.link-btn').evaluateAll(els =>
@@ -99,13 +97,6 @@ async function testIndexLight() {
 
   const h1 = await page.textContent('h1');
   assert(h1.trim() === 'Bob Davis', 'light mode: page renders');
-
-  // Games note has computed color (not invisible)
-  const noteVisible = await page.locator('.games-note').evaluate(el => {
-    const s = window.getComputedStyle(el);
-    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
-  });
-  assert(noteVisible, 'games-note is visible in light mode');
 
   // Merch button visible in light mode
   const merchVisible = await page.locator('.link-btn.merch').isVisible();
@@ -148,6 +139,7 @@ async function testGames() {
   // Caveat/disclaimer text on games page
   const caveat = await page.locator('.games-caveat').textContent();
   assert(caveat.trim().length > 0, 'games page has caveat text');
+  assert(caveat.toLowerCase().includes('ai'), 'games caveat mentions AI');
 
   // Meta description count matches actual card count
   const metaDesc = await page.getAttribute('meta[name="description"]', 'content');
