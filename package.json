@@ -1,4 +1,10 @@
 {
+  "scripts": {
+    "test:website": "node test-website.js",
+    "test:recent": "node run-all-tests.js --recent 5",
+    "test:all": "node run-all-tests.js",
+    "test:game": "node run-all-tests.js --game"
+  },
   "dependencies": {
     "playwright": "^1.59.1"
   }

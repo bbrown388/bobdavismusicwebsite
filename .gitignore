@@ -1,3 +1,15 @@
 .superpowers/
 node_modules/
 .claude/
+
+# Test artifacts
+test-screenshots/
+
+# One-off screenshot scripts (not part of the test suite)
+take-*.js
+
+# Autonomous director runtime artifacts
+autonomous/run.log
+autonomous/run.lock
+autonomous/_*.json
+autonomous/pending-feedback.json

@@ -80,7 +80,8 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Outlaw Run](retrospectives/03-outlaw-run.md) â€” session lessons, action items for Game 06
 - [Retrospective: Cattle Drive](retrospectives/04-cattle-drive.md) â€” session lessons, action items for Game 07
 - [Retrospective: Tin Star Showdown](retrospectives/05-tin-star-showdown.md) â€” session lessons, action items for Game 08
-- [Retrospective: Dust Devil](retrospectives/06-dust-devil.md) â€” session lessons, action items for Game 09
+- [Retrospective: Dust Devil](retrospectives/06-dust-devil.md) — session lessons, action items for Game 09
+- [Retrospective: Wanted Poster](retrospectives/07-wanted-poster.md) — session lessons, action items for Game 10
 - [Retrospective: Gold Rush](retrospectives/08-gold-rush.md) — session lessons, action items for Game 11
 - [Retrospective: Boot Hill Bluff](retrospectives/09-boot-hill-bluff.md) — session lessons, action items for Game 12
 - [Retrospective: Stampede](retrospectives/10-stampede.md) — session lessons, action items for Game 13
@@ -113,6 +114,9 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Last Rope Standing](retrospectives/39-last-rope-standing.md) — session lessons, action items for Game 40
 - [Retrospective: Wire Tap](retrospectives/40-wire-tap.md) — session lessons, action items for Game 41
 - [Retrospective: Gold Panner](retrospectives/41-gold-panner.md) — session lessons, action items for Game 42
+- [Retrospective: Coyote Call](retrospectives/42-coyote-call.md) — session lessons, action items for Game 43
+- [Retrospective: Wanted: Reward](retrospectives/43-wanted-reward.md) — session lessons, action items for Game 44
+- [Retrospective: Trail Blaze](retrospectives/44-trail-blaze.md) — session lessons, action items for Game 45
 - [Retrospective: Rattlesnake Round-Up](retrospectives/45-rattlesnake-round-up.md) — session lessons, action items for Game 46
 - [Retrospective: Prairie Telegraph](retrospectives/46-prairie-telegraph.md) — session lessons, action items for Game 47
 - [Retrospective: Outlaw Auction](retrospectives/47-outlaw-auction.md) — session lessons, action items for Game 48

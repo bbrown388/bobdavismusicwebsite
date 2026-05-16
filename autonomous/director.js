@@ -8,7 +8,7 @@ const FEEDBACK_FILE = path.join(__dirname, 'pending-feedback.json');
 
 function readState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
-  catch { return { lastFeedbackId: null, gamesBuilt: 5, lastGameTitle: 'Outlaw Run', currentTask: null, lastRunAt: null }; }
+  catch { return { lastFeedbackId: null, gamesBuilt: 54, lastGameTitle: 'Smoke Signal', currentTask: null, lastRunAt: null }; }
 }
 
 function writeState(updates) {

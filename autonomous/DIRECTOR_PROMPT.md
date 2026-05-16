@@ -107,7 +107,9 @@ Read that output and act on it per the instructions below.
 8. Run tests — fix all failures before proceeding
    **→ Status checkpoint:** after all tests pass, run:
    `node autonomous/update-status.js "{\"currentTask\":{\"action\":\"new_game\",\"context\":\"Game NN: Title — tests passing, committing\"},\"lastRunSummary\":\"Game NN tests pass\"}"`
-9. Add a game card to `games.html` only (above the previous newest game at the top of `.game-cards`). Do **not** touch the game listing in `index.html` — it no longer has one. Do update the count in the "Browse All N Games" button on `index.html`: find `<a class="link-btn merch" href="games.html">Browse All` and update the number.
+9. Add a game card to `games.html` only (above the previous newest game at the top of `.game-cards`). Do **not** touch any game listing in `index.html`. Update the game count in **two places**:
+   - `index.html`: find `<a class="link-btn games" href="games.html">` and update the number in "Browse N Games"
+   - `games.html`: update `<meta name="description" content="N western mini-games, each built in a single AI session.">`
 10. Commit: `git commit -m "feat: add Game NN <Title> — <one-line description>"`
 11. Push
 12. Write retrospective to `docs/game-dev-knowledge/retrospectives/NN-<slug>.md`
