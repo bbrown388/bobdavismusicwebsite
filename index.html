@@ -173,36 +173,19 @@ section {
   margin: 0 auto 44px;
 }
 
-.games-aside {
-  text-align: center;
-  margin: 0 0 40px;
+.link-btn.games {
+  background: rgba(255,215,0,0.06);
+  border-color: rgba(255,215,0,0.22);
+  color: #c8a84a;
 }
 
-.games-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 22px;
-  border-radius: 24px;
-  font-size: 13px;
-  font-family: Georgia, serif;
-  text-decoration: none;
-  color: #b09060;
-  background: rgba(205,150,50,0.07);
-  border: 1px solid rgba(205,150,50,0.28);
-  letter-spacing: 0.5px;
-  transition: filter 0.15s, transform 0.1s;
-}
-.games-pill:hover {
-  filter: brightness(1.2);
-  transform: scale(1.02);
-}
-.games-pill svg {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
-  flex-shrink: 0;
-  opacity: 0.8;
+.games-note {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: #8a6848;
+  letter-spacing: 0.3px;
 }
 
 /* â"€â"€ Games â"€â"€ */
@@ -370,13 +353,14 @@ footer {
     background: rgba(139,105,20,0.35);
   }
 
-  .games-pill {
-    color: #7a5020;
-    background: rgba(160,100,0,0.06);
-    border-color: rgba(160,100,0,0.32);
+  .link-btn.games {
+    background: rgba(139,105,20,0.07);
+    border-color: rgba(139,105,20,0.28);
+    color: #7a5a10;
   }
-  .games-pill:hover {
-    filter: brightness(0.85);
+
+  .games-note {
+    color: #b09070;
   }
 
   .all-games-link {
@@ -500,13 +484,16 @@ footer {
 </section>
 
 <!-- Games -->
-<div class="games-aside">
-  <p class="section-label" style="margin-bottom:12px">Games</p>
-  <a class="games-pill" href="games.html">
-    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM18.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM16 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM5.5 16a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 18.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM21 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 12a3 3 0 1 1 6 0 3 3 0 0 1-6 0z"/></svg>
-    Browse 54 Games &#8594;
-  </a>
-</div>
+<section>
+  <p class="section-label">Games</p>
+  <div class="links">
+    <a class="link-btn games" href="games.html" onclick="gtag('event','games_click',{})">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM18.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM16 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM5.5 16a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 18.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM21 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 12a3 3 0 1 1 6 0 3 3 0 0 1-6 0z"/></svg>
+      Browse 54 Games
+    </a>
+  </div>
+  <p class="games-note">Autonomous AI experiments &mdash; built without human oversight, quality not guaranteed.</p>
+</section>
 
 <footer>
   bobdavismusic.com
