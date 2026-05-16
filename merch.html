@@ -464,6 +464,17 @@ footer {
   width: 100%;
   margin: 0;
 }
+.desc-btn {
+  background: none;
+  border: none;
+  color: #907860;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 /* ── Option selected label ────────── */
 .opt-current {
@@ -705,6 +716,8 @@ footer {
   .trust-line { color: #9a6838; }
 
   .product-desc { color: #7a5030; }
+
+  .desc-btn { color: #8a5820; }
 
   .opt-current { color: #5a3400; }
 
@@ -953,9 +966,15 @@ function buildCard(p) {
     </div>`;
   }
 
-  const descHtml = p.description
-    ? `<p class="product-desc">${p.description.length > 110 ? p.description.slice(0, 110) + '…' : p.description}</p>`
-    : '';
+  const descHtml = (() => {
+    if (!p.description) return '';
+    const MAX = 100;
+    if (p.description.length <= MAX) return `<p class="product-desc">${p.description}</p>`;
+    const cutIdx = p.description.slice(0, MAX).search(/\s\S*$/);
+    const head = p.description.slice(0, cutIdx > 0 ? cutIdx : MAX);
+    const tail = p.description.slice(head.length);
+    return `<p class="product-desc" id="desc-${sid}">${head}<span id="desc-more-${sid}">&thinsp;&hellip;&thinsp;<button class="desc-btn" onclick="expandDesc('${sid}')">more</button></span><span id="desc-full-${sid}" hidden>${tail}</span></p>`;
+  })();
 
   return `
     <div class="product-card">
@@ -976,7 +995,7 @@ function buildCard(p) {
     </div>`;
 }
 
-function selectOpt(btn, sid) {
+function selectOpt(btn, sid, skipImageSwap) {
   const card = _cards[sid];
   if (!card) return;
   const optName = btn.dataset.opt;
@@ -1003,7 +1022,7 @@ function selectOpt(btn, sid) {
 
   // Color changed — swap image and refresh size availability
   if (colorOpt && optName === colorOpt.name) {
-    if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt || '');
+    if (!skipImageSwap && btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt || '');
     if (sizeOpt) {
       const selectedColor = card.selected[colorOpt.name];
       const selectedSize  = card.selected[sizeOpt.name];
@@ -1053,6 +1072,29 @@ function selectThumb(btn, sid) {
     .forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt, true);
+
+  // Auto-select color whose variant image matches this thumbnail
+  const imgUrl = btn.dataset.imgUrl;
+  const colorContainer = document.getElementById(`cthumbs-${sid}`);
+  if (colorContainer && imgUrl) {
+    for (const cb of colorContainer.querySelectorAll('.size-btn[data-img-url]')) {
+      if (cb.dataset.imgUrl === imgUrl && !cb.classList.contains('active')) {
+        // Reveal if hidden behind collapse
+        if (cb.classList.contains('color-hidden')) {
+          showMoreColors(sid);
+        }
+        selectOpt(cb, sid, true); // skipImageSwap — already swapped above
+        break;
+      }
+    }
+  }
+}
+
+function expandDesc(sid) {
+  const more = document.getElementById(`desc-more-${sid}`);
+  const full  = document.getElementById(`desc-full-${sid}`);
+  if (more) more.hidden = true;
+  if (full) full.hidden = false;
 }
 
 function showMoreColors(sid) {
