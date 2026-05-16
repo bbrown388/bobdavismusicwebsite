@@ -1,22 +1,12 @@
 {
   "lastRunAt": "2026-05-16T08:00:01Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 55 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 55: Cattle Baron - tests passing, committing"
-  },
-  "gamesBuilt": 54,
-  "lastGameTitle": "Smoke Signal",
-  "lastGameFile": "smoke-signal.html",
+  "lastRunSummary": "Built Game 55: Cattle Baron - turn-based territory strategy, 4x4 parcel grid, 8 threat types, 78 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 55,
+  "lastGameTitle": "Cattle Baron",
+  "lastGameFile": "cattle-baron.html",
   "gameQueue": [
-    {
-      "num": 55,
-      "title": "Cattle Baron",
-      "concept": "Resource management and territory expansion. Buy land parcels at auction, graze cattle to build value, defend against drought and rustlers. Turn-based economic strategy with risk/reward tradeoffs across 10 rounds. First territory-expansion economic strategy in series.",
-      "raisesBarOn": "First turn-based territory strategy (buy/graze/defend), first multi-round economic arc with compounding returns, first risk-layered resource management (drought probability increases with overgrazing)",
-      "status": "planned"
-    },
     {
       "num": 56,
       "title": "Dead Eye",
@@ -28,7 +18,14 @@
       "num": 57,
       "title": "Canyon Run",
       "concept": "First-person perspective obstacle runner. Sprint down a canyon as boulders, tumbleweeds, and cacti loom out of the vanishing point. Obstacles scale from small to large using perspective projection and must be dodged left/right. Speed escalates across 5 stages. First pseudo-3D perspective scaling in series.",
-      "raisesBarOn": "First pseudo-3D depth illusion (objects grow from center vanishing point using perspective math), first reflex-based first-person runner (not narrative like Wanted: Dead or Alive or Stampede), first frame-rate-independent obstacle approach system",
+      "raisesBarOn": "First pseudo-3D depth illusion (objects grow from center vanishing point using perspective math), first reflex-based first-person runner, first frame-rate-independent obstacle approach system",
+      "status": "planned"
+    },
+    {
+      "num": 58,
+      "title": "Saddlebag",
+      "concept": "Spatial packing puzzle. Each round presents a set of irregularly-shaped gear items (L, T, I, S shapes) that must be fitted into a saddlebag grid. Tap to select an item, tap to rotate, tap a grid cell to place. Items have gold values -- maximize value in the bag before the departure timer runs out. 5 rounds with increasingly complex items and tighter grids.",
+      "raisesBarOn": "First spatial rotation-and-placement mechanic in series (Tetromino-style packing), first inventory spatial reasoning challenge, first departure timer adding urgency to a placement puzzle",
       "status": "planned"
     }
   ],
@@ -128,6 +125,14 @@
       "result": "success",
       "summary": "Built Game 54: Smoke Signal - timed smoke pattern generation, hold-duration mechanic, 68 tests pass.",
       "commitHash": "a85b5f6"
+    },
+    {
+      "runAt": "2026-05-16T08:00:00.000Z",
+      "action": "new_game",
+      "game": "Cattle Baron",
+      "result": "success",
+      "summary": "Built Game 55: Cattle Baron - turn-based territory strategy, 4x4 parcel grid, 8 threat types, 78 tests pass.",
+      "commitHash": "fac669b"
     }
   ]
 }
