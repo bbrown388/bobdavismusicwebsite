@@ -22,7 +22,7 @@ body {
   padding: 52px 20px 72px;
 }
 
-/* â”€â”€ Hero â”€â”€ */
+/* â"€â"€ Hero â"€â"€ */
 .hero {
   display: flex;
   flex-direction: column;
@@ -68,7 +68,7 @@ h1 {
   font-style: italic;
 }
 
-/* â”€â”€ Bio â”€â”€ */
+/* â"€â"€ Bio â"€â"€ */
 .bio {
   max-width: 420px;
   text-align: center;
@@ -79,7 +79,7 @@ h1 {
   padding: 0 4px;
 }
 
-/* â”€â”€ Sections â”€â”€ */
+/* â"€â"€ Sections â"€â"€ */
 section {
   width: 100%;
   max-width: 420px;
@@ -95,7 +95,7 @@ section {
   margin-bottom: 16px;
 }
 
-/* â”€â”€ Link buttons â”€â”€ */
+/* â"€â"€ Link buttons â"€â"€ */
 .links {
   display: flex;
   flex-direction: column;
@@ -165,7 +165,7 @@ section {
   color: #a0b0e0;
 }
 
-/* â”€â”€ Divider â”€â”€ */
+/* â"€â"€ Divider â"€â"€ */
 .divider {
   width: 40px;
   height: 1px;
@@ -174,15 +174,34 @@ section {
 }
 
 .games-caveat {
-  font-size: 13px;
-  color: #9a7a64;
+  font-size: 11px;
+  color: #776650;
   text-align: center;
   font-style: italic;
-  margin-bottom: 16px;
-  line-height: 1.6;
+  margin-top: 10px;
+  letter-spacing: 0.3px;
 }
 
-/* â”€â”€ Games â”€â”€ */
+.games-stat {
+  font-size: 56px;
+  font-weight: bold;
+  color: #FFD700;
+  text-align: center;
+  line-height: 1;
+  margin-bottom: 4px;
+  letter-spacing: -1px;
+}
+
+.games-stat-label {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #776650;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+/* â"€â"€ Games â"€â"€ */
 .game-cards {
   display: flex;
   flex-direction: column;
@@ -256,7 +275,7 @@ section {
   flex-shrink: 0;
 }
 
-/* â”€â”€ Footer â”€â”€ */
+/* â"€â"€ Footer â"€â"€ */
 footer {
   margin-top: 16px;
   text-align: center;
@@ -274,7 +293,7 @@ footer {
   display: inline-block;
 }
 
-/* â”€â”€ Light mode â”€â”€ */
+/* â"€â"€ Light mode â"€â"€ */
 @media (prefers-color-scheme: light) {
   body {
     background: linear-gradient(180deg, #F2E8D0 0%, #EADDb8 100%);
@@ -348,7 +367,15 @@ footer {
   }
 
   .games-caveat {
-    color: #7a5030;
+    color: #a08060;
+  }
+
+  .games-stat {
+    color: #8B6914;
+  }
+
+  .games-stat-label {
+    color: #a08060;
   }
 
   .all-games-link {
@@ -476,13 +503,15 @@ footer {
 <!-- Games -->
 <section>
   <p class="section-label">Games</p>
-  <p class=”games-caveat”>These games are an ongoing experiment &mdash; each one built in a single AI session. They're rough, but they're real. New ones keep showing up.</p>
+  <p class="games-stat">54</p>
+  <p class="games-stat-label">games and counting</p>
   <div class="links">
     <a class="link-btn merch" href="games.html">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM18.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM16 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM5.5 16a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 18.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM21 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 12a3 3 0 1 1 6 0 3 3 0 0 1-6 0z"/></svg>
-      Browse All 54 Games &#8594;
+      Browse All Games &#8594;
     </a>
   </div>
+  <p class="games-caveat">Each one built in a single AI session.</p>
 </section>
 
 <footer>
