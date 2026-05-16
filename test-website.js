@@ -2,6 +2,7 @@
 // Tests: index.html, games.html, merch.html, status.html
 // Run: node test-website.js
 const { chromium } = require('playwright');
+const fs = require('fs');
 const path = require('path');
 
 const W = 390, H = 844;
@@ -148,9 +149,15 @@ async function testGames() {
   const caveat = await page.locator('.games-caveat').textContent();
   assert(caveat.trim().length > 0, 'games page has caveat text');
 
-  // Meta description has a game count
+  // Meta description count matches actual card count
   const metaDesc = await page.getAttribute('meta[name="description"]', 'content');
-  assert(/\d+/.test(metaDesc), `meta description has a count (got "${metaDesc}")`);
+  const metaNum = parseInt((metaDesc.match(/(\d+)/) || [])[1], 10);
+  assert(!isNaN(metaNum), `meta description has a count (got "${metaDesc}")`);
+  assert(metaNum === cardCount, `meta description count (${metaNum}) matches card count (${cardCount})`);
+
+  // Every card href points to a file that actually exists on disk
+  const missingFiles = hrefs.filter(h => !fs.existsSync(path.join(__dirname, h)));
+  assert(missingFiles.length === 0, `all game card files exist on disk (missing: ${missingFiles.join(', ')})`);
 
   await teardown();
 }

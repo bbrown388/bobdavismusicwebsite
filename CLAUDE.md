@@ -16,7 +16,7 @@ The system is designed to run autonomously. When the director signals an action,
 - **Games:** Single HTML files in the root directory (e.g. `smoke-signal.html`, `trail-blaze.html`)
 - **Knowledge base:** `docs/game-dev-knowledge/index.md` — read before building or fixing anything
 - **Tests:** Each game has `test-<slug>.js`; website pages tested in `test-website.js`
-- **Test runner:** `node run-all-tests.js --website` (fast) | `--recent 5` | `--all` (slow, 54+ files)
+- **Test runner:** `node run-all-tests.js --website` (fast) | `--recent 5` | no flags = all 54+ game tests (slow)
 - **Feedback inbox:** `autonomous/feedback-inbox.json` — paste feedback here; director drains it on session start
 - **Feedback endpoint:** `https://formspree.io/f/xdayvnvo` (POST only; read from `autonomous/feedback-url.txt`)
 

@@ -843,6 +843,9 @@ async function loadProducts() {
 }
 
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 const _cards = {};
 
@@ -887,7 +890,7 @@ function buildCard(p) {
   _cards[sid] = { variants, options, selected: initSelected };
 
   const mainImgHtml = mainImg
-    ? `<img class="product-img" id="img-${sid}" src="${mainImg.url}" alt="${mainImg.altText || p.title}">`
+    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
   // Thumbnail strip — cap at 6, show overflow count
@@ -897,9 +900,9 @@ function buildCard(p) {
   const thumbsHtml = allImages.length > 1
     ? `<div class="img-thumbs" id="ithumbs-${sid}">
         ${visibleImgs.map((img, i) => `<button class="img-thumb${i === 0 ? ' active' : ''}"
-          data-img-url="${img.url}" data-img-alt="${img.altText || ''}"
+          data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
           onclick="selectThumb(this,'${sid}')">
-          <img src="${img.url}" alt="${img.altText || ''}" loading="lazy">
+          <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
         </button>`).join('')}
         ${extraImgs > 0 ? `<div class="thumb-count">+${extraImgs}</div>` : ''}
       </div>`
@@ -921,13 +924,13 @@ function buildCard(p) {
       const hiddenColors  = colorEntries.slice(MAX_COLORS);
       const renderBtn = ([val, v], hidden) => `<button
         class="size-btn${val === initColor ? ' active' : ''}${hidden ? ' color-hidden' : ''}"
-        data-opt="${colorOpt.name}" data-val="${val}"
-        data-img-url="${v.image?.url || ''}" data-img-alt="${v.image?.altText || ''}"
-        onclick="selectOpt(this,'${sid}')">${val}</button>`;
+        data-opt="${esc(colorOpt.name)}" data-val="${esc(val)}"
+        data-img-url="${esc(v.image?.url)}" data-img-alt="${esc(v.image?.altText)}"
+        onclick="selectOpt(this,'${sid}')">${esc(val)}</button>`;
       const moreBtn = hiddenColors.length > 0
         ? `<button class="size-btn more-btn" onclick="showMoreColors('${sid}')">+${hiddenColors.length} more</button>`
         : '';
-      colorHtml = `<div class="option-label">Color: <span class="opt-current" id="clabel-${sid}">${initColor || ''}</span></div>
+      colorHtml = `<div class="option-label">Color: <span class="opt-current" id="clabel-${sid}">${esc(initColor)}</span></div>
         <div class="size-picker" id="cthumbs-${sid}">
           ${visibleColors.map(e => renderBtn(e, false)).join('')}
           ${hiddenColors.map(e => renderBtn(e, true)).join('')}
@@ -941,7 +944,7 @@ function buildCard(p) {
   if (sizeOpt && !isDefault) {
     const initColor = initSelected[colorOpt?.name];
     const initSize  = initSelected[sizeOpt.name];
-    sizeHtml = `<div class="option-label">Size: <span class="opt-current" id="slabel-${sid}">${initSize || ''}</span></div>
+    sizeHtml = `<div class="option-label">Size: <span class="opt-current" id="slabel-${sid}">${esc(initSize)}</span></div>
       <div class="size-picker" id="spicker-${sid}">
         ${sizeOpt.values.map(sv => {
           const ok = variants.some(v => {
@@ -950,8 +953,8 @@ function buildCard(p) {
             return hasSize && hasColor && v.availableForSale;
           });
           return `<button class="size-btn${sv === initSize ? ' active' : ''}"
-            data-opt="${sizeOpt.name}" data-val="${sv}"
-            onclick="selectOpt(this,'${sid}')" ${!ok ? 'disabled' : ''}>${sv}</button>`;
+            data-opt="${esc(sizeOpt.name)}" data-val="${esc(sv)}"
+            onclick="selectOpt(this,'${sid}')" ${!ok ? 'disabled' : ''}>${esc(sv)}</button>`;
         }).join('')}
       </div>`;
   }
@@ -961,19 +964,20 @@ function buildCard(p) {
   if (!colorOpt && !sizeOpt && variants.length > 1 && !isDefault) {
     legacyHtml = `<div class="variant-buttons" id="vbtns-${sid}">
       ${variants.map((v, i) => `<button class="variant-btn${i === 0 ? ' active' : ''}"
-        data-vid="${v.id}" data-img-url="${v.image?.url || ''}" data-img-alt="${v.image?.altText || ''}"
-        data-price="${v.priceV2?.amount || ''}" onclick="selectVariant(this,'${sid}')"
-        ${!v.availableForSale ? 'disabled' : ''}>${v.title}</button>`).join('')}
+        data-vid="${esc(v.id)}" data-img-url="${esc(v.image?.url)}" data-img-alt="${esc(v.image?.altText)}"
+        data-price="${esc(v.priceV2?.amount)}" onclick="selectVariant(this,'${sid}')"
+        ${!v.availableForSale ? 'disabled' : ''}>${esc(v.title)}</button>`).join('')}
     </div>`;
   }
 
   const descHtml = (() => {
     if (!p.description) return '';
     const MAX = 100;
-    if (p.description.length <= MAX) return `<p class="product-desc">${p.description}</p>`;
-    const cutIdx = p.description.slice(0, MAX).search(/\s\S*$/);
-    const head = p.description.slice(0, cutIdx > 0 ? cutIdx : MAX);
-    const tail = p.description.slice(head.length);
+    const safe = esc(p.description);
+    if (safe.length <= MAX) return `<p class="product-desc">${safe}</p>`;
+    const cutIdx = safe.slice(0, MAX).search(/\s\S*$/);
+    const head = safe.slice(0, cutIdx > 0 ? cutIdx : MAX);
+    const tail = safe.slice(head.length);
     return `<p class="product-desc" id="desc-${sid}">${head}<span id="desc-more-${sid}">&thinsp;&hellip;&thinsp;<button class="desc-btn" onclick="expandDesc('${sid}')">more</button></span><span id="desc-full-${sid}" hidden>${tail}</span></p>`;
   })();
 
@@ -981,13 +985,13 @@ function buildCard(p) {
     <div class="product-card">
       <div class="product-img-wrap">${mainImgHtml}</div>
       ${thumbsHtml}
-      <div class="product-name">${p.title}</div>
+      <div class="product-name">${esc(p.title)}</div>
       <div class="product-price">${price}</div>
       ${descHtml}
       ${colorHtml}${sizeHtml}${legacyHtml}
       <button class="add-btn" id="add-${sid}"
         data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
-        data-product-name="${p.title.replace(/"/g, '&quot;')}"
+        data-product-name="${esc(p.title)}"
         data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
         data-currency="${p.priceRange.minVariantPrice.currencyCode}"
         onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
@@ -1230,7 +1234,12 @@ function updateCartUI(cart) {
 
   document.getElementById('cart-toggle').hidden = qty === 0;
   document.getElementById('cart-count').textContent = qty;
-  document.getElementById('checkout-btn').href = cart.checkoutUrl;
+  try {
+    const cu = new URL(cart.checkoutUrl);
+    if (cu.hostname.endsWith('.shopify.com') || cu.hostname === SHOP_DOMAIN) {
+      document.getElementById('checkout-btn').href = cart.checkoutUrl;
+    }
+  } catch { /* invalid URL — leave href as '#' */ }
 
   const emptyEl = document.getElementById('cart-empty');
   const footerEl = document.getElementById('cart-footer');
@@ -1250,16 +1259,20 @@ function updateCartUI(cart) {
 
   itemsEl.innerHTML = lines.map(line => {
     const m = line.merchandise;
-    const label = m.title !== 'Default Title' ? ` — ${m.title}` : '';
+    const label = m.title !== 'Default Title' ? ` — ${esc(m.title)}` : '';
     return `
       <div class="cart-item">
         <div class="cart-item-info">
-          <div class="cart-item-name">${m.product.title}${label}</div>
+          <div class="cart-item-name">${esc(m.product.title)}${label}</div>
           <div class="cart-item-price">Qty ${line.quantity} &times; ${fmt(m.priceV2.amount, m.priceV2.currencyCode)}</div>
         </div>
-        <button class="cart-item-remove" onclick="removeLine('${line.id}')" aria-label="Remove">&#10005;</button>
+        <button class="cart-item-remove" data-line-id="${esc(line.id)}" aria-label="Remove">&#10005;</button>
       </div>`;
   }).join('');
+  itemsEl.onclick = e => {
+    const btn = e.target.closest('.cart-item-remove');
+    if (btn) removeLine(btn.dataset.lineId);
+  };
 }
 
 function trackCheckout() {
