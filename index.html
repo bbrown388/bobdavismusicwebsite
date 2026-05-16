@@ -178,21 +178,31 @@ section {
   margin: 0 0 40px;
 }
 
-.games-chip {
-  display: inline-block;
-  font-size: 12px;
-  font-style: italic;
-  color: #665040;
-  letter-spacing: 0.5px;
+.games-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-family: Georgia, serif;
   text-decoration: none;
-  padding: 5px 16px;
-  border: 1px solid rgba(255,215,0,0.1);
-  border-radius: 20px;
-  transition: color 0.2s, border-color 0.2s;
+  color: #b09060;
+  background: rgba(205,150,50,0.07);
+  border: 1px solid rgba(205,150,50,0.28);
+  letter-spacing: 0.5px;
+  transition: filter 0.15s, transform 0.1s;
 }
-.games-chip:hover {
-  color: #9a7a64;
-  border-color: rgba(255,215,0,0.25);
+.games-pill:hover {
+  filter: brightness(1.2);
+  transform: scale(1.02);
+}
+.games-pill svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  flex-shrink: 0;
+  opacity: 0.8;
 }
 
 /* â"€â"€ Games â"€â"€ */
@@ -360,13 +370,13 @@ footer {
     background: rgba(139,105,20,0.35);
   }
 
-  .games-chip {
-    color: #b09070;
-    border-color: rgba(139,105,20,0.15);
+  .games-pill {
+    color: #7a5020;
+    background: rgba(160,100,0,0.06);
+    border-color: rgba(160,100,0,0.32);
   }
-  .games-chip:hover {
-    color: #7a5030;
-    border-color: rgba(139,105,20,0.35);
+  .games-pill:hover {
+    filter: brightness(0.85);
   }
 
   .all-games-link {
@@ -491,7 +501,11 @@ footer {
 
 <!-- Games -->
 <div class="games-aside">
-  <a class="games-chip" href="games.html">54 games &#8594;</a>
+  <p class="section-label" style="margin-bottom:12px">Games</p>
+  <a class="games-pill" href="games.html">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM18.5 3a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM16 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM5.5 16a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 18.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0zM21 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9 12a3 3 0 1 1 6 0 3 3 0 0 1-6 0z"/></svg>
+    Browse 54 Games &#8594;
+  </a>
 </div>
 
 <footer>
