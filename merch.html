@@ -1236,7 +1236,7 @@ function updateCartUI(cart) {
   document.getElementById('cart-count').textContent = qty;
   try {
     const cu = new URL(cart.checkoutUrl);
-    if (cu.hostname.endsWith('.shopify.com') || cu.hostname === SHOP_DOMAIN) {
+    if (cu.protocol === 'https:') {
       document.getElementById('checkout-btn').href = cart.checkoutUrl;
     }
   } catch { /* invalid URL — leave href as '#' */ }
