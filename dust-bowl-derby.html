@@ -192,6 +192,7 @@ let leftHeld          = false;
 let rightHeld         = false;
 let boostHeld         = false;
 let activeTouches     = new Map();
+let roundStartTimer   = 0;
 
 function makeCar(x, y, angle, color, accent) {
   return {
@@ -238,6 +239,7 @@ function startGame() {
   score             = 0;
   round             = 0;
   intermissionTimer = 0;
+  roundStartTimer   = 2000;
   particles         = [];
   popups            = [];
   leftHeld          = false;
@@ -351,6 +353,7 @@ function updatePlayerCar(dt) {
 
 function updateRival(rival, dt) {
   if (!rival.alive) return;
+  if (roundStartTimer > 0) { rival.vx = 0; rival.vy = 0; return; }
   if (rival.stallTimer > 0) {
     rival.stallTimer -= dt * 1000;
     rival.vx = 0; rival.vy = 0;
@@ -393,6 +396,7 @@ function update(dt) {
     intermissionTimer -= dt * 1000;
     return;
   }
+  if (roundStartTimer > 0) roundStartTimer -= dt * 1000;
   updatePlayerCar(dt);
   for (const r of rivals) updateRival(r, dt);
   // Collisions
@@ -647,6 +651,18 @@ function drawHUD() {
     ctx.fillText(`ROUND ${clearedRound} CLEAR!`, W / 2, H / 2 - 18);
     ctx.font = 'bold 16px Georgia,serif'; ctx.fillStyle = '#c8a04a';
     ctx.fillText(`ROUND ${clearedRound + 1} STARTING...`, W / 2, H / 2 + 18);
+  }
+
+  // Round start ready overlay
+  if (roundStartTimer > 0) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.52)';
+    ctx.fillRect(0, H / 2 - 50, W, 76);
+    ctx.font = 'bold 30px Georgia,serif';
+    ctx.fillStyle = '#ffe066';
+    ctx.textAlign = 'center';
+    ctx.fillText('READY...', W / 2, H / 2 + 12);
+    ctx.restore();
   }
 
   // Control buttons
@@ -912,6 +928,8 @@ window.__dbd = {
   set bestScore(v)        { bestScore = v; },
   get intermissionTimer() { return intermissionTimer; },
   set intermissionTimer(v){ intermissionTimer = v; },
+  get roundStartTimer()   { return roundStartTimer; },
+  set roundStartTimer(v)  { roundStartTimer = v; },
   // Constants
   ARENA_CX, ARENA_CY, ARENA_RX, ARENA_RY,
   CAR_R, BASE_SPEED, BOOST_SPEED, MAX_DAMAGE, STALL_HEAT,
