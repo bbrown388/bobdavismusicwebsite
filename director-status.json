@@ -3,8 +3,8 @@
   "lastRunResult": "success",
   "lastRunSummary": "Building Game 56: Dead Eye",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Designing Game 56: Dead Eye -- wind-drift shooting gallery"
   },
   "gamesBuilt": 55,
   "lastGameTitle": "Cattle Baron",
@@ -33,6 +33,13 @@
     }
   ],
   "runLog": [
+    {
+      "runAt": "2026-05-17T08:00:01Z",
+      "action": "feedback_fix",
+      "game": "Dust Bowl Derby",
+      "result": "success",
+      "summary": "Added 2s rival grace period at game start (roundStartTimer). Player can orient before rivals engage. 67 tests pass."
+    },
     {
       "runAt": "2026-05-09T09:15:00.000Z",
       "action": "new_game",
