@@ -65,6 +65,8 @@ Single source of truth for every game built, every technique proven, and every l
 
 | 55 | Cattle Baron | `cattle-baron.html` | Turn-based territory strategy / 4x4 parcel grid / BUY adjacent land, GRAZE to earn income, DEFEND against raiders, REPAIR damaged land / 2 actions per round / 8 threat types: drought_mild (50% overgrazed), drought_heavy (85% overgrazed / 40% grazed), rustlers (1 raid -$100), rustlers_gang (2 raids -$150 each), wildfire (random column 60%), flash_flood (bottom rows 20%), peaceful, good_grazing (+$50/active) / threats revealed before actions / GRAZE_INCOME=[0,120,200,260] / overgrazing escalates drought risk / defend immune to rustlers / round 10 always good_grazing+peaceful / score = gold + owned*50 + grazed*100 / 78 tests pass / first territory-expansion economic strategy in series / first multi-round economic arc with compounding returns / first risk-layered resource management (drought probability scales with overgrazing) | 2026-05-16 |
 
+| 56 | Dead Eye | `dead-eye.html` | Wind-drift shooting gallery / sine-wave windX = amp*sin(phase) pushes crosshair continuously / spring-follow crosshair (SPRING=6/s) lags behind aim point / three target types: can (stationary $100), poster (moving $200), rider (fast $350) / POST_XS=[28,88,148,208,268,328] fence posts / riderChance 0%-45% over 5 rounds / hit detection Math.hypot(fx-t.x, fy-t.y) < TARGET_RAD / accuracy bonus = ratio*TARGET_VAL*0.5 / ammo 6/round / WIN_SCORE=1200 / 58 tests pass / first ballistic wind-drift aiming mechanic in series / first gallery-shooter format (spawned targets, limited ammo, accuracy bonus) | 2026-05-17 |
+
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
 ---
@@ -130,6 +132,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Dust Bowl Derby](retrospectives/53-dust-bowl-derby.md) — session lessons, action items for Game 54
 - [Retrospective: Smoke Signal](retrospectives/54-smoke-signal.md) — session lessons, action items for Game 55
 - [Retrospective: Cattle Baron](retrospectives/55-cattle-baron.md) — session lessons, action items for Game 56
+- [Retrospective: Dead Eye](retrospectives/56-dead-eye.md) — session lessons, action items for Game 57
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
