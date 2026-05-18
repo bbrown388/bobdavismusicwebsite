@@ -1,0 +1,1452 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Drought Rider &#x2014; Bob Davis</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+#fb-overlay {
+  display:none; position:absolute; inset:0;
+  background:rgba(0,0,0,0.88); z-index:10;
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  font-family:Georgia,serif; color:#FFE066;
+}
+#fb-overlay.open { display:flex; }
+#fb-overlay h2 { font-size:20px; margin-bottom:4px; }
+#fb-stars { display:flex; gap:8px; font-size:28px; cursor:pointer; }
+#fb-stars span { opacity:0.35; transition:opacity 0.15s; }
+#fb-stars span.on { opacity:1; }
+#fb-text { width:280px; height:70px; background:#1a0d35; border:1px solid #C8A04A;
+           color:#FFE066; font-size:14px; padding:8px; resize:none; border-radius:6px; }
+#fb-submit { background:#C8A04A; color:#000; border:none; padding:10px 32px;
+             font-size:15px; font-family:Georgia,serif; border-radius:6px; cursor:pointer; }
+#fb-close { position:absolute; top:12px; right:16px; font-size:22px; cursor:pointer;
+            color:#888; background:none; border:none; }
+#fb-select { background:#1a0d35; border:1px solid #C8A04A; color:#FFE066;
+             padding:6px 10px; font-size:13px; border-radius:6px; width:280px; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-overlay">
+    <button id="fb-close">&#x2715;</button>
+    <h2>How'd we do?</h2>
+    <div id="fb-stars">
+      <span data-s="1">&#9733;</span><span data-s="2">&#9733;</span>
+      <span data-s="3">&#9733;</span><span data-s="4">&#9733;</span><span data-s="5">&#9733;</span>
+    </div>
+    <select id="fb-select">
+      <option value="Drought Rider">Drought Rider (this game)</option>
+      <option value="general">General / next game</option>
+      <option value="Night Herd">Upcoming: Night Herd (Game 60)</option>
+      <option value="Snake Eyes">Upcoming: Snake Eyes (Game 61)</option>
+    </select>
+    <textarea id="fb-text" placeholder="Any thoughts? (optional)"></textarea>
+    <button id="fb-submit">Send Feedback</button>
+  </div>
+</div>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// === Canvas setup ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+const W = 360, H = 640;
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  wrap.style.width = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// === Feedback wiring ===
+let fbRating = 0;
+document.querySelectorAll('#fb-stars span').forEach(el => {
+  el.addEventListener('click', () => {
+    fbRating = +el.dataset.s;
+    document.querySelectorAll('#fb-stars span').forEach((s,i) => s.classList.toggle('on', i < fbRating));
+  });
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('open');
+});
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const msg = document.getElementById('fb-text').value.trim();
+  const game = document.getElementById('fb-select').value;
+  if (!fbRating && !msg) return;
+  fetch(FEEDBACK_ENDPOINT, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ game, rating: fbRating, message: msg,
+      source: 'drought-rider', ts: Date.now() })
+  }).catch(()=>{});
+  document.getElementById('fb-overlay').classList.remove('open');
+  fbRating = 0;
+  document.querySelectorAll('#fb-stars span').forEach(s => s.classList.remove('on'));
+  document.getElementById('fb-text').value = '';
+});
+
+// === Constants ===
+const TOTAL_DAYS = 7;
+const FB_BTN = { x: 270, y: 612, w: 84, h: 22 };
+
+// Weather types: { label, heatBase, skyTint }
+const WEATHER = {
+  MILD:      { label: 'Mild',      heatBase:  4, skyA: '#050208', skyB: '#2d1a00' },
+  HOT:       { label: 'Hot',       heatBase: 10, skyA: '#0f0300', skyB: '#3a1f00' },
+  SCORCHING: { label: 'Scorching', heatBase: 20, skyA: '#1a0000', skyB: '#4a1200' },
+  OVERCAST:  { label: 'Overcast',  heatBase: -3, skyA: '#050214', skyB: '#1a1530' },
+};
+
+// Heat exposure hints shown to player (not the number)
+const HEAT_HINTS = [
+  [0,  'The air is still.'],
+  [20, 'Heat rises off the flats.'],
+  [40, 'Sweat stings your eyes.'],
+  [60, 'The sun feels like a brand.'],
+  [80, 'Heat stroke territory.'],
+];
+
+// === 7 Days of Content ===
+const DAYS = [
+  {
+    title: 'Day 1 - Into the Badlands',
+    weather: 'HOT',
+    narrative: 'Seven days of hard Texas flats between you and Tucson. Canteen half-full. Horse is fresh.',
+    choices: [
+      {
+        label: 'Push the Trail',
+        desc: 'Ride hard before the noon heat sets in.',
+        waterDelta: -14, horseDelta: -6, heatDelta: 6, goodProb: 0.80,
+        goodText: 'Hard miles behind you before the worst heat.',
+        badText: 'Horse stumbles on loose shale.',
+        badPenalty: { horse: -16 }
+      },
+      {
+        label: 'Find Shade',
+        desc: 'Rest through midday in a dry wash.',
+        waterDelta: -5, horseDelta: -2, heatDelta: -6, goodProb: 0.94,
+        goodText: 'Both of you breathe easier after the rest.',
+        badText: 'Shade hides a rattler. Horse spooked, bruised.',
+        badPenalty: { horse: -10 }
+      },
+      {
+        label: 'Trade for Directions',
+        desc: 'Flag down a passing rider for a shortcut.',
+        waterDelta: -8, horseDelta: -3, heatDelta: 0, goodProb: 0.72,
+        goodText: 'Good shortcut. Save half a day.',
+        goodBonus: { water: 14 },
+        badText: 'Bad directions. Three hours lost in the heat.',
+        badPenalty: { water: -12 }
+      }
+    ]
+  },
+  {
+    title: 'Day 2 - The White Salt Flats',
+    weather: 'SCORCHING',
+    narrative: 'Twenty miles of blinding white salt. No shade. No water. The air shimmers like a fever dream.',
+    choices: [
+      {
+        label: 'Cross by Night',
+        desc: 'Wait for sunset, ride in darkness.',
+        waterDelta: -8, horseDelta: -5, heatDelta: -14, goodProb: 0.86,
+        goodText: 'Cool stars above. The horse runs steady.',
+        badText: 'Horse trips in darkness. A bad stumble.',
+        badPenalty: { horse: -22 }
+      },
+      {
+        label: 'Cross Now',
+        desc: 'No time to waste. Push straight through.',
+        waterDelta: -20, horseDelta: -10, heatDelta: 16, goodProb: 0.68,
+        goodText: 'Brutal, but you hold it together.',
+        badText: 'The heat takes a brutal toll on both of you.',
+        badPenalty: { water: -18, horse: -12 }
+      },
+      {
+        label: 'Detour South',
+        desc: 'Add miles but skirt the worst of the flats.',
+        waterDelta: -16, horseDelta: -8, heatDelta: 8, goodProb: 0.82,
+        goodText: 'Longer but bearable. Good call.',
+        badText: 'Wrong fork. Two more miles in the sun.',
+        badPenalty: { water: -10 }
+      }
+    ]
+  },
+  {
+    title: 'Day 3 - Distant Smoke',
+    weather: 'MILD',
+    narrative: 'Smoke rises from the south. Could be a trading post. Could be trouble. You\'ve got a choice to make.',
+    choices: [
+      {
+        label: 'Investigate',
+        desc: 'Ride toward the smoke. High risk, high reward.',
+        waterDelta: -6, horseDelta: -4, heatDelta: 2, goodProb: 0.56,
+        goodText: 'A Tejano trading post. Water barrels full.',
+        goodBonus: { water: 30 },
+        badText: 'Outlaws. You ride hard to escape. Horse winded.',
+        badPenalty: { water: -8, horse: -24 }
+      },
+      {
+        label: 'Stay the Course',
+        desc: 'Ignore it and keep your pace.',
+        waterDelta: -10, horseDelta: -4, heatDelta: 2, goodProb: 0.95,
+        goodText: 'Steady progress. No complications.',
+        badText: 'Missed a water cache you passed on the trail.',
+        badPenalty: { water: -12 }
+      },
+      {
+        label: 'Signal for Help',
+        desc: 'Build your own fire and wait for a response.',
+        waterDelta: -7, horseDelta: -2, heatDelta: 1, goodProb: 0.48,
+        goodText: 'A friendly rider brings a full canteen.',
+        goodBonus: { water: 22 },
+        badText: 'Nobody comes. Wasted time and wood.',
+        badPenalty: { water: -4 }
+      }
+    ]
+  },
+  {
+    title: 'Day 4 - The Rocky Pass',
+    weather: 'HOT',
+    narrative: 'Loose shale and tight switchbacks. The canyon is brutal on horses. Take it wrong and you\'re set back two days.',
+    choices: [
+      {
+        label: 'Push Fast',
+        desc: 'Don\'t stop. Cover the pass in one hard run.',
+        waterDelta: -12, horseDelta: -18, heatDelta: 8, goodProb: 0.72,
+        goodText: 'Through by noon. Cost you, but you\'re clear.',
+        badText: 'Horse throws a shoe on the shale.',
+        badPenalty: { horse: -22 }
+      },
+      {
+        label: 'Slow and Steady',
+        desc: 'Pick your way carefully through the rocks.',
+        waterDelta: -8, horseDelta: -8, heatDelta: 3, goodProb: 0.92,
+        goodText: 'Patient passage. Horse appreciates it.',
+        badText: 'Loose rock fall. Scramble clear, but shaken.',
+        badPenalty: { horse: -14, water: -5 }
+      },
+      {
+        label: 'Find Another Way',
+        desc: 'Longer detour around the pass entirely.',
+        waterDelta: -18, horseDelta: -5, heatDelta: 4, goodProb: 0.88,
+        goodText: 'Quiet trail. Easy footing.',
+        badText: 'Dead end. Forced to backtrack.',
+        badPenalty: { water: -14, horse: -8 }
+      }
+    ]
+  },
+  {
+    title: 'Day 5 - The Dry Riverbed',
+    weather: 'HOT',
+    narrative: 'The Rio Seco was supposed to have water. It\'s bone dry. The next source is two days out. You have to decide now.',
+    choices: [
+      {
+        label: 'Dig for Water',
+        desc: 'Work the riverbed. Might find moisture below.',
+        waterDelta: -4, horseDelta: -3, heatDelta: 0, goodProb: 0.50,
+        goodText: 'Damp sand. You coax out enough to carry on.',
+        goodBonus: { water: 22 },
+        badText: 'Dry rock two feet down. Wasted effort.',
+        badPenalty: { water: -5, horse: -5 }
+      },
+      {
+        label: 'Push On',
+        desc: 'No time. Cover ground toward the next source.',
+        waterDelta: -16, horseDelta: -12, heatDelta: 14, goodProb: 0.76,
+        goodText: 'Grueling miles. You get there.',
+        badText: 'Heat hits hard in the open. Dangerous stretch.',
+        badPenalty: { water: -20, horse: -16 }
+      },
+      {
+        label: 'Ration Hard',
+        desc: 'Cut water use. Slow pace, preserve everything.',
+        waterDelta: -6, horseDelta: -3, heatDelta: -6, goodProb: 0.94,
+        goodText: 'Disciplined. Every drop counts.',
+        badText: 'Horse weakens without enough water.',
+        badPenalty: { horse: -15 }
+      }
+    ]
+  },
+  {
+    title: 'Day 6 - Abandoned Ranch',
+    weather: 'MILD',
+    narrative: 'A weather-beaten ranch sits empty on the flats. Could be water in the cistern. Could be nothing but dust and disappointment.',
+    choices: [
+      {
+        label: 'Search the Ranch',
+        desc: 'Take time to find the cistern.',
+        waterDelta: -4, horseDelta: -2, heatDelta: 0, goodProb: 0.60,
+        goodText: 'Cistern is half-full. Saved.',
+        goodBonus: { water: 36 },
+        badText: 'Bone dry. Wasted an hour you needed.',
+        badPenalty: { water: -8, horse: -5 }
+      },
+      {
+        label: 'Rest Here',
+        desc: 'Shelter and shade. Let the horse recover.',
+        waterDelta: -3, horseDelta: 16, heatDelta: -8, goodProb: 0.97,
+        goodText: 'Best rest in six days. Horse ready for the push.',
+        badText: 'Restless and anxious. But still better than nothing.',
+        badPenalty: { horse: -8 }
+      },
+      {
+        label: 'Keep Moving',
+        desc: 'Too close now to stop.',
+        waterDelta: -10, horseDelta: -8, heatDelta: 5, goodProb: 0.90,
+        goodText: 'Discipline carries you through.',
+        badText: 'Sunburn and parched throat. Hard final miles.',
+        badPenalty: { water: -12, horse: -6 }
+      }
+    ]
+  },
+  {
+    title: 'Day 7 - The Final Stretch',
+    weather: 'OVERCAST',
+    narrative: 'Tucson\'s church steeple shimmers on the horizon. Last miles. The horse knows too.',
+    choices: [
+      {
+        label: 'Full Gallop',
+        desc: 'Ride hard for the finish. All or nothing.',
+        waterDelta: -18, horseDelta: -24, heatDelta: 5, goodProb: 0.78,
+        goodText: 'You burst into town at a full run.',
+        badText: 'Horse goes lame a mile out. Walk it in on foot.',
+        badPenalty: { horse: -28 }
+      },
+      {
+        label: 'Steady Trot',
+        desc: 'Pace yourself to the finish.',
+        waterDelta: -10, horseDelta: -10, heatDelta: 0, goodProb: 0.94,
+        goodText: 'Safe arrival. Horse and rider both standing.',
+        badText: 'Flash flood crossing. Cold and wet, but through.',
+        badPenalty: { water: -10, horse: -8 }
+      },
+      {
+        label: 'Walk It In',
+        desc: 'Take it easy. Enjoy making it this far.',
+        waterDelta: -5, horseDelta: -5, heatDelta: -5, goodProb: 0.99,
+        goodText: 'Arrive calm and grateful. Seven days. Made it.',
+        badText: 'Slow but certain. Nothing goes wrong.',
+        badPenalty: { water: -2 }
+      }
+    ]
+  }
+];
+
+// === State ===
+let state = 'title';
+let dayIdx = 0;        // 0-6
+let water = 70;        // 0-100
+let horse = 100;       // 0-100
+let heatExposure = 0;  // 0-100 (hidden from player as a number)
+let goodChoices = 0;   // count for score
+let score = 0;
+let animT = 0;         // generic animation timer (seconds)
+let popups = [];
+let choiceResult = null;   // { success, text, waterBefore, horseBefore }
+let waterAnimFrom = 70;
+let horseAnimFrom = 100;
+let pendingEnd = false;    // after outcome, check if game over
+let transT = 0;            // day transition animation
+let bgScrollX = 0;         // parallax background offset
+let riderBob = 0;          // rider silhouette animation
+let lastTime = 0;
+let best = parseInt(localStorage.getItem('drought-rider_best') || '0');
+
+// === Audio ===
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playDecision() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(330, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(220, ac.currentTime + 0.25);
+    g.gain.setValueAtTime(0.12, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+    o.start(); o.stop(ac.currentTime + 0.3);
+  } catch(e) {}
+}
+
+function playGood() {
+  try {
+    const ac = getAC();
+    // C major arpeggio: C4 E4 G4
+    [262, 330, 392].forEach((freq, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sine';
+      const t = ac.currentTime + i * 0.12;
+      o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(0.13, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o.start(t); o.stop(t + 0.35);
+    });
+  } catch(e) {}
+}
+
+function playBad() {
+  try {
+    const ac = getAC();
+    // Diminished: A3 Eb4 descending
+    [220, 311].forEach((freq, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'triangle';
+      const t = ac.currentTime + i * 0.1;
+      o.frequency.setValueAtTime(freq, t);
+      o.frequency.exponentialRampToValueAtTime(freq * 0.85, t + 0.3);
+      g.gain.setValueAtTime(0.10, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o.start(t); o.stop(t + 0.35);
+    });
+  } catch(e) {}
+}
+
+function playWin() {
+  try {
+    const ac = getAC();
+    // G major arpeggio ascending
+    [392, 494, 587, 784].forEach((freq, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sine';
+      const t = ac.currentTime + i * 0.18;
+      o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.0, t);
+      g.gain.linearRampToValueAtTime(0.16, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      o.start(t); o.stop(t + 0.5);
+    });
+  } catch(e) {}
+}
+
+function playLose() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(110, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(55, ac.currentTime + 1.2);
+    g.gain.setValueAtTime(0.14, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 1.5);
+    o.start(); o.stop(ac.currentTime + 1.5);
+  } catch(e) {}
+}
+
+// === Game Logic ===
+function calcProb(baseProb) {
+  const penalty = Math.min(0.28, heatExposure / 310);
+  return Math.max(0.04, baseProb - penalty);
+}
+
+function getHeatHint() {
+  let hint = HEAT_HINTS[0][1];
+  for (const [thresh, text] of HEAT_HINTS) {
+    if (heatExposure >= thresh) hint = text;
+  }
+  return hint;
+}
+
+function addPopup(text, color) {
+  popups.push({ text, color, x: W / 2, y: 300, vy: -40, life: 1.0 });
+}
+
+function startGame() {
+  state = 'day_start';
+  dayIdx = 0;
+  water = 70;
+  horse = 100;
+  heatExposure = 0;
+  goodChoices = 0;
+  score = 0;
+  animT = 0;
+  transT = 0;
+  popups = [];
+  choiceResult = null;
+  waterAnimFrom = water;
+  horseAnimFrom = horse;
+  pendingEnd = false;
+}
+
+function makeChoice(idx) {
+  const day = DAYS[dayIdx];
+  const ch = day.choices[idx];
+  const prob = calcProb(ch.goodProb);
+  const success = Math.random() < prob;
+
+  const wBefore = water;
+  const hBefore = horse;
+
+  // Apply base costs
+  water = Math.max(0, Math.min(100, water + ch.waterDelta));
+  horse = Math.max(0, Math.min(100, horse + ch.horseDelta));
+
+  // Apply weather heat base + choice heat modifier
+  const weatherHeat = WEATHER[day.weather].heatBase;
+  heatExposure = Math.min(100, Math.max(0, heatExposure + weatherHeat + ch.heatDelta));
+
+  if (success) {
+    if (ch.goodBonus) {
+      water = Math.min(100, water + (ch.goodBonus.water || 0));
+      horse = Math.min(100, horse + (ch.goodBonus.horse || 0));
+    }
+    goodChoices++;
+    playGood();
+    choiceResult = { success: true, text: ch.goodText, wBefore, hBefore };
+    addPopup('MADE IT', '#72C859');
+  } else {
+    if (ch.badPenalty) {
+      water = Math.max(0, water + (ch.badPenalty.water || 0));
+      horse = Math.max(0, horse + (ch.badPenalty.horse || 0));
+    }
+    playBad();
+    choiceResult = { success: false, text: ch.badText, wBefore, hBefore };
+    addPopup('TROUBLE', '#E74C3C');
+  }
+
+  waterAnimFrom = wBefore;
+  horseAnimFrom = hBefore;
+  animT = 0;
+  state = 'outcome';
+}
+
+function advanceFromOutcome() {
+  if (water <= 0) {
+    state = 'lose';
+    choiceResult = { loseReason: 'thirst', text: 'You ran out of water. The desert claimed you.' };
+    playLose();
+    return;
+  }
+  if (horse <= 0) {
+    state = 'lose';
+    choiceResult = { loseReason: 'horse', text: 'Your horse collapsed. You didn\'t make it.' };
+    playLose();
+    return;
+  }
+  dayIdx++;
+  if (dayIdx >= TOTAL_DAYS) {
+    score = 1000 + water * 5 + horse * 5 + goodChoices * 80;
+    if (score > best) { best = score; localStorage.setItem('drought-rider_best', best); }
+    state = 'win';
+    playWin();
+  } else {
+    state = 'day_start';
+    animT = 0;
+    transT = 0;
+  }
+}
+
+// === Drawing ===
+function drawBackground(dayFrac) {
+  ctx.save();
+  const day = DAYS[Math.min(dayIdx, TOTAL_DAYS - 1)];
+  const w = WEATHER[day.weather];
+
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H * 0.55);
+  skyGrad.addColorStop(0, w.skyA);
+  skyGrad.addColorStop(1, w.skyB);
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H * 0.55);
+
+  // Stars (faint, fixed)
+  ctx.fillStyle = 'rgba(255,240,200,0.4)';
+  const starSeeds = [17,53,89,113,149,181,211,239,271,307,331,359,383];
+  for (let i = 0; i < starSeeds.length; i++) {
+    const sx = (starSeeds[i] * 23 + i * 47) % W;
+    const sy = (starSeeds[i] * 7 + i * 19) % (H * 0.40);
+    const r = (i % 3 === 0) ? 1.2 : 0.7;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Sun / moon position
+  const sunX = W * 0.72;
+  const sunY = H * 0.12;
+  if (day.weather === 'OVERCAST') {
+    // Gray sun behind clouds
+    ctx.fillStyle = 'rgba(180,160,120,0.3)';
+    ctx.beginPath(); ctx.arc(sunX, sunY, 28, 0, Math.PI * 2); ctx.fill();
+  } else if (day.weather === 'SCORCHING') {
+    const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 36);
+    sunGrad.addColorStop(0, '#FFF4A0');
+    sunGrad.addColorStop(0.4, '#FF9820');
+    sunGrad.addColorStop(1, 'rgba(255,80,0,0)');
+    ctx.fillStyle = sunGrad;
+    ctx.beginPath(); ctx.arc(sunX, sunY, 36, 0, Math.PI * 2); ctx.fill();
+    // Heat haze glow
+    const hazeGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 70);
+    hazeGrad.addColorStop(0, 'rgba(255,100,0,0.15)');
+    hazeGrad.addColorStop(1, 'rgba(255,80,0,0)');
+    ctx.fillStyle = hazeGrad;
+    ctx.beginPath(); ctx.arc(sunX, sunY, 70, 0, Math.PI * 2); ctx.fill();
+  } else {
+    const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 30);
+    sunGrad.addColorStop(0, '#FFFAB0');
+    sunGrad.addColorStop(0.5, '#FFD040');
+    sunGrad.addColorStop(1, 'rgba(255,180,0,0)');
+    ctx.fillStyle = sunGrad;
+    ctx.beginPath(); ctx.arc(sunX, sunY, 30, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Distant mesa silhouettes
+  ctx.fillStyle = '#1a0d00';
+  const horizY = H * 0.55;
+  ctx.beginPath();
+  ctx.moveTo(0, horizY);
+  // Mesa 1
+  ctx.lineTo(20, horizY - 60);
+  ctx.lineTo(55, horizY - 80);
+  ctx.lineTo(90, horizY - 55);
+  // Mesa 2
+  ctx.lineTo(140, horizY - 35);
+  ctx.lineTo(190, horizY - 95);
+  ctx.lineTo(230, horizY - 70);
+  // Mesa 3
+  ctx.lineTo(280, horizY - 40);
+  ctx.lineTo(310, horizY - 72);
+  ctx.lineTo(360, horizY - 50);
+  ctx.lineTo(360, horizY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Mid ground: scrub / cactus silhouettes
+  ctx.fillStyle = '#1a0800';
+  ctx.beginPath();
+  ctx.moveTo(0, horizY + 10);
+  ctx.lineTo(0, H);
+  ctx.lineTo(W, H);
+  ctx.lineTo(W, horizY + 10);
+  // Slight undulation
+  for (let x = W; x >= 0; x -= 30) {
+    const yOff = Math.sin(x * 0.04 + bgScrollX * 0.01) * 6;
+    ctx.lineTo(x, horizY + 10 + yOff);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // Sand ground
+  const sandGrad = ctx.createLinearGradient(0, horizY, 0, H);
+  sandGrad.addColorStop(0, '#2a1200');
+  sandGrad.addColorStop(1, '#100800');
+  ctx.fillStyle = sandGrad;
+  ctx.fillRect(0, horizY, W, H);
+
+  // Horizon dust band
+  const dustGrad = ctx.createLinearGradient(0, horizY - 20, 0, horizY + 30);
+  dustGrad.addColorStop(0, 'rgba(200,140,40,0)');
+  dustGrad.addColorStop(0.5, 'rgba(200,140,40,0.18)');
+  dustGrad.addColorStop(1, 'rgba(200,140,40,0)');
+  ctx.fillStyle = dustGrad;
+  ctx.fillRect(0, horizY - 20, W, 50);
+
+  // Heat shimmer overlay (visible when heatExposure is high)
+  if (heatExposure > 30) {
+    const shimmerAlpha = (heatExposure - 30) / 140;
+    const shGrad = ctx.createLinearGradient(0, horizY - 40, 0, horizY + 40);
+    shGrad.addColorStop(0, 'rgba(255,120,0,0)');
+    shGrad.addColorStop(0.5, `rgba(255,120,0,${shimmerAlpha.toFixed(2)})`);
+    shGrad.addColorStop(1, 'rgba(255,120,0,0)');
+    ctx.fillStyle = shGrad;
+    ctx.fillRect(0, horizY - 40, W, 80);
+  }
+
+  // Clouds (overcast only)
+  if (day.weather === 'OVERCAST') {
+    ctx.fillStyle = 'rgba(80,70,100,0.5)';
+    [[40, 60, 80, 25], [150, 45, 110, 20], [280, 70, 90, 22]].forEach(([cx, cy, cw, ch]) => {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, cw, ch, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  ctx.restore();
+}
+
+function drawRider() {
+  ctx.save();
+  const horizY = H * 0.55;
+  const rx = W * 0.25;
+  const ry = horizY - 18 + Math.sin(riderBob) * 3;
+  ctx.fillStyle = '#0e0608';
+
+  // Horse body
+  ctx.beginPath();
+  ctx.ellipse(rx, ry + 2, 32, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horse head/neck
+  ctx.beginPath();
+  ctx.ellipse(rx + 34, ry - 8, 12, 8, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horse nose
+  ctx.beginPath();
+  ctx.ellipse(rx + 44, ry - 6, 6, 5, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Legs (animated with bob)
+  const legPhase = riderBob;
+  const legs = [
+    [rx - 20, ry + 14, rx - 22, ry + 28],
+    [rx - 8,  ry + 14, rx - 6,  ry + 28],
+    [rx + 8,  ry + 14, rx + 10 + Math.sin(legPhase) * 4, ry + 28],
+    [rx + 20, ry + 14, rx + 22 + Math.cos(legPhase) * 4, ry + 28],
+  ];
+  ctx.strokeStyle = '#0e0608';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  legs.forEach(([x1, y1, x2, y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  });
+
+  // Rider silhouette
+  ctx.fillStyle = '#1a0c20';
+  ctx.beginPath();
+  ctx.ellipse(rx + 8, ry - 20, 9, 13, 0.1, 0, Math.PI * 2); // torso
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(rx + 10, ry - 36, 8, 0, Math.PI * 2); // head
+  ctx.fill();
+
+  // Hat
+  ctx.fillStyle = '#0a0510';
+  ctx.beginPath();
+  ctx.ellipse(rx + 10, ry - 44, 11, 3, 0, 0, Math.PI * 2); // brim
+  ctx.fill();
+  ctx.beginPath();
+  ctx.rect(rx + 2, ry - 54, 16, 12); // crown
+  ctx.fill();
+
+  // Saddle bags
+  ctx.fillStyle = '#3a1f05';
+  ctx.beginPath();
+  ctx.rect(rx - 30, ry - 6, 12, 16);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  const hudY = 12;
+  const barW = 120;
+  const barH = 12;
+
+  // Day pill
+  pill(W / 2, hudY + 2, 110, 22, 'rgba(0,0,0,0.7)');
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 13px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Day ${dayIdx + 1} of ${TOTAL_DAYS}`, W / 2, hudY + 12);
+
+  // Water bar
+  const wx = 14, wy = 42;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  roundRect(wx, wy, barW + 52, 30, 8);
+  ctx.fill();
+
+  ctx.fillStyle = '#5aaef0';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('WATER', wx + 6, wy + 15);
+
+  const wBarX = wx + 52;
+  ctx.fillStyle = '#111';
+  roundRect(wBarX, wy + 8, barW, barH, 4);
+  ctx.fill();
+
+  const wPct = Math.max(0, water / 100);
+  const wCol = water < 20 ? '#E74C3C' : water < 40 ? '#FF9F43' : '#4A90D9';
+  ctx.fillStyle = wCol;
+  roundRect(wBarX, wy + 8, barW * wPct, barH, 4);
+  ctx.fill();
+
+  ctx.fillStyle = '#aaa';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.round(water) + '%', wBarX + barW - 4, wy + 15);
+
+  // Horse bar
+  const hx = 14, hy = 80;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  roundRect(hx, hy, barW + 52, 30, 8);
+  ctx.fill();
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('HORSE', hx + 6, hy + 15);
+
+  const hBarX = hx + 52;
+  ctx.fillStyle = '#111';
+  roundRect(hBarX, hy + 8, barW, barH, 4);
+  ctx.fill();
+
+  const hPct = Math.max(0, horse / 100);
+  const hCol = horse < 20 ? '#E74C3C' : horse < 40 ? '#FF9F43' : '#C8A04A';
+  ctx.fillStyle = hCol;
+  roundRect(hBarX, hy + 8, barW * hPct, barH, 4);
+  ctx.fill();
+
+  ctx.fillStyle = '#aaa';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.round(horse) + '%', hBarX + barW - 4, hy + 15);
+
+  // Heat hint (top right area)
+  const hint = getHeatHint();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(W - 174, 42, 162, 22, 6);
+  ctx.fill();
+  const hintCol = heatExposure < 40 ? '#aaa' : heatExposure < 70 ? '#FF9F43' : '#E74C3C';
+  ctx.fillStyle = hintCol;
+  ctx.font = 'italic 10px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(hint, W - 93, 53);
+
+  ctx.restore();
+}
+
+function drawDayCard() {
+  ctx.save();
+  const day = DAYS[dayIdx];
+  const cardX = 14, cardY = H * 0.62, cardW = W - 28, cardH = H - cardY - 16;
+
+  // Card background
+  ctx.fillStyle = 'rgba(10,5,20,0.92)';
+  roundRect(cardX, cardY, cardW, cardH, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  roundRect(cardX, cardY, cardW, cardH, 12);
+  ctx.stroke();
+
+  // Day title
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 13px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(day.title, W / 2, cardY + 10);
+
+  // Weather label
+  const w = WEATHER[day.weather];
+  const weatherColors = { MILD: '#72C859', HOT: '#FF9F43', SCORCHING: '#E74C3C', OVERCAST: '#9ba8c8' };
+  ctx.fillStyle = weatherColors[day.weather];
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(w.label.toUpperCase(), W / 2, cardY + 28);
+
+  // Separator
+  ctx.strokeStyle = 'rgba(200,160,74,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cardX + 12, cardY + 42);
+  ctx.lineTo(cardX + cardW - 12, cardY + 42);
+  ctx.stroke();
+
+  // Narrative text (word-wrapped)
+  ctx.fillStyle = '#c8b890';
+  ctx.font = '11px Georgia,serif';
+  ctx.textAlign = 'left';
+  wrapText(day.narrative, cardX + 12, cardY + 52, cardW - 24, 15);
+
+  ctx.restore();
+}
+
+function drawChoices() {
+  ctx.save();
+  const day = DAYS[dayIdx];
+  const startY = H * 0.62 + 100;
+  const btnW = W - 28;
+  const btnX = 14;
+  const btnH = 52;
+  const gap = 6;
+
+  day.choices.forEach((ch, i) => {
+    const by = startY + i * (btnH + gap);
+    const prob = calcProb(ch.goodProb);
+    const pctGood = Math.round(prob * 100);
+    const pctBad = 100 - pctGood;
+
+    // Button background
+    ctx.fillStyle = 'rgba(25,12,40,0.95)';
+    roundRect(btnX, by, btnW, btnH, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#3a2060';
+    ctx.lineWidth = 1;
+    roundRect(btnX, by, btnW, btnH, 8);
+    ctx.stroke();
+
+    // Probability bar (background)
+    const probBarX = btnX + 8;
+    const probBarW = btnW - 16;
+    const probBarY = by + btnH - 12;
+    ctx.fillStyle = 'rgba(80,0,0,0.5)';
+    roundRect(probBarX, probBarY, probBarW, 6, 3);
+    ctx.fill();
+
+    // Good portion (green)
+    ctx.fillStyle = '#2a7a3a';
+    roundRect(probBarX, probBarY, probBarW * prob, 6, 3);
+    ctx.fill();
+
+    // Choice label
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 12px Georgia,serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(ch.label, btnX + 10, by + 7);
+
+    // Probability text
+    ctx.fillStyle = '#72C859';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${pctGood}% safe`, btnX + btnW - 8, by + 7);
+
+    // Trouble text
+    if (pctBad > 5) {
+      ctx.fillStyle = '#E74C3C';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(`${pctBad}% trouble`, btnX + btnW - 8, by + 20);
+    }
+
+    // Description
+    ctx.fillStyle = '#9a8878';
+    ctx.font = '10px Georgia,serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(ch.desc, btnX + 10, by + 22);
+
+    // Water/horse cost summary
+    const costParts = [];
+    if (ch.waterDelta !== 0) costParts.push(`Water ${ch.waterDelta > 0 ? '+' : ''}${ch.waterDelta}`);
+    if (ch.horseDelta !== 0) costParts.push(`Horse ${ch.horseDelta > 0 ? '+' : ''}${ch.horseDelta}`);
+    ctx.fillStyle = '#776655';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(costParts.join('  '), btnX + 10, by + 36);
+  });
+
+  ctx.restore();
+}
+
+function drawOutcome() {
+  ctx.save();
+  if (!choiceResult) { ctx.restore(); return; }
+
+  const cardX = 14, cardY = H * 0.62, cardW = W - 28, cardH = H - cardY - 16;
+
+  ctx.fillStyle = 'rgba(8,3,18,0.96)';
+  roundRect(cardX, cardY, cardW, cardH, 12);
+  ctx.fill();
+
+  const borderCol = choiceResult.success ? '#72C859' : '#E74C3C';
+  ctx.strokeStyle = borderCol;
+  ctx.lineWidth = 2;
+  roundRect(cardX, cardY, cardW, cardH, 12);
+  ctx.stroke();
+
+  // Result title
+  ctx.fillStyle = borderCol;
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(choiceResult.success ? 'MADE IT' : 'TROUBLE', W / 2, cardY + 12);
+
+  // Result text
+  ctx.fillStyle = '#ddd';
+  ctx.font = '11px Georgia,serif';
+  ctx.textAlign = 'center';
+  const lines = wrapTextArr(choiceResult.text, cardW - 40);
+  lines.forEach((line, i) => {
+    ctx.fillText(line, W / 2, cardY + 34 + i * 16);
+  });
+
+  // Animated resource change display
+  const elapsed = Math.min(animT / 0.6, 1);
+  const dispWater = lerp(choiceResult.wBefore, water, elapsed);
+  const dispHorse = lerp(choiceResult.hBefore, horse, elapsed);
+
+  const barY = cardY + 120;
+  const barW2 = cardW - 60;
+  const bx = cardX + 30;
+
+  // Water
+  ctx.fillStyle = '#4A90D9';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('WATER', bx, barY + 6);
+  ctx.fillStyle = '#222';
+  roundRect(bx + 50, barY, barW2 - 50, 12, 4); ctx.fill();
+  ctx.fillStyle = dispWater < 20 ? '#E74C3C' : '#4A90D9';
+  roundRect(bx + 50, barY, (barW2 - 50) * Math.max(0, dispWater / 100), 12, 4); ctx.fill();
+
+  // Horse
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('HORSE', bx, barY + 26);
+  ctx.fillStyle = '#222';
+  roundRect(bx + 50, barY + 20, barW2 - 50, 12, 4); ctx.fill();
+  ctx.fillStyle = dispHorse < 20 ? '#E74C3C' : '#C8A04A';
+  roundRect(bx + 50, barY + 20, (barW2 - 50) * Math.max(0, dispHorse / 100), 12, 4); ctx.fill();
+
+  // Continue prompt
+  if (animT > 1.0) {
+    ctx.fillStyle = `rgba(255,224,102,${0.5 + 0.5 * Math.sin(animT * 3)})`;
+    ctx.font = 'bold 12px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Tap to continue', W / 2, cardY + cardH - 12);
+  }
+
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  // Background with title-screen terrain
+  drawBackground(0);
+
+  // Dark overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 42px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#FF8C00';
+  ctx.shadowBlur = 18;
+  ctx.fillText('DROUGHT', W / 2, H * 0.28);
+  ctx.fillText('RIDER', W / 2, H * 0.38);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 14px Georgia,serif';
+  ctx.fillText('A 7-Day Desert Survival', W / 2, H * 0.49);
+
+  // Best score
+  if (best > 0) {
+    ctx.fillStyle = '#888';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Best: ' + best, W / 2, H * 0.56);
+  }
+
+  // Play button
+  const pbW = 160, pbH = 44, pbX = (W - pbW) / 2, pbY = H * 0.66;
+  ctx.fillStyle = '#C8A04A';
+  roundRect(pbX, pbY, pbW, pbH, 10);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 16px Georgia,serif';
+  ctx.fillText('RIDE OUT', W / 2, pbY + pbH / 2);
+
+  // Sub text
+  ctx.fillStyle = '#665544';
+  ctx.font = '11px Georgia,serif';
+  ctx.fillText('Hidden dangers. Hard choices.', W / 2, H * 0.82);
+
+  ctx.restore();
+}
+
+function drawWin() {
+  ctx.save();
+  drawBackground(0);
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#FF8C00';
+  ctx.shadowBlur = 14;
+  ctx.fillText('TUCSON', W / 2, H * 0.24);
+  ctx.fillText("YOU MADE IT", W / 2, H * 0.33);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 13px Georgia,serif';
+  ctx.fillText('Seven days. One rider. One horse.', W / 2, H * 0.43);
+
+  // Score display
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 28px Georgia,serif';
+  ctx.fillText(score, W / 2, H * 0.54);
+  ctx.fillStyle = '#888';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('SURVIVAL SCORE', W / 2, H * 0.61);
+
+  if (score >= best && score > 0) {
+    ctx.fillStyle = `rgba(255,224,102,${0.6 + 0.4 * Math.sin(animT * 4)})`;
+    ctx.font = 'bold 13px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, H * 0.68);
+  }
+
+  // Resources at end
+  ctx.fillStyle = '#aaa';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(`Water: ${water}%   Horse: ${horse}%`, W / 2, H * 0.73);
+
+  // Play Again
+  const pbW = 160, pbH = 40, pbX = (W - pbW) / 2, pbY = H * 0.80;
+  ctx.fillStyle = '#C8A04A';
+  roundRect(pbX, pbY, pbW, pbH, 10);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.fillText('RIDE AGAIN', W / 2, pbY + pbH / 2);
+
+  // Share button
+  const sbW = 140, sbH = 34, sbX = (W - sbW) / 2, sbY = H * 0.91;
+  ctx.fillStyle = 'rgba(50,30,80,0.85)';
+  roundRect(sbX, sbY, sbW, sbH, 8);
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 12px Georgia,serif';
+  ctx.fillText('Share Score', W / 2, sbY + sbH / 2);
+
+  ctx.restore();
+}
+
+function drawLose() {
+  ctx.save();
+  drawBackground(0);
+  ctx.fillStyle = 'rgba(0,0,0,0.80)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 28px Georgia,serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('THE DESERT', W / 2, H * 0.25);
+  ctx.fillText('WINS', W / 2, H * 0.34);
+
+  const reason = choiceResult && choiceResult.loseReason === 'thirst'
+    ? 'Water ran out on Day ' + (dayIdx + 1)
+    : choiceResult && choiceResult.loseReason === 'horse'
+    ? 'Horse collapsed on Day ' + (dayIdx + 1)
+    : 'You didn\'t make it.';
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 13px Georgia,serif';
+  ctx.fillText(reason, W / 2, H * 0.44);
+
+  const loseScore = goodChoices * 80 + Math.round(water) * 3 + Math.round(horse) * 2;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 24px Georgia,serif';
+  ctx.fillText(loseScore, W / 2, H * 0.54);
+  ctx.fillStyle = '#666';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('SCORE', W / 2, H * 0.61);
+
+  // Play Again
+  const pbW = 160, pbH = 40, pbX = (W - pbW) / 2, pbY = H * 0.70;
+  ctx.fillStyle = '#C8A04A';
+  roundRect(pbX, pbY, pbW, pbH, 10);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 14px Georgia,serif';
+  ctx.fillText('TRY AGAIN', W / 2, pbY + pbH / 2);
+
+  ctx.restore();
+}
+
+function drawPopups(dt) {
+  ctx.save();
+  popups = popups.filter(p => p.life > 0);
+  popups.forEach(p => {
+    p.y += p.vy * dt;
+    p.life -= dt * 1.0;
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 15px Georgia,serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawFeedbackBtn() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(200,160,74,0.25)';
+  roundRect(FB_BTN.x, FB_BTN.y, FB_BTN.w, FB_BTN.h, 6);
+  ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Feedback', FB_BTN.x + FB_BTN.w / 2, FB_BTN.y + FB_BTN.h / 2);
+  ctx.restore();
+}
+
+// === Utilities ===
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function pill(cx, cy, w, h, color) {
+  ctx.fillStyle = color;
+  roundRect(cx - w / 2, cy, w, h, h / 2);
+  ctx.fill();
+}
+
+function wrapText(text, x, y, maxW, lineH) {
+  const words = text.split(' ');
+  let line = '';
+  let lineY = y;
+  words.forEach(word => {
+    const test = line + (line ? ' ' : '') + word;
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, x, lineY);
+      lineY += lineH;
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) ctx.fillText(line, x, lineY);
+}
+
+function wrapTextArr(text, maxW) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  ctx.font = '11px Georgia,serif';
+  words.forEach(word => {
+    const test = line + (line ? ' ' : '') + word;
+    if (ctx.measureText(test).width > maxW && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// === Input Handling ===
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.offsetWidth / W;
+  const sy = canvas.offsetHeight / H;
+  const src = e.touches ? e.touches[0] : e;
+  return { x: (src.clientX - rect.left) / sx, y: (src.clientY - rect.top) / sy };
+}
+
+function handleTap(px, py) {
+  // Feedback button (all states except title)
+  if (state !== 'title') {
+    if (px >= FB_BTN.x && px <= FB_BTN.x + FB_BTN.w &&
+        py >= FB_BTN.y && py <= FB_BTN.y + FB_BTN.h) {
+      document.getElementById('fb-overlay').classList.add('open');
+      return;
+    }
+  }
+
+  if (state === 'title') {
+    // Play button
+    const pbW = 160, pbH = 44, pbX = (W - pbW) / 2, pbY = H * 0.66;
+    if (px >= pbX && px <= pbX + pbW && py >= pbY && py <= pbY + pbH) {
+      startGame();
+    }
+    return;
+  }
+
+  if (state === 'day_start') {
+    // Tap to skip/advance day card reveal
+    if (animT > 0.5) {
+      state = 'choice';
+    }
+    return;
+  }
+
+  if (state === 'choice') {
+    const day = DAYS[dayIdx];
+    const startY = H * 0.62 + 100;
+    const btnH = 52, gap = 6;
+    for (let i = 0; i < day.choices.length; i++) {
+      const by = startY + i * (btnH + gap);
+      if (px >= 14 && px <= W - 14 && py >= by && py <= by + btnH) {
+        playDecision();
+        makeChoice(i);
+        return;
+      }
+    }
+    return;
+  }
+
+  if (state === 'outcome') {
+    if (animT >= 1.0) {
+      advanceFromOutcome();
+    }
+    return;
+  }
+
+  if (state === 'win') {
+    const pbW = 160, pbH = 40, pbX = (W - pbW) / 2, pbY = H * 0.80;
+    if (px >= pbX && px <= pbX + pbW && py >= pbY && py <= pbY + pbH) {
+      startGame();
+      return;
+    }
+    // Share
+    const sbW = 140, sbH = 34, sbX = (W - sbW) / 2, sbY = H * 0.91;
+    if (px >= sbX && px <= sbX + sbW && py >= sbY && py <= sbY + sbH) {
+      if (navigator.share) {
+        navigator.share({ title: 'Drought Rider', text: `I survived the 7-day crossing with a score of ${score}! Can you beat it?`, url: location.href });
+      }
+      return;
+    }
+    return;
+  }
+
+  if (state === 'lose') {
+    const pbW = 160, pbH = 40, pbX = (W - pbW) / 2, pbY = H * 0.70;
+    if (px >= pbX && px <= pbX + pbW && py >= pbY && py <= pbY + pbH) {
+      startGame();
+    }
+    return;
+  }
+}
+
+canvas.addEventListener('click', e => { const p = getPos(e); handleTap(p.x, p.y); });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const p = getPos(e); handleTap(p.x, p.y);
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') {
+    if (state === 'title') startGame();
+    else if (state === 'day_start' && animT > 0.5) state = 'choice';
+    else if (state === 'outcome' && animT >= 1.0) advanceFromOutcome();
+  }
+});
+
+// === Game Loop ===
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.1);
+    lastTime = ts;
+    animT += dt;
+    bgScrollX += dt * 8;
+    riderBob += dt * 2.2;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (state === 'title') {
+      drawTitle();
+    } else if (state === 'day_start') {
+      drawBackground();
+      drawRider();
+      drawHUD();
+      drawDayCard();
+      drawPopups(dt);
+      drawFeedbackBtn();
+
+      if (animT > 1.8) {
+        state = 'choice';
+      }
+    } else if (state === 'choice') {
+      drawBackground();
+      drawRider();
+      drawHUD();
+      drawDayCard();
+      drawChoices();
+      drawPopups(dt);
+      drawFeedbackBtn();
+    } else if (state === 'outcome') {
+      drawBackground();
+      drawRider();
+      drawHUD();
+      drawOutcome();
+      drawPopups(dt);
+      drawFeedbackBtn();
+    } else if (state === 'win') {
+      drawWin();
+      drawPopups(dt);
+      drawFeedbackBtn();
+    } else if (state === 'lose') {
+      drawLose();
+      drawPopups(dt);
+      drawFeedbackBtn();
+    }
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(loop); });
+
+// === Test API ===
+window.__run = {
+  get state() { return state; },
+  get dayIdx() { return dayIdx; },
+  get water() { return water; },
+  get horse() { return horse; },
+  get heatExposure() { return heatExposure; },
+  get goodChoices() { return goodChoices; },
+  get score() { return score; },
+  get animT() { return animT; },
+  get choiceResult() { return choiceResult; },
+  get best() { return best; },
+  set animT(v) { animT = v; },
+  DAYS, WEATHER, HEAT_HINTS, TOTAL_DAYS,
+  startGame,
+  makeChoice,
+  advanceFromOutcome,
+  calcProb,
+  getHeatHint,
+  addPopup,
+};
+</script>
+</body>
+</html>
