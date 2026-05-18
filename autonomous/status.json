@@ -1,10 +1,10 @@
 {
   "lastRunAt": "2026-05-18T08:00:01Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 56: Dead Eye - wind-drift shooting gallery, spring-follow crosshair, 3 target types, 58 tests pass.",
+  "lastRunSummary": "Game 57 Canyon Run tests pass",
   "currentTask": {
-    "context": "Director session starting - reading feedback and deciding next action",
-    "action": "starting"
+    "action": "new_game",
+    "context": "Game 57: Canyon Run -- tests passing, committing"
   },
   "gamesBuilt": 56,
   "lastGameTitle": "Dead Eye",
