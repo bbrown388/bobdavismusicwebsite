@@ -69,6 +69,8 @@ Single source of truth for every game built, every technique proven, and every l
 
 | 57 | Canyon Run | `canyon-run.html` | First-person perspective obstacle runner / vanishing-point at (180,200) / perspective math: t = FOCAL/(worldZ+FOCAL), scale=t / SPAWN_Z=2200 / 3 obstacle types: rock (stationary, radius=52), tumbleweed (drifts laterally, spin), cactus (stage>=2, radius=26) / 3 lanes LANES=[-110,0,110] / smooth lane switch playerX lerp 10/s / collision at worldZ<COLLISION_Z=60: |obs.worldX-playerX|<LANE_W=68 / close dodge bonus +50 at 2x lane width / invTimer=1.6s post-hit invincibility / 5 stages 16s each: speed 320->760 wu/s, spawnRate 0.50->1.22/s / stage clear +300 + 1.8s freeze overlay / stripeZs[5] cycle for scrolling depth markers / canyon wall silhouettes 3-layer jagged rock profiles each side / 65 tests pass / first pseudo-3D perspective projection in series / first world-space physics runner (worldZ drives screen pos + scale) | 2026-05-18 |
 
+| 58 | Saddlebag | `saddlebag.html` | Spatial Tetromino packing puzzle / 6x8 grid COLS=6 ROWS=8 CS=32px / 11 item shapes (I3/L3/S3/J3 3-cell + I4/L4/J4/T4/S4/Z4/O4 4-cell) with Western names (Rifle/Tin Star/Bedroll etc) / rotateCW: [r,c]->[c,maxR-r] normalized / getAnchor clamps placement to grid bounds / ghost preview: touchstart sets ghost, touchmove updates, touchend commits / doPlace fills grid[r][c]=itemIdx, doUnplace clears / tap occupied cell unplaces / tap selected tray item again rotates / ROTATE button / score = placed values + floor(timer)*5 + 300 pack bonus / selectedItem auto-advances to next unplaced after placing / 5 rounds: 4-7 items, 45s-28s timers / 60 tests pass / first spatial rotation-and-placement mechanic in series (Tetromino-style packing) / first inventory value-optimization challenge / first drag-to-preview ghost system | 2026-05-18 |
+
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
 ---
@@ -136,6 +138,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Cattle Baron](retrospectives/55-cattle-baron.md) — session lessons, action items for Game 56
 - [Retrospective: Dead Eye](retrospectives/56-dead-eye.md) — session lessons, action items for Game 57
 - [Retrospective: Canyon Run](retrospectives/57-canyon-run.md) — session lessons, action items for Game 58
+- [Retrospective: Saddlebag](retrospectives/58-saddlebag.md) — session lessons, action items for Game 59
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
