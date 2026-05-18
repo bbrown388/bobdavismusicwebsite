@@ -1,22 +1,12 @@
 {
-  "lastRunAt": "2026-05-18T08:30:00.000Z",
+  "lastRunAt": "2026-05-18T09:15:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 58 tests pass",
-  "currentTask": {
-    "action": "new_game",
-    "context": "Game 58: Saddlebag -- tests passing, committing"
-  },
-  "gamesBuilt": 57,
-  "lastGameTitle": "Canyon Run",
-  "lastGameFile": "canyon-run.html",
+  "lastRunSummary": "Built Game 58: Saddlebag - spatial Tetromino packing puzzle, drag-to-preview ghost system, 60 tests pass.",
+  "currentTask": null,
+  "gamesBuilt": 58,
+  "lastGameTitle": "Saddlebag",
+  "lastGameFile": "saddlebag.html",
   "gameQueue": [
-    {
-      "num": 58,
-      "title": "Saddlebag",
-      "concept": "Spatial packing puzzle. Each round presents a set of irregularly-shaped gear items (L, T, I, S shapes) that must be fitted into a saddlebag grid. Tap to select an item, tap to rotate, tap a grid cell to place. Items have gold values -- maximize value in the bag before the departure timer runs out. 5 rounds with increasingly complex items and tighter grids.",
-      "raisesBarOn": "First spatial rotation-and-placement mechanic in series (Tetromino-style packing), first inventory spatial reasoning challenge, first departure timer adding urgency to a placement puzzle",
-      "status": "planned"
-    },
     {
       "num": 59,
       "title": "Drought Rider",
@@ -29,6 +19,13 @@
       "title": "Night Herd",
       "concept": "Isometric stealth defense. A mountain lion creeps toward a resting cattle herd at night. Player places firebrands (light sources) to divert its path -- the lion pathfinds around light using BFS cost weighting but returns once a firebrand burns out. Place a firebrand too close to cattle and they scatter, costing score. 5 escalating rounds with multiple predators and shorter burn timers.",
       "raisesBarOn": "First isometric perspective in series, first dynamic-light AI pathfinding (predator BFS cost scales with proximity to active firebrands), first dual-threat placement puzzle (light repels predator but also scatters cattle if placed within scatter radius)",
+      "status": "planned"
+    },
+    {
+      "num": 61,
+      "title": "Snake Eyes",
+      "concept": "Dice-based outlaw bluffing duel. Two players (you vs sheriff) each secretly roll 5 dice. Bid on how many of a given face value exist across both sets of dice (Liar's Dice / Perudo). Call the sheriff's bluff or raise the bid. Sheriff has 4 personality modes (cautious, aggressive, calculating, reckless) that change the bluffing pattern. 5 rounds with escalating stakes and a bounty-reveal mechanic that shows what the sheriff was hiding.",
+      "raisesBarOn": "First dice-based probability game in series, first Liar's Dice hidden-information mechanic, first bidding game with believable AI bluffing tells based on personality mode",
       "status": "planned"
     }
   ],
@@ -159,6 +156,14 @@
       "result": "success",
       "summary": "Built Game 55: Cattle Baron - turn-based territory strategy, 4x4 parcel grid, 8 threat types, 78 tests pass.",
       "commitHash": "fac669b"
+    },
+    {
+      "runAt": "2026-05-18T09:15:00.000Z",
+      "action": "new_game",
+      "game": "Saddlebag",
+      "result": "success",
+      "summary": "Built Game 58: Saddlebag - spatial Tetromino packing puzzle, drag-to-preview ghost system, 60 tests pass.",
+      "commitHash": "b832627"
     }
   ]
 }
