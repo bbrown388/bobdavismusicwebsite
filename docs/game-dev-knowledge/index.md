@@ -67,6 +67,8 @@ Single source of truth for every game built, every technique proven, and every l
 
 | 56 | Dead Eye | `dead-eye.html` | Wind-drift shooting gallery / sine-wave windX = amp*sin(phase) pushes crosshair continuously / spring-follow crosshair (SPRING=6/s) lags behind aim point / three target types: can (stationary $100), poster (moving $200), rider (fast $350) / POST_XS=[28,88,148,208,268,328] fence posts / riderChance 0%-45% over 5 rounds / hit detection Math.hypot(fx-t.x, fy-t.y) < TARGET_RAD / accuracy bonus = ratio*TARGET_VAL*0.5 / ammo 6/round / WIN_SCORE=1200 / 58 tests pass / first ballistic wind-drift aiming mechanic in series / first gallery-shooter format (spawned targets, limited ammo, accuracy bonus) | 2026-05-17 |
 
+| 57 | Canyon Run | `canyon-run.html` | First-person perspective obstacle runner / vanishing-point at (180,200) / perspective math: t = FOCAL/(worldZ+FOCAL), scale=t / SPAWN_Z=2200 / 3 obstacle types: rock (stationary, radius=52), tumbleweed (drifts laterally, spin), cactus (stage>=2, radius=26) / 3 lanes LANES=[-110,0,110] / smooth lane switch playerX lerp 10/s / collision at worldZ<COLLISION_Z=60: |obs.worldX-playerX|<LANE_W=68 / close dodge bonus +50 at 2x lane width / invTimer=1.6s post-hit invincibility / 5 stages 16s each: speed 320->760 wu/s, spawnRate 0.50->1.22/s / stage clear +300 + 1.8s freeze overlay / stripeZs[5] cycle for scrolling depth markers / canyon wall silhouettes 3-layer jagged rock profiles each side / 65 tests pass / first pseudo-3D perspective projection in series / first world-space physics runner (worldZ drives screen pos + scale) | 2026-05-18 |
+
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
 ---
@@ -133,6 +135,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Smoke Signal](retrospectives/54-smoke-signal.md) — session lessons, action items for Game 55
 - [Retrospective: Cattle Baron](retrospectives/55-cattle-baron.md) — session lessons, action items for Game 56
 - [Retrospective: Dead Eye](retrospectives/56-dead-eye.md) — session lessons, action items for Game 57
+- [Retrospective: Canyon Run](retrospectives/57-canyon-run.md) — session lessons, action items for Game 58
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
