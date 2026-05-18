@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-18T09:15:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Built Game 58: Saddlebag - spatial Tetromino packing puzzle, drag-to-preview ghost system, 60 tests pass.",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 59: Drought Rider",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Designing Game 59: Drought Rider - narrative branching survival"
+  },
   "gamesBuilt": 58,
   "lastGameTitle": "Saddlebag",
   "lastGameFile": "saddlebag.html",
