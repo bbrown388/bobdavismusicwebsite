@@ -73,6 +73,8 @@ Single source of truth for every game built, every technique proven, and every l
 
 | 59 | Drought Rider | `drought-rider.html` | Branching narrative survival / 7-day desert crossing / WATER(0-100) + HORSE(0-100) visible resources / HEAT_EXPOSURE(0-100) hidden accumulating state / 4 weather types (MILD/HOT/SCORCHING/OVERCAST) each with heatBase applied per day / calcProb: penalty = min(0.28, heatExposure/310), clamp at 0.04 / probability display shows adjusted "XX% safe / YY% trouble" per choice / 5 heat text hints (0/20/40/60/80) shown instead of raw number / 7 days x 3 choices = 21 decision nodes / goodChoices count feeds score: 1000+water*5+horse*5+goodChoices*80 / state machine: title->day_start(1.8s)->choice->outcome(animT>=1.0)->day_start|win|lose / 40 tests pass / first purely narrative-driven survival game (no reflex/spatial) / first hidden compounding state variable degrading player odds across multi-day arc / first risk-probability display for player decisions | 2026-05-18 |
 
+| 60 | Night Herd | `night-herd.html` | Isometric stealth defense / 9x9 isometric grid (TW=40, TH=20, CX=180, CY=148) / isoToScreen + screenToIso projection / painter's algorithm depth sort by (r+c) / Dijkstra-weighted lion pathfinding: firebrand proximity adds BRAND_PENALTY*(1-bd/BRAND_REPEL_RADIUS) cost per cell / dynamic cost field changes as brands burn out / Float32Array-vs-Array Dijkstra precision hazard (fractional costs corrupt stale-entry guard — use regular Array) / SCATTER_DIST=1.5 cattle displacement on brand placement near cows (-100 score per scattered cow) / seeded LCG RNG for deterministic test cattle placement / 5 rounds: escalating lions (1→3), brands (7→5), burnTime (18→9s), moveInterval (0.90→0.65s) / 50 tests pass / first isometric perspective in series / first dynamic-light AI pathfinding / first dual-threat placement puzzle (every placement simultaneously repels predator and risks scattering cattle) | 2026-05-19 |
+
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
 ---
@@ -142,6 +144,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Canyon Run](retrospectives/57-canyon-run.md) — session lessons, action items for Game 58
 - [Retrospective: Saddlebag](retrospectives/58-saddlebag.md) — session lessons, action items for Game 59
 - [Retrospective: Drought Rider](retrospectives/59-drought-rider.md) — session lessons, action items for Game 60
+- [Retrospective: Night Herd](retrospectives/60-night-herd.md) — session lessons, action items for Game 61
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
