@@ -71,6 +71,8 @@ Single source of truth for every game built, every technique proven, and every l
 
 | 58 | Saddlebag | `saddlebag.html` | Spatial Tetromino packing puzzle / 6x8 grid COLS=6 ROWS=8 CS=32px / 11 item shapes (I3/L3/S3/J3 3-cell + I4/L4/J4/T4/S4/Z4/O4 4-cell) with Western names (Rifle/Tin Star/Bedroll etc) / rotateCW: [r,c]->[c,maxR-r] normalized / getAnchor clamps placement to grid bounds / ghost preview: touchstart sets ghost, touchmove updates, touchend commits / doPlace fills grid[r][c]=itemIdx, doUnplace clears / tap occupied cell unplaces / tap selected tray item again rotates / ROTATE button / score = placed values + floor(timer)*5 + 300 pack bonus / selectedItem auto-advances to next unplaced after placing / 5 rounds: 4-7 items, 45s-28s timers / 60 tests pass / first spatial rotation-and-placement mechanic in series (Tetromino-style packing) / first inventory value-optimization challenge / first drag-to-preview ghost system | 2026-05-18 |
 
+| 59 | Drought Rider | `drought-rider.html` | Branching narrative survival / 7-day desert crossing / WATER(0-100) + HORSE(0-100) visible resources / HEAT_EXPOSURE(0-100) hidden accumulating state / 4 weather types (MILD/HOT/SCORCHING/OVERCAST) each with heatBase applied per day / calcProb: penalty = min(0.28, heatExposure/310), clamp at 0.04 / probability display shows adjusted "XX% safe / YY% trouble" per choice / 5 heat text hints (0/20/40/60/80) shown instead of raw number / 7 days x 3 choices = 21 decision nodes / goodChoices count feeds score: 1000+water*5+horse*5+goodChoices*80 / state machine: title->day_start(1.8s)->choice->outcome(animT>=1.0)->day_start|win|lose / 40 tests pass / first purely narrative-driven survival game (no reflex/spatial) / first hidden compounding state variable degrading player odds across multi-day arc / first risk-probability display for player decisions | 2026-05-18 |
+
 **Uniqueness rule:** Each new game must be a completely different concept from every prior game. No reskins, sequels, or variants unless user explicitly requests one.
 
 ---
@@ -139,6 +141,7 @@ Single source of truth for every game built, every technique proven, and every l
 - [Retrospective: Dead Eye](retrospectives/56-dead-eye.md) — session lessons, action items for Game 57
 - [Retrospective: Canyon Run](retrospectives/57-canyon-run.md) — session lessons, action items for Game 58
 - [Retrospective: Saddlebag](retrospectives/58-saddlebag.md) — session lessons, action items for Game 59
+- [Retrospective: Drought Rider](retrospectives/59-drought-rider.md) — session lessons, action items for Game 60
 - [Canvas techniques](techniques/canvas.md) â€” setup, scaling, gradients, glow, silhouettes
 - [Game loop patterns](techniques/game-loop.md) â€” state machine, dt, spawning, cooldowns
 - [Visual design system](techniques/visual-design.md) â€” color palette, art style, HUD conventions
