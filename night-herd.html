@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Night Herd &#x2014; Bob Davis</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+#fb-overlay {
+  display:none; position:absolute; inset:0;
+  background:rgba(0,0,0,0.90); z-index:10;
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  font-family:Georgia,serif; color:#FFE066;
+}
+#fb-overlay.open { display:flex; }
+#fb-overlay h2 { font-size:20px; margin-bottom:4px; }
+#fb-stars { display:flex; gap:8px; font-size:28px; cursor:pointer; }
+#fb-stars span { opacity:0.35; transition:opacity 0.15s; }
+#fb-stars span.on { opacity:1; }
+#fb-text { width:280px; height:70px; background:#1a0d35; border:1px solid #C8A04A;
+           color:#FFE066; font-size:14px; padding:8px; resize:none; border-radius:6px; }
+#fb-submit { background:#C8A04A; color:#000; border:none; padding:10px 32px;
+             font-size:15px; font-family:Georgia,serif; border-radius:6px; cursor:pointer; }
+#fb-close { position:absolute; top:12px; right:16px; font-size:22px; cursor:pointer;
+            color:#888; background:none; border:none; }
+#fb-select { background:#1a0d35; border:1px solid #C8A04A; color:#FFE066;
+             padding:6px 10px; font-size:13px; border-radius:6px; width:280px; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-overlay">
+    <button id="fb-close">&#x2715;</button>
+    <h2>How'd we do?</h2>
+    <div id="fb-stars">
+      <span data-s="1">&#9733;</span><span data-s="2">&#9733;</span>
+      <span data-s="3">&#9733;</span><span data-s="4">&#9733;</span><span data-s="5">&#9733;</span>
+    </div>
+    <select id="fb-select">
+      <option value="Night Herd">Night Herd (this game)</option>
+      <option value="general">General / next game</option>
+      <option value="Snake Eyes">Upcoming: Snake Eyes (Game 61)</option>
+      <option value="Texas Twister">Upcoming: Texas Twister (Game 62)</option>
+    </select>
+    <textarea id="fb-text" placeholder="Any thoughts? (optional)"></textarea>
+    <button id="fb-submit">Send Feedback</button>
+  </div>
+</div>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// === Canvas setup ===
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+const W = 360, H = 640;
+canvas.width = W; canvas.height = H;
+
+let _scale = 1;
+function resize() {
+  _scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = (W * _scale) + 'px';
+  canvas.style.height = (H * _scale) + 'px';
+  wrap.style.width    = canvas.style.width;
+  wrap.style.height   = canvas.style.height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// === Feedback wiring ===
+let _fbRating = 0;
+document.querySelectorAll('#fb-stars span').forEach(el => {
+  el.addEventListener('click', () => {
+    _fbRating = +el.dataset.s;
+    document.querySelectorAll('#fb-stars span').forEach((s,i) => s.classList.toggle('on', i < _fbRating));
+  });
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('open');
+});
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const msg  = document.getElementById('fb-text').value.trim();
+  const game = document.getElementById('fb-select').value;
+  if (!_fbRating && !msg) return;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ game, rating: _fbRating, message: msg,
+      source: 'night-herd', ts: Date.now() })
+  }).catch(() => {});
+  document.getElementById('fb-overlay').classList.remove('open');
+  _fbRating = 0;
+  document.querySelectorAll('#fb-stars span').forEach(s => s.classList.remove('on'));
+  document.getElementById('fb-text').value = '';
+});
+
+// === Isometric grid constants ===
+const GRID = 9;          // 9x9 cells (indices 0-8)
+const TW   = 40;         // tile width  (screen px)
+const TH   = 20;         // tile height (screen px, = TW/2 for 2:1 iso)
+const CX   = 180;        // grid center x on canvas
+const CY   = 148;        // grid center y on canvas
+
+const BRAND_REPEL_RADIUS = 3.5;  // cells
+const BRAND_PENALTY      = 15;   // Dijkstra cost added per proximity unit
+const SCATTER_DIST       = 1.5;  // cells -- firebrand closer than this scatters a cow
+
+// Painter-sort grid: draw tiles in r+c order (smallest first = farthest back)
+// Corner (0,0) is top of diamond, (8,8) is bottom, (0,8) is right, (8,0) is left
+
+const ROUND_CONFIGS = [
+  { lions: 1, cattle: 6, brands: 7, burnTime: 18, roundTime: 35, moveInterval: 0.90 },
+  { lions: 1, cattle: 6, brands: 6, burnTime: 15, roundTime: 32, moveInterval: 0.82 },
+  { lions: 2, cattle: 5, brands: 6, burnTime: 13, roundTime: 35, moveInterval: 0.78 },
+  { lions: 2, cattle: 5, brands: 5, burnTime: 11, roundTime: 33, moveInterval: 0.72 },
+  { lions: 3, cattle: 4, brands: 5, burnTime:  9, roundTime: 38, moveInterval: 0.65 },
+];
+
+// Lions spawn at grid corners
+const LION_SPAWN = [[0,0],[0,8],[8,8],[8,0]];
+
+// Cattle candidate cells: rows 2-6, cols 2-6 (center 5x5)
+const CATTLE_ZONE = [];
+for (let r = 2; r < 7; r++) for (let c = 2; c < 7; c++) CATTLE_ZONE.push([r, c]);
+
+// === Seeded RNG for deterministic tests ===
+let _rngSeed = 0;
+function _rng() {
+  _rngSeed = ((_rngSeed * 1664525 + 1013904223) | 0) >>> 0;
+  return _rngSeed / 0xFFFFFFFF;
+}
+function _seedRng(s) { _rngSeed = (s | 0) >>> 0; }
+
+function _shuffle(arr, rFn) {
+  const r = rFn || Math.random;
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// === Core math ===
+function isoToScreen(r, c) {
+  return { x: CX + (c - r) * (TW / 2), y: CY + (c + r) * (TH / 2) };
+}
+
+function screenToIso(sx, sy) {
+  const a = (sx - CX) * 2 / TW;
+  const b = (sy - CY) * 2 / TH;
+  return { r: (b - a) / 2, c: (b + a) / 2 };
+}
+
+// === Pathfinding: Dijkstra with firebrand cost ===
+function computeLionPath(lion) {
+  const INF = 1e9;
+  const dist = Array.from({ length: GRID }, () => new Array(GRID).fill(INF));
+  const prev = Array.from({ length: GRID }, () => Array(GRID).fill(null));
+  dist[lion.r][lion.c] = 0;
+
+  // Simple sorted-insert priority queue (GRID=9 -> 81 nodes, small enough)
+  const pq = [[0, lion.r, lion.c]];
+
+  while (pq.length) {
+    const [d, r, c] = pq.shift();
+    if (d > dist[r][c]) continue;
+
+    for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= GRID || nc < 0 || nc >= GRID) continue;
+
+      let cost = 1;
+      for (const brand of brands) {
+        if (brand.burnTime <= 0) continue;
+        const bd = Math.sqrt((nr - brand.r) ** 2 + (nc - brand.c) ** 2);
+        if (bd < BRAND_REPEL_RADIUS) {
+          cost += BRAND_PENALTY * (1 - bd / BRAND_REPEL_RADIUS);
+        }
+      }
+
+      const nd = d + cost;
+      if (nd < dist[nr][nc]) {
+        dist[nr][nc] = nd;
+        prev[nr][nc] = [r, c];
+        // Insert in sorted position
+        let i = 0;
+        while (i < pq.length && pq[i][0] <= nd) i++;
+        pq.splice(i, 0, [nd, nr, nc]);
+      }
+    }
+  }
+
+  // Find nearest non-scattered cow
+  let best = null, bestDist = INF;
+  for (const cow of cattle) {
+    if (!cow.scattered && dist[cow.r][cow.c] < bestDist) {
+      bestDist = dist[cow.r][cow.c];
+      best = cow;
+    }
+  }
+  if (!best || bestDist >= INF) return [];
+
+  // Reconstruct path (excludes lion's current position)
+  const path = [];
+  let cur = [best.r, best.c];
+  while (cur[0] !== lion.r || cur[1] !== lion.c) {
+    path.unshift(cur);
+    const p = prev[cur[0]][cur[1]];
+    if (!p) break;
+    cur = p;
+  }
+  return path;
+}
+
+// === Game state ===
+let gameState;   // 'title' | 'playing' | 'round_over' | 'win' | 'lose'
+let round, score;
+let cattle, lions, brands, brandsLeft;
+let roundTimer, roundOverTimer;
+let pathDirty;
+let _stars;
+
+function startGame() {
+  round = 0;
+  score = 0;
+  startRound();
+}
+
+function startRound() {
+  const cfg = ROUND_CONFIGS[round];
+  roundTimer  = cfg.roundTime;
+  brandsLeft  = cfg.brands;
+  brands      = [];
+
+  // Deterministic cattle placement per round
+  _seedRng(round * 1000 + 42);
+  const zone = CATTLE_ZONE.slice();
+  _shuffle(zone, _rng);
+  cattle = zone.slice(0, cfg.cattle).map(([r, c]) => ({ r, c, scattered: false }));
+
+  // Lions spawn at corners
+  lions = LION_SPAWN.slice(0, cfg.lions).map(([r, c]) => ({
+    r, c, path: [], moveTimer: cfg.moveInterval,
+  }));
+
+  pathDirty = true;
+  gameState  = 'playing';
+}
+
+function placeBrand(r, c) {
+  if (r < 0 || r >= GRID || c < 0 || c >= GRID) return false;
+  if (brandsLeft <= 0) return false;
+
+  const cfg = ROUND_CONFIGS[round];
+
+  // Check scatter radius
+  for (const cow of cattle) {
+    if (!cow.scattered) {
+      const d = Math.sqrt((r - cow.r) ** 2 + (c - cow.c) ** 2);
+      if (d <= SCATTER_DIST) {
+        cow.scattered = true;
+        score -= 100;
+        _playMoo();
+      }
+    }
+  }
+
+  brands.push({ r, c, burnTime: cfg.burnTime, maxBurnTime: cfg.burnTime });
+  brandsLeft--;
+  pathDirty = true;
+  _playBrand();
+  return true;
+}
+
+function update(dt) {
+  if (gameState !== 'playing') return;
+
+  roundTimer -= dt;
+  if (roundTimer <= 0) { roundWon(); return; }
+
+  // Burn brands; flag path recompute when one expires
+  for (const brand of brands) {
+    if (brand.burnTime > 0) {
+      brand.burnTime -= dt;
+      if (brand.burnTime <= 0) pathDirty = true;
+    }
+  }
+
+  // Recompute paths if anything changed
+  if (pathDirty) {
+    for (const lion of lions) lion.path = computeLionPath(lion);
+    pathDirty = false;
+  }
+
+  // Move lions
+  const cfg = ROUND_CONFIGS[round];
+  for (const lion of lions) {
+    lion.moveTimer -= dt;
+    if (lion.moveTimer <= 0) {
+      lion.moveTimer = cfg.moveInterval;
+
+      if (lion.path && lion.path.length > 0) {
+        const next = lion.path.shift();
+        lion.r = next[0];
+        lion.c = next[1];
+
+        // Check attack
+        for (const cow of cattle) {
+          if (!cow.scattered && cow.r === lion.r && cow.c === lion.c) {
+            roundLost();
+            return;
+          }
+        }
+
+        if (lion.path.length === 0) pathDirty = true;
+      } else {
+        pathDirty = true;
+      }
+    }
+  }
+}
+
+function roundWon() {
+  const surviving = cattle.filter(c => !c.scattered).length;
+  score += 500 + surviving * 80 + brandsLeft * 30;
+  _playRoundClear();
+  if (round >= ROUND_CONFIGS.length - 1) {
+    gameState = 'win';
+  } else {
+    gameState     = 'round_over';
+    roundOverTimer = 2.0;
+  }
+}
+
+function roundLost() {
+  _playLose();
+  gameState = 'lose';
+}
+
+// === Audio ===
+let _audioCtx = null;
+function _getAC() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+
+function _playBrand() {
+  try {
+    const ac = _getAC(), t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.exponentialRampToValueAtTime(80, t + 0.22);
+    g.gain.setValueAtTime(0.28, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + 0.3);
+  } catch(e) {}
+}
+
+function _playMoo() {
+  try {
+    const ac = _getAC(), t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(220, t);
+    o.frequency.setValueAtTime(180, t + 0.15);
+    o.frequency.setValueAtTime(155, t + 0.32);
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + 0.5);
+  } catch(e) {}
+}
+
+function _playRoundClear() {
+  try {
+    const ac = _getAC();
+    [392, 440, 523, 659].forEach((freq, i) => {
+      const t = ac.currentTime + i * 0.13;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'triangle';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.28, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      o.connect(g); g.connect(ac.destination);
+      o.start(t); o.stop(t + 0.3);
+    });
+  } catch(e) {}
+}
+
+function _playLose() {
+  try {
+    const ac = _getAC(), t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(50, t + 0.85);
+    g.gain.setValueAtTime(0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + 0.9);
+  } catch(e) {}
+}
+
+// === Drawing helpers ===
+function _roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function _drawTileDiamond(r, c, fillColor, strokeColor) {
+  const p = isoToScreen(r, c);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(p.x,          p.y - TH / 2);
+  ctx.lineTo(p.x + TW / 2, p.y);
+  ctx.lineTo(p.x,          p.y + TH / 2);
+  ctx.lineTo(p.x - TW / 2, p.y);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  if (strokeColor) {
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function _drawBg() {
+  const gr = ctx.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#050208');
+  gr.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, 0, W, H);
+
+  for (const s of _stars) {
+    ctx.globalAlpha = s.a;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function _buildLightMap() {
+  const lm = Array.from({ length: GRID }, () => new Float32Array(GRID));
+  for (const brand of brands) {
+    if (brand.burnTime <= 0) continue;
+    const intensity = Math.min(1, brand.burnTime / brand.maxBurnTime);
+    const reach = BRAND_REPEL_RADIUS + 1.5;
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        const d = Math.sqrt((r - brand.r) ** 2 + (c - brand.c) ** 2);
+        if (d < reach) {
+          lm[r][c] = Math.min(1, lm[r][c] + intensity * Math.max(0, 1 - d / reach));
+        }
+      }
+    }
+  }
+  return lm;
+}
+
+function _drawGrid(lm) {
+  for (let sum = 0; sum < GRID * 2 - 1; sum++) {
+    for (let r = 0; r < GRID; r++) {
+      const c = sum - r;
+      if (c < 0 || c >= GRID) continue;
+      const light = lm[r][c];
+      const base  = 22 + Math.floor(light * 42);
+      const fill  = `rgb(${Math.floor(base * 0.5)},${base},${Math.floor(base * 0.35)})`;
+      const edge  = `rgba(${Math.floor(50 + light * 80)},${Math.floor(80 + light * 90)},${Math.floor(20 + light * 50)},0.55)`;
+      _drawTileDiamond(r, c, fill, edge);
+    }
+  }
+}
+
+function _drawBrandGlow(brand) {
+  if (brand.burnTime <= 0) return;
+  const p = isoToScreen(brand.r, brand.c);
+  const intensity = Math.min(1, brand.burnTime / brand.maxBurnTime);
+  const radius    = (BRAND_REPEL_RADIUS + 1) * TW / 2;
+  const ty = p.y - TH / 2;
+
+  ctx.save();
+  const gr = ctx.createRadialGradient(p.x, ty, 0, p.x, ty, radius);
+  gr.addColorStop(0,   `rgba(255,160,30,${0.25 * intensity})`);
+  gr.addColorStop(0.5, `rgba(255,110,15,${0.10 * intensity})`);
+  gr.addColorStop(1,   'rgba(255,70,0,0)');
+  ctx.fillStyle = gr;
+  ctx.fillRect(p.x - radius, ty - radius, radius * 2, radius * 2);
+  ctx.restore();
+}
+
+function _drawBrand(brand, t) {
+  if (brand.burnTime <= 0) return;
+  const p         = isoToScreen(brand.r, brand.c);
+  const ty        = p.y - TH / 2;
+  const intensity = Math.min(1, brand.burnTime / brand.maxBurnTime);
+
+  ctx.save();
+  // Post
+  ctx.fillStyle = '#5a3818';
+  ctx.fillRect(p.x - 2, ty - 4, 4, 10);
+
+  // Flame
+  const flicker = 0.82 + 0.18 * Math.sin(t * 11 + brand.r * 3.7 + brand.c);
+  const fh = 11 * intensity * flicker;
+  const fg = ctx.createRadialGradient(p.x, ty - 5, 0, p.x, ty - 5, fh);
+  fg.addColorStop(0,   'rgba(255,245,90,0.95)');
+  fg.addColorStop(0.4, 'rgba(255,140,20,0.85)');
+  fg.addColorStop(1,   'rgba(255,50,0,0)');
+  ctx.beginPath();
+  ctx.ellipse(p.x, ty - 5 - fh * 0.4, fh * 0.38, fh * 0.6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = fg;
+  ctx.fill();
+
+  // Burndown indicator
+  const frac = brand.burnTime / brand.maxBurnTime;
+  ctx.fillStyle = frac > 0.35 ? '#FFD700' : '#e05030';
+  ctx.beginPath();
+  ctx.arc(p.x, ty + 8, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function _drawCow(cow) {
+  const p  = isoToScreen(cow.r, cow.c);
+  const ty = p.y - TH / 2;
+
+  ctx.save();
+  if (cow.scattered) ctx.globalAlpha = 0.45;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.beginPath();
+  ctx.ellipse(p.x, ty + 2, 10, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body
+  const bodyColor = cow.scattered ? '#8a6840' : '#9a6030';
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath();
+  ctx.ellipse(p.x - 1, ty - 3, 9, 5, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Head
+  ctx.beginPath();
+  ctx.ellipse(p.x + 7, ty - 4, 4.5, 3.5, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horns
+  ctx.strokeStyle = '#c8a060';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(p.x + 9,  ty - 7); ctx.lineTo(p.x + 10, ty - 10);
+  ctx.moveTo(p.x + 11, ty - 7); ctx.lineTo(p.x + 13, ty - 9);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function _drawLion(lion, t) {
+  const p  = isoToScreen(lion.r, lion.c);
+  const ty = p.y - TH / 2;
+
+  ctx.save();
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  ctx.beginPath();
+  ctx.ellipse(p.x, ty + 2, 11, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body (tawny, low, elongated)
+  ctx.fillStyle = '#c88030';
+  ctx.beginPath();
+  ctx.ellipse(p.x - 2, ty - 3, 11, 4, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Head
+  ctx.beginPath();
+  ctx.ellipse(p.x + 8, ty - 4, 5, 4, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ear
+  ctx.fillStyle = '#a06020';
+  ctx.beginPath();
+  ctx.moveTo(p.x + 8,  ty - 8);
+  ctx.lineTo(p.x + 12, ty - 12);
+  ctx.lineTo(p.x + 13, ty - 7);
+  ctx.closePath();
+  ctx.fill();
+
+  // Eyes (glow)
+  const eyePulse = 0.65 + 0.35 * Math.sin(t * 2.8);
+  ctx.fillStyle = `rgba(255,200,0,${eyePulse})`;
+  ctx.beginPath();
+  ctx.arc(p.x + 9,  ty - 5, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(p.x + 12, ty - 5, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function _drawHUD() {
+  const cfg = ROUND_CONFIGS[round];
+
+  // Round label (top-left)
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.78)';
+  _roundRect(8, 8, 106, 26, 5); ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`ROUND ${round + 1} / ${ROUND_CONFIGS.length}`, 14, 26);
+  ctx.restore();
+
+  // Score (top-center)
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.78)';
+  _roundRect(W / 2 - 45, 8, 90, 26, 5); ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 26);
+  ctx.restore();
+
+  // Brand icons (right column)
+  ctx.save();
+  for (let i = 0; i < cfg.brands; i++) {
+    const used = i >= brandsLeft;
+    ctx.fillStyle = used ? 'rgba(80,40,10,0.4)' : 'rgba(255,165,30,0.9)';
+    ctx.beginPath();
+    ctx.arc(W - 14, 12 + i * 13, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Round timer bar
+  const timerY = CY + (GRID - 1) * TH + 18;
+  const barW   = W - 20;
+  const frac   = Math.max(0, roundTimer / cfg.roundTime);
+  ctx.save();
+  ctx.fillStyle = 'rgba(28,14,5,0.82)';
+  _roundRect(10, timerY, barW, 8, 4); ctx.fill();
+  ctx.fillStyle = frac > 0.3 ? '#FFD700' : '#e05030';
+  if (frac > 0) { _roundRect(10, timerY, barW * frac, 8, 4); ctx.fill(); }
+  ctx.restore();
+
+  // Feedback button (bottom-right, on-canvas)
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,215,0,0.10)';
+  _roundRect(W - 82, H - 28, 74, 18, 9); ctx.fill();
+  ctx.fillStyle = '#705848';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('FEEDBACK', W - 45, H - 16);
+  ctx.restore();
+}
+
+function _drawTitle(t) {
+  // Moon crescent
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,248,200,0.88)';
+  ctx.beginPath(); ctx.arc(268, 108, 32, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(5,2,8,1)';
+  ctx.beginPath(); ctx.arc(282, 102, 30, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 44px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(255,180,0,0.55)';
+  ctx.shadowBlur = 18;
+  ctx.fillText('NIGHT HERD', W / 2, 228);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Guard the herd from the dark', W / 2, 262);
+
+  ctx.fillStyle = '#907860';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('Tap the ground to place firebrands', W / 2, 292);
+  ctx.fillText('Keep the mountain lion away', W / 2, 312);
+  ctx.fillText("Stay clear of the cattle", W / 2, 332);
+
+  const best = parseInt(localStorage.getItem('night_herd_best') || '0');
+  if (best > 0) {
+    ctx.fillStyle = '#705848';
+    ctx.font = '11px Georgia, serif';
+    ctx.fillText('BEST: ' + best, W / 2, 362);
+  }
+
+  const pulse = 0.55 + 0.45 * Math.sin(t * 2.2);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.fillText('TAP TO START', W / 2, 416);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function _drawWin() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.86)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#4aaa60';
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('HERD SAFE', W / 2, 240);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 50px Georgia, serif';
+  ctx.fillText(score, W / 2, 308);
+
+  const best = parseInt(localStorage.getItem('night_herd_best') || '0');
+  if (score > best) {
+    localStorage.setItem('night_herd_best', score.toString());
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 13px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 340);
+  }
+
+  ctx.fillStyle = '#907860';
+  ctx.font = '14px Georgia, serif';
+  ctx.fillText('Tap to play again', W / 2, 390);
+  ctx.restore();
+}
+
+function _drawLose() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.90)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#e05030';
+  ctx.font = 'bold 28px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('THE LION STRUCK', W / 2, 240);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 50px Georgia, serif';
+  ctx.fillText(score, W / 2, 308);
+
+  ctx.fillStyle = '#907860';
+  ctx.font = '14px Georgia, serif';
+  ctx.fillText('Tap to try again', W / 2, 370);
+  ctx.restore();
+}
+
+function _drawRoundOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.80)';
+  _roundRect(W / 2 - 90, H / 2 - 28, 180, 52, 8); ctx.fill();
+  ctx.fillStyle = '#4aaa60';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`ROUND ${round + 1} CLEAR`, W / 2, H / 2 + 4);
+  ctx.restore();
+}
+
+// === Game loop ===
+let _lastTs = 0;
+function _loop(ts) {
+  try {
+    const dt = Math.min(0.05, (ts - _lastTs) / 1000);
+    _lastTs = ts;
+
+    if (gameState === 'playing')    update(dt);
+    if (gameState === 'round_over') {
+      roundOverTimer -= dt;
+      if (roundOverTimer <= 0) { round++; startRound(); }
+    }
+
+    // --- Draw ---
+    _drawBg();
+
+    if (gameState === 'title') {
+      _drawTitle(ts / 1000);
+    } else if (gameState === 'win') {
+      _drawGrid(_buildLightMap());
+      _drawWin();
+    } else if (gameState === 'lose') {
+      _drawGrid(_buildLightMap());
+      _drawLose();
+    } else {
+      // Draw brand glows under tiles
+      for (const brand of brands) _drawBrandGlow(brand);
+
+      const lm = _buildLightMap();
+      _drawGrid(lm);
+
+      // Sort entities by iso depth (r+c)
+      const ents = [];
+      for (const brand of brands) if (brand.burnTime > 0) ents.push({ t: 'brand', o: brand, d: brand.r + brand.c });
+      for (const cow   of cattle) ents.push({ t: 'cow',   o: cow,   d: cow.r   + cow.c });
+      for (const lion  of lions)  ents.push({ t: 'lion',  o: lion,  d: lion.r  + lion.c });
+      ents.sort((a, b) => a.d - b.d);
+
+      for (const e of ents) {
+        if      (e.t === 'brand') _drawBrand(e.o, ts / 1000);
+        else if (e.t === 'cow')   _drawCow(e.o);
+        else                      _drawLion(e.o, ts / 1000);
+      }
+
+      _drawHUD();
+      if (gameState === 'round_over') _drawRoundOver();
+    }
+  } catch(err) {
+    console.error('night-herd loop error:', err);
+  }
+  requestAnimationFrame(_loop);
+}
+
+// === Input ===
+function _onTap(e) {
+  e.preventDefault();
+  const rect    = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const sx = (clientX - rect.left) / _scale;
+  const sy = (clientY - rect.top)  / _scale;
+
+  // Feedback button region
+  if (sy >= H - 30 && sx >= W - 84) {
+    document.getElementById('fb-overlay').classList.add('open');
+    return;
+  }
+
+  if      (gameState === 'title')                     { startGame(); return; }
+  else if (gameState === 'win' || gameState === 'lose') { gameState = 'title'; return; }
+  else if (gameState === 'round_over')                { return; }
+
+  if (gameState === 'playing') {
+    const iso = screenToIso(sx, sy);
+    placeBrand(Math.round(iso.r), Math.round(iso.c));
+  }
+}
+
+canvas.addEventListener('pointerdown', _onTap);
+
+// === Init ===
+_stars = Array.from({ length: 68 }, () => ({
+  x: Math.random() * W,
+  y: Math.random() * (H * 0.52),
+  r: Math.random() * 1.3 + 0.3,
+  a: Math.random() * 0.6 + 0.28,
+}));
+
+gameState = 'title';
+
+// === Test harness ===
+window.__run = {
+  get state()       { return gameState; },
+  set state(v)      { gameState = v; },
+  get round()       { return round; },
+  set round(v)      { round = v; },
+  get score()       { return score; },
+  set score(v)      { score = v; },
+  get cattle()      { return cattle; },
+  get lions()       { return lions; },
+  get brands()      { return brands; },
+  get brandsLeft()  { return brandsLeft; },
+  get roundTimer()  { return roundTimer; },
+  set roundTimer(v) { roundTimer = v; },
+  get pathDirty()   { return pathDirty; },
+  set pathDirty(v)  { pathDirty = v; },
+  startGame,
+  startRound: (n) => { round = n; startRound(); },
+  isoToScreen,
+  screenToIso,
+  computeLionPath: (lion) => {
+    const savedCattle = cattle;
+    return computeLionPath(lion);
+  },
+  placeBrand,
+  update,
+  roundWon,
+  roundLost,
+  ROUND_CONFIGS,
+  GRID, TW, TH, CX, CY,
+  BRAND_REPEL_RADIUS,
+  SCATTER_DIST,
+};
+
+requestAnimationFrame(_loop);
+</script>
+</body>
+</html>

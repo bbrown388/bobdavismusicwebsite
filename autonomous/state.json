@@ -3,10 +3,7 @@
   "lastRunAt": "2026-05-19T08:10:00.000Z",
   "currentTask": {
     "action": "new_game",
-    "context": "Designing Game 60: Night Herd - isometric stealth defense",
-    "target": null,
-    "recurringThemes": [],
-    "feedbackItems": []
+    "context": "Game 60: Night Herd -- tests passing, committing"
   },
   "gamesBuilt": 59,
   "lastGameTitle": "Drought Rider",
