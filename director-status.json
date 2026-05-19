@@ -1,8 +1,11 @@
 {
   "lastRunAt": "2026-05-19T10:00:00.000Z",
   "lastRunResult": "success",
-  "lastRunSummary": "Game 60 Night Herd complete - isometric stealth defense, Dijkstra dynamic-light pathfinding, 50 tests pass",
-  "currentTask": null,
+  "lastRunSummary": "Building Game 61: Snake Eyes",
+  "currentTask": {
+    "action": "new_game",
+    "context": "Building Game 61: Snake Eyes - Liar Dice probability duel vs sheriff AI"
+  },
   "gamesBuilt": 60,
   "lastGameTitle": "Night Herd",
   "lastGameFile": "night-herd.html",
