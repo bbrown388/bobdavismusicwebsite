@@ -1,10 +1,10 @@
 {
-  "lastRunAt": "2026-05-18T09:15:00.000Z",
+  "lastRunAt": "2026-05-19T08:00:01Z",
   "lastRunResult": "success",
   "lastRunSummary": "Game 59 Drought Rider tests pass",
   "currentTask": {
-    "action": "new_game",
-    "context": "Game 59: Drought Rider -- tests passing, committing"
+    "context": "Director session starting - reading feedback and deciding next action",
+    "action": "starting"
   },
   "gamesBuilt": 58,
   "lastGameTitle": "Saddlebag",
