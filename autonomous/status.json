@@ -1,9 +1,7 @@
 {
-  "currentTask": {
-    "context": "Draft approval web UI (Next.js)"
-  },
-  "lastRunSummary": "Post templates feature complete (CRUD + random selection + wired into Claude prompt). 229 api tests passing. Remaining: web draft UI (Task 16), GitHub push, Neon DB setup.",
-  "lastRunAt": "2026-05-18T20:15:00.000Z",
+  "currentTask": null,
+  "lastRunSummary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229 api tests passing.",
+  "lastRunAt": "2026-05-20T23:40:08.091Z",
   "lastRunResult": "success",
   "gamesBuilt": 62,
   "lastGameTitle": "Texas Twister",
@@ -116,12 +114,23 @@
       "task": "templates",
       "completedAt": "2026-05-18T20:15:00.000Z",
       "tests": "229/229 api"
+    },
+    {
+      "task": "templates",
+      "completedAt": "2026-05-18T20:15:00.000Z",
+      "tests": "229/229 api"
+    },
+    {
+      "runAt": "2026-05-20T23:40:08.091Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
     }
   ],
   "project": "gigsync",
   "projectLabel": "GigSync",
   "counter": {
-    "value": 27,
+    "value": 28,
     "label": "Tasks Complete"
   },
   "taskQueue": []
