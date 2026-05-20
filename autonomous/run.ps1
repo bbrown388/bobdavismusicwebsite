@@ -3,7 +3,7 @@
 # Loops - builds games back-to-back until the budget/org limit is hit.
 
 param(
-    [string]$WorkDir = "C:\Users\bobbr\Claude Code Working Folder"
+    [string]$WorkDir = "C:\Users\bobbr\Claude\bob-davis-music"
 )
 
 $logFile      = Join-Path $WorkDir "autonomous\run.log"
