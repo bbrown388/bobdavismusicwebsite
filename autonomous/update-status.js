@@ -26,6 +26,7 @@ function writeAll(status) {
   fs.writeFileSync(ROOT_JSON, pretty);
 
   // Replace the embedded const STATUS = {...}; line in status.html
+  // Works for both game-director format and generic GigSync format
   let html = fs.readFileSync(HTML_FILE, 'utf8');
   html = html.replace(/^const STATUS = .*$/m, `const STATUS = ${compact};`);
   fs.writeFileSync(HTML_FILE, html);

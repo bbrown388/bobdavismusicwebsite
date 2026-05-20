@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Director Status â€" Bob Davis Games</title>
+<title>Director Status — Bob Davis</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -135,8 +135,20 @@ h1 {
 .log-result.error      { color: #e05030; }
 .log-summary           { color: #907860; line-height: 1.5; }
 
-.games-count { font-size: 48px; color: #FFD700; font-weight: bold; letter-spacing: -2px; line-height: 1; }
-.games-label { font-size: 11px; color: #705848; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; margin-bottom: 32px; }
+.counter-value { font-size: 48px; color: #FFD700; font-weight: bold; letter-spacing: -2px; line-height: 1; }
+.counter-label { font-size: 11px; color: #705848; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; margin-bottom: 32px; }
+
+.project-badge {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #705848;
+  border: 1px solid rgba(255,215,0,0.1);
+  border-radius: 4px;
+  padding: 2px 8px;
+  margin-bottom: 16px;
+}
 
 .error-box {
   padding: 16px 18px;
@@ -158,17 +170,17 @@ h1 {
 </script></head>
 <body>
 
-<a class="back" href="index.html">â† bobdavismusic.com</a>
+<a class="back" href="index.html">← bobdavismusic.com</a>
 
-<h1>Game Director</h1>
-<p class="subtitle">Autonomous status â€" updated each session</p>
+<h1>Director Status</h1>
+<p class="subtitle">Autonomous — updated each session</p>
 
 <div id="app"></div>
 
 <script>
-// Status data embedded at build time â€" no external fetch needed.
+// Status data embedded at build time — no external fetch needed.
 // The automated session regenerates this file with updated data after each run.
-const STATUS = {"currentTask":null,"lastRunSummary":"Built Game 62: Texas Twister - vortex physics tornado survival, drag-to-carry under live hazards, 47 tests pass.","lastRunAt":"2026-05-20T10:30:00.000Z","lastRunResult":"success","gamesBuilt":62,"lastGameTitle":"Texas Twister","lastGameFile":"texas-twister.html","gameQueue":[{"num":63,"title":"Iron Horse","concept":"Steam locomotive driving puzzle. Manage boiler pressure by shoveling coal on the beat grid while the train accelerates through 5 stations. Too little pressure and you stall; too much and the boiler blows. Brake precisely at each station marker to pick up passengers and supplies. Hazards (rockslides, cattle on track, broken rails) require split-second speed corrections.","raisesBarOn":"First steam locomotive simulation in series, first beat-grid resource management (coal shoveling on rhythm subdivisions), first precision-stop mechanic (brake-to-marker within tolerance), first game combining rhythm-based resource input with spatial stopping precision.","status":"planned"},{"num":64,"title":"Bounty Board","concept":"Strategic card-drafting western. Each round reveals 6 outlaw wanted posters with different bounty values and capture difficulties. Spend your limited posse (3 deputies with unique skills: tracker, gunfighter, negotiator) to claim posters. Rival marshal AI competes for the same targets. Capture difficulty scales with the outlaw's danger rating vs your assigned deputy's strength. Plan 5 rounds ahead — spent deputies need rest before reassignment.","raisesBarOn":"First card-drafting / deck-builder mechanic in series, first multi-unit assignment puzzle (deputies as resource to allocate), first strategic multi-round planning game with rival AI competing for same targets.","status":"planned"},{"num":65,"title":"Quicksand","concept":"Timed physics rescue puzzle. A wagon has sunk into quicksand and livestock are scattered. Use a limited rope (drag to connect anchor points: trees, boulders, fence posts) to form a pulley system that multiplies force. The quicksand applies increasing suction over time. Each level has different anchor positions and vehicle weight — find the rope configuration that generates enough mechanical advantage before the wagon sinks completely.","raisesBarOn":"First rope-as-tool physics puzzle in series, first mechanical advantage simulation (pulley force multiplication), first game where the solution is a spatial configuration rather than a reflex response.","status":"planned"}],"runLog":[{"runAt":"2026-05-20T10:30:00.000Z","action":"new_game","game":"Texas Twister","result":"success","summary":"Built Game 62: Texas Twister - vortex physics tornado survival, radial orbit debris, spring-follow drag-carry, 47 tests pass.","commitHash":"ad1169e"},{"runAt":"2026-05-20T10:00:00.000Z","action":"new_game","game":"Snake Eyes","result":"success","summary":"Built Game 61: Snake Eyes - Liar's Dice probability duel vs sheriff AI, 4-personality sheriff, binomial probability display, 51 tests pass.","commitHash":"e74a1c1"},{"runAt":"2026-05-19T10:00:00.000Z","action":"new_game","game":"Night Herd","result":"success","summary":"Built Game 60: Night Herd - isometric stealth defense, Dijkstra dynamic-light pathfinding, dual-threat placement puzzle, 50 tests pass.","commitHash":"4cafe15"},{"runAt":"2026-05-19T08:10:00.000Z","action":"new_game","game":"Drought Rider","result":"success","summary":"Built Game 59: Drought Rider - narrative branching survival, hidden heat accumulation, probability display bars, 40 tests pass.","commitHash":"f1ec5a5"},{"runAt":"2026-05-18T08:30:00.000Z","action":"new_game","game":"Saddlebag","result":"success","summary":"Built Game 58: Saddlebag - spatial Tetromino packing puzzle, drag-to-preview ghost system, 60 tests pass.","commitHash":"b832627"},{"runAt":"2026-05-18T08:00:00.000Z","action":"new_game","game":"Canyon Run","result":"success","summary":"Built Game 57: Canyon Run - pseudo-3D perspective runner, vanishing-point obstacle approach, 65 tests pass.","commitHash":"7e3e1ab"},{"runAt":"2026-05-17T08:30:00.000Z","action":"new_game","game":"Dead Eye","result":"success","summary":"Built Game 56: Dead Eye - wind-drift shooting gallery, spring-follow crosshair, 58 tests pass.","commitHash":"25f28ec"},{"runAt":"2026-05-16T08:00:00.000Z","action":"new_game","game":"Cattle Baron","result":"success","summary":"Built Game 55: Cattle Baron - turn-based territory strategy, 4x4 parcel grid, 8 threat types, 78 tests pass.","commitHash":"fac669b"},{"runAt":"2026-05-15T08:30:00.000Z","action":"new_game","game":"Smoke Signal","result":"success","summary":"Built Game 54: Smoke Signal - timed smoke pattern generation, hold-duration mechanic, 68 tests pass.","commitHash":"a85b5f6"},{"runAt":"2026-05-15T08:00:00.000Z","action":"new_game","game":"Dust Bowl Derby","result":"success","summary":"Built Game 53: Dust Bowl Derby - top-down vehicular demolition derby, dual-resource engine heat + body damage, 66 tests pass.","commitHash":"88e7604"}]};
+const STATUS = {"project":"bob-davis-music","projectLabel":"Games","currentTask":null,"lastRunSummary":"Built Game 62: Texas Twister - vortex physics tornado survival, drag-to-carry under live hazards, 47 tests pass.","lastRunAt":"2026-05-20T10:30:00.000Z","lastRunResult":"success","counter":{"value":62,"label":"Games Built"},"taskQueue":[{"num":63,"title":"Iron Horse","concept":"Steam locomotive driving puzzle. Manage boiler pressure by shoveling coal on the beat grid while the train accelerates through 5 stations.","raisesBarOn":"First steam locomotive simulation, first beat-grid resource management.","status":"planned"},{"num":64,"title":"Bounty Board","concept":"Strategic card-drafting western. Spend your limited posse to claim wanted posters before a rival marshal AI.","raisesBarOn":"First card-drafting mechanic, first multi-unit assignment puzzle.","status":"planned"},{"num":65,"title":"Quicksand","concept":"Timed physics rescue puzzle. Form a rope-pulley system to pull a wagon from quicksand before it sinks.","raisesBarOn":"First rope-as-tool physics puzzle, first mechanical advantage simulation.","status":"planned"}],"runLog":[{"runAt":"2026-05-20T10:30:00.000Z","action":"new_game","result":"success","summary":"Built Game 62: Texas Twister - vortex physics, 47 tests pass.","commitHash":"ad1169e"},{"runAt":"2026-05-20T10:00:00.000Z","action":"new_game","result":"success","summary":"Built Game 61: Snake Eyes - Liar's Dice probability duel, 51 tests pass.","commitHash":"e74a1c1"},{"runAt":"2026-05-19T10:00:00.000Z","action":"new_game","result":"success","summary":"Built Game 60: Night Herd - isometric stealth defense, 50 tests pass.","commitHash":"4cafe15"}]};
 
 function timeAgo(iso) {
   if (!iso) return 'never';
@@ -186,161 +198,55 @@ function fmtDate(iso) {
 }
 
 function render(d) {
-  const dotClass = d.currentTask ? 'working' : (d.lastRunResult === 'success' ? 'ok' : d.lastRunResult === 'error' ? 'err' : 'idle');
+  const dotClass    = d.currentTask ? 'working' : (d.lastRunResult === 'success' ? 'ok' : d.lastRunResult === 'error' ? 'err' : 'idle');
   const statusLabel = d.currentTask ? 'Working' : 'Idle';
   const currentHtml = d.currentTask
-    ? `Building Game ${d.gamesBuilt + 1}: ${d.currentTask.context || 'new game'}`
+    ? (d.currentTask.context || d.currentTask.name || 'Working...')
     : 'Waiting for next scheduled run (3 AM nightly)';
 
   const errors = (d.runLog || []).filter(r => r.result === 'error' || r.result === 'warning').slice(-3);
 
-  const queueHtml = (d.gameQueue || []).map(g => `
-    <div class="queue-item${g.status === 'in_progress' ? ' active' : ''}">
-      <div class="queue-num">Game ${g.num}</div>
-      <div class="queue-title">${g.title}</div>
-      <div class="queue-concept">${g.concept}</div>
-      <div class="queue-bar">â†‘ ${g.raisesBarOn}</div>
-      <span class="queue-status ${g.status}">${g.status.replace('_', ' ')}</span>
+  const queueHtml = (d.taskQueue || []).map(t => `
+    <div class="queue-item${t.status === 'in_progress' ? ' active' : ''}">
+      <div class="queue-num">${d.projectLabel || 'Task'} ${t.num}</div>
+      <div class="queue-title">${t.title}</div>
+      ${t.concept     ? `<div class="queue-concept">${t.concept}</div>` : ''}
+      ${t.description ? `<div class="queue-concept">${t.description}</div>` : ''}
+      ${t.raisesBarOn ? `<div class="queue-bar">→ ${t.raisesBarOn}</div>` : ''}
+      <span class="queue-status ${t.status || 'planned'}">${(t.status || 'planned').replace('_', ' ')}</span>
     </div>`).join('');
 
   const logHtml = [...(d.runLog || [])].reverse().slice(0, 20).map(e => `
     <div class="log-entry">
-      <span class="log-time">${fmtDate(e.runAt)}</span>
-      <span class="log-result ${e.result}">${e.result}</span>
-      <span class="log-summary">${e.summary}${e.commitHash ? ' <span style="color:#705848">[' + e.commitHash.slice(0,7) + ']</span>' : ''}</span>
+      <span class="log-time">${fmtDate(e.runAt || e.completedAt)}</span>
+      <span class="log-result ${e.result}">${e.result || ''}</span>
+      <span class="log-summary">${e.summary || e.lastRunSummary || ''}${e.commitHash ? ' <span style="color:#705848">[' + e.commitHash.slice(0,7) + ']</span>' : ''}</span>
     </div>`).join('');
 
+  const counterHtml = d.counter
+    ? `<div class="counter-value">${d.counter.value}</div><div class="counter-label">${d.counter.label}</div>`
+    : '';
+
   document.getElementById('app').innerHTML = `
+    ${d.projectLabel ? `<div class="project-badge">${d.projectLabel}</div>` : ''}
     <div class="status-row">
       <span class="dot ${dotClass}"></span>
       <span class="status-text">${statusLabel}</span>
       <span class="status-time">Last run: ${timeAgo(d.lastRunAt)}</span>
     </div>
     ${errors.length ? `<div class="error-box">Recent issue: ${errors[errors.length-1].summary}</div>` : ''}
-    <div class="games-count">${d.gamesBuilt}</div>
-    <div class="games-label">Games built</div>
+    ${counterHtml}
     <div class="section-head">Current task</div>
     <div class="current-task${d.currentTask ? '' : ' none'}">${currentHtml}</div>
-    <div class="section-head">Game queue</div>
-    <div class="queue">${queueHtml || '<p style="color:#705848;font-size:13px;font-style:italic">No planned games yet.</p>'}</div>
+    <div class="section-head">Up next</div>
+    <div class="queue">${queueHtml || '<p style="color:#705848;font-size:13px;font-style:italic">Nothing queued.</p>'}</div>
     <div class="section-head">Run log</div>
     ${logHtml || '<p style="color:#705848;font-size:13px;font-style:italic">No runs recorded yet.</p>'}
   `;
 }
 
 render(STATUS);
-
-// â"€â"€ Feedback form â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-const FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
-
-document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('fb-form');
-  const statusEl = document.getElementById('fb-form-status');
-
-  form.addEventListener('submit', e => {
-    e.preventDefault();
-    const target  = document.getElementById('fb-target').value.trim() || 'general';
-    const message = document.getElementById('fb-message').value.trim();
-    const fix     = document.getElementById('fb-fix').checked;
-    if (!message) { statusEl.textContent = 'Please enter a message.'; return; }
-    statusEl.textContent = 'Sendingâ€¦';
-    fetch(FEEDBACK_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: JSON.stringify({ game: target, message, fixRequested: fix }),
-    }).finally(() => {
-      statusEl.textContent = 'Sent. Director picks it up on next run.';
-      form.reset();
-    });
-  });
-});
 </script>
-
-<div style="margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,215,0,0.08);">
-  <div class="section-head">Leave feedback for the director</div>
-  <form id="fb-form" style="display:flex;flex-direction:column;gap:12px;">
-    <select id="fb-target" style="background:#1a0a06;color:#C8B89A;border:1px solid rgba(255,215,0,0.2);
-      border-radius:6px;padding:10px 12px;font-size:13px;font-family:'Courier New',monospace;">
-      <option value="general">General / next game</option>
-      <option value="Texas Twister">Upcoming: Texas Twister (Game 62)</option>
-      <option value="Iron Horse">Upcoming: Iron Horse (Game 63)</option>
-      <option value="Snake Eyes">Existing: Snake Eyes</option>
-      <option value="Night Herd">Existing: Night Herd</option>
-      <option value="Drought Rider">Existing: Drought Rider</option>
-      <option value="Saddlebag">Existing: Saddlebag</option>
-      <option value="Canyon Run">Existing: Canyon Run</option>
-      <option value="Dead Eye">Existing: Dead Eye</option>
-      <option value="Cattle Baron">Existing: Cattle Baron</option>
-      <option value="Smoke Signal">Existing: Smoke Signal</option>
-      <option value="Dust Bowl Derby">Existing: Dust Bowl Derby</option>
-      <option value="Frontier Forge">Existing: Frontier Forge</option>
-      <option value="Pinkerton Trail">Existing: Pinkerton Trail</option>
-      <option value="Tin Pan Alley">Existing: Tin Pan Alley</option>
-      <option value="Lariat Spin">Existing: Lariat Spin</option>
-      <option value="Hangman's Bluff">Existing: Hangman's Bluff</option>
-      <option value="Outlaw Auction">Existing: Outlaw Auction</option>
-      <option value="Prairie Telegraph">Existing: Prairie Telegraph</option>
-      <option value="Rattlesnake Round-Up">Existing: Rattlesnake Round-Up</option>
-      <option value="Trail Blaze">Existing: Trail Blaze</option>
-      <option value="Wanted: Reward">Existing: Wanted: Reward</option>
-      <option value="Coyote Call">Existing: Coyote Call</option>
-      <option value="Gold Panner">Existing: Gold Panner</option>
-      <option value="Wire Tap">Existing: Wire Tap</option>
-      <option value="Last Rope Standing">Existing: Last Rope Standing</option>
-      <option value="Dust Road Derby">Existing: Dust Road Derby</option>
-      <option value="Tumbledown Town">Existing: Tumbledown Town</option>
-      <option value="Rodeo Queen">Existing: Rodeo Queen</option>
-      <option value="Snake Canyon">Existing: Snake Canyon</option>
-      <option value="Dust Devil Dance">Existing: Dust Devil Dance</option>
-      <option value="Cattle Auction">Existing: Cattle Auction</option>
-      <option value="Barbed Wire">Existing: Barbed Wire</option>
-      <option value="Pony Express">Existing: Pony Express</option>
-      <option value="Tumbleweed Pinball">Existing: Tumbleweed Pinball</option>
-      <option value="Jail Break">Existing: Jail Break</option>
-      <option value="Brand Iron">Existing: Brand Iron</option>
-      <option value="River Run">Existing: River Run</option>
-      <option value="Dust Storm">Existing: Dust Storm</option>
-      <option value="Fence Line">Existing: Fence Line</option>
-      <option value="Dead Reckoning">Existing: Dead Reckoning</option>
-      <option value="Devil's Backbone">Existing: Devil's Backbone</option>
-      <option value="Gallows Road">Existing: Gallows Road</option>
-      <option value="Wanted: Dead or Alive">Existing: Wanted: Dead or Alive</option>
-      <option value="Trail Boss">Existing: Trail Boss</option>
-      <option value="Canyon Crossfire">Existing: Canyon Crossfire</option>
-      <option value="Dead Man's Hand">Existing: Dead Man's Hand</option>
-      <option value="Rope Trick">Existing: Rope Trick</option>
-      <option value="Moonshine Run">Existing: Moonshine Run</option>
-      <option value="Prairie Fire">Existing: Prairie Fire</option>
-      <option value="Midnight Rodeo">Existing: Midnight Rodeo</option>
-      <option value="Snake Oil">Existing: Snake Oil</option>
-      <option value="Stampede">Existing: Stampede</option>
-      <option value="Boot Hill Bluff">Existing: Boot Hill Bluff</option>
-      <option value="Gold Rush">Existing: Gold Rush</option>
-      <option value="Wanted Poster">Existing: Wanted Poster</option>
-      <option value="Dust Devil">Existing: Dust Devil</option>
-      <option value="Tin Star Showdown">Existing: Tin Star Showdown</option>
-      <option value="Cattle Drive">Existing: Cattle Drive</option>
-      <option value="Outlaw Run">Existing: Outlaw Run</option>
-      <option value="Gone Fishin'">Existing: Gone Fishin'</option>
-      <option value="Honky Tonk">Existing: Honky Tonk</option>
-      <option value="Lasso Loop">Existing: Lasso Loop</option>
-      <option value="On the Road">Existing: On the Road</option>
-    </select>
-    <textarea id="fb-message" rows="4" placeholder="What's on your mind? Skip a game, change a concept, request a mechanicâ€¦"
-      style="background:#1a0a06;color:#E8DCC8;border:1px solid rgba(255,215,0,0.2);border-radius:6px;
-      padding:10px 12px;font-size:13px;font-family:'Courier New',monospace;resize:none;"></textarea>
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#907860;cursor:pointer;">
-      <input id="fb-fix" type="checkbox" style="accent-color:#FFD700;">
-      Update the existing game (not just context for future games)
-    </label>
-    <button type="submit" style="background:rgba(255,215,0,0.12);border:1px solid rgba(255,215,0,0.3);
-      color:#FFD700;font-family:'Courier New',monospace;font-size:13px;letter-spacing:1px;
-      padding:10px 20px;border-radius:6px;cursor:pointer;text-transform:uppercase;">
-      Send to Director
-    </button>
-    <p id="fb-form-status" style="font-size:12px;color:#705848;min-height:16px;margin:0;"></p>
-  </form>
-</div>
 
 </body>
 </html>
