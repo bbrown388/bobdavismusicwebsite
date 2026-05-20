@@ -1,7 +1,9 @@
 {
-  "currentTask": null,
-  "lastRunSummary": "Built Game 62: Texas Twister - vortex physics tornado survival, drag-to-carry under live hazards, 47 tests pass.",
-  "lastRunAt": "2026-05-20T10:30:00.000Z",
+  "currentTask": {
+    "context": "Draft approval web UI (Next.js)"
+  },
+  "lastRunSummary": "Post templates feature complete (CRUD + random selection + wired into Claude prompt). 229 api tests passing. Remaining: web draft UI (Task 16), GitHub push, Neon DB setup.",
+  "lastRunAt": "2026-05-18T20:15:00.000Z",
   "lastRunResult": "success",
   "gamesBuilt": 62,
   "lastGameTitle": "Texas Twister",
@@ -109,6 +111,18 @@
       "result": "success",
       "summary": "Built Game 53: Dust Bowl Derby - top-down vehicular demolition derby, dual-resource engine heat + body damage, 66 tests pass.",
       "commitHash": "88e7604"
+    },
+    {
+      "task": "templates",
+      "completedAt": "2026-05-18T20:15:00.000Z",
+      "tests": "229/229 api"
     }
-  ]
+  ],
+  "project": "gigsync",
+  "projectLabel": "GigSync",
+  "counter": {
+    "value": 27,
+    "label": "Tasks Complete"
+  },
+  "taskQueue": []
 }
