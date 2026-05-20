@@ -19,16 +19,28 @@ function readStatus() {
 }
 
 function writeAll(status) {
-  const compact = JSON.stringify(status);
-  const pretty  = JSON.stringify(status, null, 2);
-
+  const pretty = JSON.stringify(status, null, 2);
   fs.writeFileSync(STATUS_FILE, pretty);
   fs.writeFileSync(ROOT_JSON, pretty);
 
-  // Replace the embedded const STATUS = {...}; line in status.html
-  // Works for both game-director format and generic GigSync format
+  // Translate game-director fields into the generic format status.html expects.
+  // Supports both native game format and pre-translated generic patches (from GigSync).
+  const generic = status.project ? status : {
+    ...status,
+    project:      'bob-davis-music',
+    projectLabel: 'Game',
+    counter:      status.gamesBuilt != null ? { value: status.gamesBuilt, label: 'Games Built' } : undefined,
+    taskQueue:    (status.gameQueue || []).map(g => ({
+      num:         g.num,
+      title:       g.title,
+      concept:     g.concept,
+      raisesBarOn: g.raisesBarOn,
+      status:      g.status || 'planned',
+    })),
+  };
+
   let html = fs.readFileSync(HTML_FILE, 'utf8');
-  html = html.replace(/^const STATUS = .*$/m, `const STATUS = ${compact};`);
+  html = html.replace(/^const STATUS = .*$/m, `const STATUS = ${JSON.stringify(generic)};`);
   fs.writeFileSync(HTML_FILE, html);
 }
 
