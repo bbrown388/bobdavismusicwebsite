@@ -1,7 +1,7 @@
 {
   "currentTask": null,
-  "lastRunSummary": "Task 102 complete: Bulk show import via CSV — POST /shows/import accepts text/csv, returns {imported, errors}. 260/260 tests.",
-  "lastRunAt": "2026-05-21T08:00:20.936Z",
+  "lastRunSummary": "Task 103 complete: Draft history per show — GET /shows/:id/drafts returns all drafts ordered newest first. 265/265 tests.",
+  "lastRunAt": "2026-05-21T08:05:18.571Z",
   "lastRunResult": "success",
   "gamesBuilt": 62,
   "lastGameTitle": "Texas Twister",
@@ -30,40 +30,6 @@
     }
   ],
   "runLog": [
-    {
-      "task": "templates",
-      "completedAt": "2026-05-18T20:15:00.000Z",
-      "tests": "229/229 api"
-    },
-    {
-      "runAt": "2026-05-20T23:40:08.091Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
-    },
-    {
-      "runAt": "2026-05-20T00:00:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
-    },
-    {
-      "task": "templates",
-      "completedAt": "2026-05-18T20:15:00.000Z",
-      "tests": "229/229 api"
-    },
-    {
-      "runAt": "2026-05-20T23:40:08.091Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
-    },
-    {
-      "runAt": "2026-05-20T00:00:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
-    },
     {
       "runAt": "2026-05-20T00:00:00.000Z",
       "action": "task_complete",
@@ -144,24 +110,54 @@
       "action": "task_complete",
       "result": "success",
       "summary": "Task 102 complete: Bulk show import via CSV — POST /shows/import accepts text/csv, returns {imported, errors}. 260/260 tests."
+    },
+    {
+      "task": "templates",
+      "completedAt": "2026-05-18T20:15:00.000Z",
+      "tests": "229/229 api"
+    },
+    {
+      "runAt": "2026-05-20T23:40:08.091Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests."
+    },
+    {
+      "runAt": "2026-05-21T08:15:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 102 complete: Bulk show import via CSV — POST /shows/import accepts text/csv, returns {imported, errors}. 260/260 tests."
+    },
+    {
+      "runAt": "2026-05-21T08:30:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 103 complete: Draft history per show — GET /shows/:id/drafts returns all drafts ordered newest first. 265/265 tests."
     }
   ],
   "project": "gigsync",
   "projectLabel": "GigSync",
   "counter": {
-    "value": 31,
+    "value": 32,
     "label": "Tasks Complete"
   },
   "taskQueue": [
     {
-      "num": 102,
-      "title": "Bulk show import via CSV",
-      "status": "complete"
-    },
-    {
       "num": 103,
       "title": "Draft history per show",
-      "status": "planned"
+      "status": "complete"
     },
     {
       "num": 104,
@@ -181,6 +177,11 @@
     {
       "num": 107,
       "title": "Upcoming approved drafts preview",
+      "status": "planned"
+    },
+    {
+      "num": 108,
+      "title": "Show export to CSV",
       "status": "planned"
     }
   ]
