@@ -1,6 +1,6 @@
 {
   "currentTask": null,
-  "lastRunSummary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests.",
+  "lastRunSummary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests.",
   "lastRunAt": "2026-05-20T00:00:00.000Z",
   "lastRunResult": "success",
   "gamesBuilt": 62,
@@ -30,35 +30,6 @@
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-16T08:00:00.000Z",
-      "action": "new_game",
-      "game": "Cattle Baron",
-      "result": "success",
-      "summary": "Built Game 55: Cattle Baron - turn-based territory strategy, 4x4 parcel grid, 8 threat types, 78 tests pass.",
-      "commitHash": "fac669b"
-    },
-    {
-      "runAt": "2026-05-15T08:30:00.000Z",
-      "action": "new_game",
-      "game": "Smoke Signal",
-      "result": "success",
-      "summary": "Built Game 54: Smoke Signal - timed smoke pattern generation, hold-duration mechanic, 68 tests pass.",
-      "commitHash": "a85b5f6"
-    },
-    {
-      "runAt": "2026-05-15T08:00:00.000Z",
-      "action": "new_game",
-      "game": "Dust Bowl Derby",
-      "result": "success",
-      "summary": "Built Game 53: Dust Bowl Derby - top-down vehicular demolition derby, dual-resource engine heat + body damage, 66 tests pass.",
-      "commitHash": "88e7604"
-    },
-    {
-      "task": "templates",
-      "completedAt": "2026-05-18T20:15:00.000Z",
-      "tests": "229/229 api"
-    },
     {
       "task": "templates",
       "completedAt": "2026-05-18T20:15:00.000Z",
@@ -147,19 +118,42 @@
       "action": "task_complete",
       "result": "success",
       "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
+    },
+    {
+      "task": "templates",
+      "completedAt": "2026-05-18T20:15:00.000Z",
+      "tests": "229/229 api"
+    },
+    {
+      "runAt": "2026-05-20T23:40:08.091Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests."
     }
   ],
   "project": "gigsync",
   "projectLabel": "GigSync",
   "counter": {
-    "value": 29,
+    "value": 30,
     "label": "Tasks Complete"
   },
   "taskQueue": [
     {
       "num": 101,
       "title": "Post success notification email",
-      "status": "planned"
+      "status": "complete"
     },
     {
       "num": 102,
@@ -179,6 +173,11 @@
     {
       "num": 105,
       "title": "Reminder day customization",
+      "status": "planned"
+    },
+    {
+      "num": 106,
+      "title": "iCal feed access counter",
       "status": "planned"
     }
   ]
