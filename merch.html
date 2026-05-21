@@ -1001,9 +1001,9 @@ function buildCard(p) {
       ${descHtml}
       ${colorHtml}${sizeHtml}${legacyHtml}
       <button class="add-btn" id="add-${sid}"
-        data-sid="${sid}" data-vid="${initVariant?.id || ''}"
+        data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
         data-product-name="${esc(p.title)}"
-        data-price="${initVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
+        data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
         data-currency="${p.priceRange.minVariantPrice.currencyCode}"
         onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
         ${available ? 'Add to Cart' : 'Sold Out'}
