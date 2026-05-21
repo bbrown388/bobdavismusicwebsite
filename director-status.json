@@ -1,7 +1,7 @@
 {
   "currentTask": null,
-  "lastRunSummary": "Task 104 complete: Artist stats endpoint — GET /artists/stats returns per-artist metrics. 273/273 tests.",
-  "lastRunAt": "2026-05-21T08:45:00.000Z",
+  "lastRunSummary": "Task 105 complete: Reminder day customization — PATCH /auth/me/settings stores reminder_days, reminder job uses per-artist settings. 293/293 tests.",
+  "lastRunAt": "2026-05-21T09:00:00.000Z",
   "lastRunResult": "success",
   "gamesBuilt": 62,
   "lastGameTitle": "Texas Twister",
@@ -30,52 +30,6 @@
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-20T00:00:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
-    },
-    {
-      "runAt": "2026-05-20T00:00:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests."
-    },
-    {
-      "task": "templates",
-      "completedAt": "2026-05-18T20:15:00.000Z",
-      "tests": "229/229 api"
-    },
-    {
-      "runAt": "2026-05-20T23:40:08.091Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
-    },
-    {
-      "runAt": "2026-05-20T00:00:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
-    },
-    {
-      "runAt": "2026-05-20T00:00:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests."
-    },
-    {
-      "runAt": "2026-05-21T08:15:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 102 complete: Bulk show import via CSV — POST /shows/import accepts text/csv, returns {imported, errors}. 260/260 tests."
-    },
-    {
-      "task": "templates",
-      "completedAt": "2026-05-18T20:15:00.000Z",
-      "tests": "229/229 api"
-    },
     {
       "runAt": "2026-05-20T23:40:08.091Z",
       "action": "task_complete",
@@ -146,25 +100,62 @@
       "action": "task_complete",
       "result": "success",
       "summary": "Task 104 complete: Artist stats endpoint — GET /artists/stats returns per-artist metrics. 273/273 tests."
+    },
+    {
+      "task": "templates",
+      "completedAt": "2026-05-18T20:15:00.000Z",
+      "tests": "229/229 api"
+    },
+    {
+      "runAt": "2026-05-20T23:40:08.091Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests."
+    },
+    {
+      "runAt": "2026-05-21T08:15:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 102 complete: Bulk show import via CSV — POST /shows/import accepts text/csv, returns {imported, errors}. 260/260 tests."
+    },
+    {
+      "runAt": "2026-05-21T08:30:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 103 complete: Draft history per show — GET /shows/:id/drafts returns all drafts ordered newest first. 265/265 tests."
+    },
+    {
+      "runAt": "2026-05-21T08:45:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 104 complete: Artist stats endpoint — GET /artists/stats returns per-artist metrics. 273/273 tests."
+    },
+    {
+      "runAt": "2026-05-21T09:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 105 complete: Reminder day customization — PATCH /auth/me/settings stores reminder_days, reminder job uses per-artist settings. 293/293 tests."
     }
   ],
   "project": "gigsync",
   "projectLabel": "GigSync",
   "counter": {
-    "value": 33,
+    "value": 34,
     "label": "Tasks Complete"
   },
   "taskQueue": [
-    {
-      "num": 104,
-      "title": "Artist stats endpoint",
-      "status": "complete"
-    },
-    {
-      "num": 105,
-      "title": "Reminder day customization",
-      "status": "planned"
-    },
     {
       "num": 106,
       "title": "iCal feed access counter",
