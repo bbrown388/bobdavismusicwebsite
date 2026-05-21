@@ -1,8 +1,10 @@
 {
-  "currentTask": null,
-  "lastRunSummary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234 api tests passing.",
-  "lastRunAt": "2026-05-20T23:54:43.468Z",
-  "lastRunResult": "success",
+  "currentTask": {
+    "context": "starting"
+  },
+  "lastRunSummary": "Task 1 reverted but e2e still failing - needs investigation",
+  "lastRunAt": "2026-05-20T23:54:27Z",
+  "lastRunResult": "error",
   "gamesBuilt": 62,
   "lastGameTitle": "Texas Twister",
   "lastGameFile": "texas-twister.html",
@@ -30,22 +32,6 @@
     }
   ],
   "runLog": [
-    {
-      "runAt": "2026-05-20T10:30:00.000Z",
-      "action": "new_game",
-      "game": "Texas Twister",
-      "result": "success",
-      "summary": "Built Game 62: Texas Twister - vortex physics tornado survival, radial orbit debris, spring-follow drag-carry, 47 tests pass.",
-      "commitHash": "ad1169e"
-    },
-    {
-      "runAt": "2026-05-20T10:00:00.000Z",
-      "action": "new_game",
-      "game": "Snake Eyes",
-      "result": "success",
-      "summary": "Built Game 61: Snake Eyes - Liar's Dice probability duel vs sheriff AI, 4-personality sheriff, binomial probability display, 51 tests pass.",
-      "commitHash": "e74a1c1"
-    },
     {
       "runAt": "2026-05-19T10:00:00.000Z",
       "action": "new_game",
@@ -164,12 +150,23 @@
       "action": "task_complete",
       "result": "success",
       "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns 8 system-wide metrics. Generated 10-task backlog in autonomous/backlog.json. 234/234 tests."
+    },
+    {
+      "task": "templates",
+      "completedAt": "2026-05-18T20:15:00.000Z",
+      "tests": "229/229 api"
+    },
+    {
+      "runAt": "2026-05-20T23:40:08.091Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
     }
   ],
   "project": "gigsync",
   "projectLabel": "GigSync",
   "counter": {
-    "value": 29,
+    "value": 28,
     "label": "Tasks Complete"
   },
   "taskQueue": []
