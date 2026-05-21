@@ -879,36 +879,13 @@ function buildCard(p) {
   const sizeOpt  = options.find(o => /^size$/i.test(o.name));
   const isDefault = variants.length === 1 && variants[0].title === 'Default Title';
 
-  // Build color display order first so initSelected can use the leftmost *rendered* button
-  const colorSeen = new Map();
-  if (colorOpt && !isDefault) {
-    variants.forEach(v => {
-      const val = v.selectedOptions?.find(o => o.name === colorOpt.name)?.value;
-      if (val && !colorSeen.has(val)) colorSeen.set(val, v);
-    });
-  }
-  const orderedColors = colorOpt
-    ? colorOpt.values.filter(v => colorSeen.has(v)).map(v => [v, colorSeen.get(v)])
-    : [];
-
-  // initSelected: leftmost rendered color button + first value for every other option
+  // Seed defaults from Printful's chosen default variant (firstVariant)
   const initSelected = {};
-  if (!isDefault) {
-    options.forEach(opt => {
-      if (colorOpt && opt.name === colorOpt.name) {
-        initSelected[opt.name] = orderedColors[0]?.[0] ?? opt.values[0];
-      } else {
-        initSelected[opt.name] = opt.values[0];
-      }
-    });
+  if (!isDefault && firstVariant?.selectedOptions) {
+    firstVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
   }
-  const initVariant = variants.find(v =>
-    options.every(opt =>
-      v.selectedOptions?.find(o => o.name === opt.name)?.value === initSelected[opt.name]
-    )
-  ) || firstVariant;
-  const mainImg = initVariant?.image || null;
-  // Build thumbnail list with selected image first
+  const mainImg = firstVariant?.image || null;
+  // Thumbnail list: put the selected image first so it appears leftmost
   const allImages = (() => {
     const imgs = (p.images?.edges || []).map(e => e.node);
     if (mainImg) {
@@ -949,7 +926,11 @@ function buildCard(p) {
     });
     if (seen.size > 1) {
       const initColor = initSelected[colorOpt.name];
-      const colorEntries = colorOpt.values.filter(v => seen.has(v)).map(v => [v, seen.get(v)]);
+      // Selected color first (leftmost), then the rest in option display order
+      const restColors = colorOpt.values.filter(v => seen.has(v) && v !== initColor);
+      const colorEntries = (initColor && seen.has(initColor))
+        ? [[initColor, seen.get(initColor)], ...restColors.map(v => [v, seen.get(v)])]
+        : colorOpt.values.filter(v => seen.has(v)).map(v => [v, seen.get(v)]);
       const visibleColors = colorEntries.slice(0, MAX_COLORS);
       const hiddenColors  = colorEntries.slice(MAX_COLORS);
       const renderBtn = ([val, v], hidden) => `<button
