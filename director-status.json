@@ -1,10 +1,8 @@
 {
-  "currentTask": {
-    "context": "starting"
-  },
-  "lastRunSummary": "Session stopped: no completion signal after task 3",
-  "lastRunAt": "2026-05-21T08:00:01Z",
-  "lastRunResult": "warning",
+  "currentTask": null,
+  "lastRunSummary": "Task 102 complete: Bulk show import via CSV — POST /shows/import accepts text/csv, returns {imported, errors}. 260/260 tests.",
+  "lastRunAt": "2026-05-21T08:00:20.936Z",
+  "lastRunResult": "success",
   "gamesBuilt": 62,
   "lastGameTitle": "Texas Twister",
   "lastGameFile": "texas-twister.html",
@@ -33,34 +31,6 @@
   ],
   "runLog": [
     {
-      "runAt": "2026-05-21T00:00:00.000Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns 8 system-wide metrics. Generated 10-task backlog in autonomous/backlog.json. 234/234 tests."
-    },
-    {
-      "task": "templates",
-      "completedAt": "2026-05-18T20:15:00.000Z",
-      "tests": "229/229 api"
-    },
-    {
-      "runAt": "2026-05-20T23:40:08.091Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
-    },
-    {
-      "task": "templates",
-      "completedAt": "2026-05-18T20:15:00.000Z",
-      "tests": "229/229 api"
-    },
-    {
-      "runAt": "2026-05-20T23:40:08.091Z",
-      "action": "task_complete",
-      "result": "success",
-      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
-    },
-    {
       "task": "templates",
       "completedAt": "2026-05-18T20:15:00.000Z",
       "tests": "229/229 api"
@@ -145,24 +115,48 @@
       "action": "task_complete",
       "result": "success",
       "summary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests."
+    },
+    {
+      "task": "templates",
+      "completedAt": "2026-05-18T20:15:00.000Z",
+      "tests": "229/229 api"
+    },
+    {
+      "runAt": "2026-05-20T23:40:08.091Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 16 complete: Draft approval dashboard — platform badge, Post now button for approved drafts, scheduled post time display. 229/229 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 100 complete: Admin analytics endpoint — GET /admin/analytics returns system-wide metrics. 234/234 tests."
+    },
+    {
+      "runAt": "2026-05-20T00:00:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 101 complete: Post success notification email — sends artist email when draft is posted. 243/243 tests."
+    },
+    {
+      "runAt": "2026-05-21T08:15:00.000Z",
+      "action": "task_complete",
+      "result": "success",
+      "summary": "Task 102 complete: Bulk show import via CSV — POST /shows/import accepts text/csv, returns {imported, errors}. 260/260 tests."
     }
   ],
   "project": "gigsync",
   "projectLabel": "GigSync",
   "counter": {
-    "value": 30,
+    "value": 31,
     "label": "Tasks Complete"
   },
   "taskQueue": [
     {
-      "num": 101,
-      "title": "Post success notification email",
-      "status": "complete"
-    },
-    {
       "num": 102,
       "title": "Bulk show import via CSV",
-      "status": "planned"
+      "status": "complete"
     },
     {
       "num": 103,
@@ -182,6 +176,11 @@
     {
       "num": 106,
       "title": "iCal feed access counter",
+      "status": "planned"
+    },
+    {
+      "num": 107,
+      "title": "Upcoming approved drafts preview",
       "status": "planned"
     }
   ]
