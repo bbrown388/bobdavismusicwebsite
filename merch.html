@@ -875,15 +875,32 @@ function buildCard(p) {
   const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
   const firstVariant = variants[0];
-  const allImages = (p.images?.edges || []).map(e => e.node);
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
   const sizeOpt  = options.find(o => /^size$/i.test(o.name));
   const isDefault = variants.length === 1 && variants[0].title === 'Default Title';
 
-  // Default to leftmost option value (Shopify display order = order set in Printful)
+  // Build color display order first so initSelected can use the leftmost *rendered* button
+  const colorSeen = new Map();
+  if (colorOpt && !isDefault) {
+    variants.forEach(v => {
+      const val = v.selectedOptions?.find(o => o.name === colorOpt.name)?.value;
+      if (val && !colorSeen.has(val)) colorSeen.set(val, v);
+    });
+  }
+  const orderedColors = colorOpt
+    ? colorOpt.values.filter(v => colorSeen.has(v)).map(v => [v, colorSeen.get(v)])
+    : [];
+
+  // initSelected: leftmost rendered color button + first value for every other option
   const initSelected = {};
   if (!isDefault) {
-    options.forEach(opt => { initSelected[opt.name] = opt.values[0]; });
+    options.forEach(opt => {
+      if (colorOpt && opt.name === colorOpt.name) {
+        initSelected[opt.name] = orderedColors[0]?.[0] ?? opt.values[0];
+      } else {
+        initSelected[opt.name] = opt.values[0];
+      }
+    });
   }
   const initVariant = variants.find(v =>
     options.every(opt =>
@@ -891,6 +908,15 @@ function buildCard(p) {
     )
   ) || firstVariant;
   const mainImg = initVariant?.image || null;
+  // Build thumbnail list with selected image first
+  const allImages = (() => {
+    const imgs = (p.images?.edges || []).map(e => e.node);
+    if (mainImg) {
+      const idx = imgs.findIndex(img => img.url === mainImg.url);
+      if (idx > 0) imgs.unshift(imgs.splice(idx, 1)[0]);
+    }
+    return imgs;
+  })();
   _cards[sid] = { variants, options, selected: initSelected };
 
   const mainImgHtml = mainImg
