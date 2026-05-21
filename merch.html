@@ -899,7 +899,7 @@ function buildCard(p) {
   const extraImgs = allImages.length - MAX_THUMBS;
   const thumbsHtml = allImages.length > 1
     ? `<div class="img-thumbs" id="ithumbs-${sid}">
-        ${visibleImgs.map((img, i) => `<button class="img-thumb${i === 0 ? ' active' : ''}"
+        ${visibleImgs.map((img) => `<button class="img-thumb${img.url === mainImg?.url ? ' active' : ''}"
           data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
           onclick="selectThumb(this,'${sid}')">
           <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
