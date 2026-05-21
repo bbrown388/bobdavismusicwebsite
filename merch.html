@@ -875,23 +875,29 @@ function buildCard(p) {
   const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
   const firstVariant = variants[0];
-  const mainImg = firstVariant?.image || null;
 
   const allImages = (p.images?.edges || []).map(e => e.node);
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
   const sizeOpt  = options.find(o => /^size$/i.test(o.name));
   const isDefault = variants.length === 1 && variants[0].title === 'Default Title';
 
-  // Seed card state with first variant's selections
+  // Seed card state — use option display order (merchant-set) so leftmost = default
   const initSelected = {};
-  if (!isDefault && firstVariant?.selectedOptions) {
-    firstVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
+  if (!isDefault) {
+    options.forEach(opt => {
+      const firstVal = opt.values[0];
+      if (firstVal) initSelected[opt.name] = firstVal;
+    });
   }
-  _cards[sid] = { variants, options, selected: initSelected };
+  // Find the first variant that matches all initSelected values for image + price
+  const initVariant = isDefault ? firstVariant : (variants.find(v =>
+    Object.entries(initSelected).every(([n, val]) =>
+      v.selectedOptions?.some(o => o.name === n && o.value === val)
+    )
+  ) || firstVariant);
+  const mainImg = initVariant?.image || (p.images?.edges[0]?.node) || null;
 
-  const mainImgHtml = mainImg
-    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}">`
-    : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
+  _cards[sid] = { variants, options, selected: initSelected };
 
   // Thumbnail strip — cap at 6, show overflow count
   const MAX_THUMBS = 6;
@@ -990,9 +996,9 @@ function buildCard(p) {
       ${descHtml}
       ${colorHtml}${sizeHtml}${legacyHtml}
       <button class="add-btn" id="add-${sid}"
-        data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
+        data-sid="${sid}" data-vid="${initVariant?.id || ''}"
         data-product-name="${esc(p.title)}"
-        data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
+        data-price="${initVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
         data-currency="${p.priceRange.minVariantPrice.currencyCode}"
         onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
         ${available ? 'Add to Cart' : 'Sold Out'}
