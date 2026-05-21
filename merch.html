@@ -875,18 +875,22 @@ function buildCard(p) {
   const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
   const firstVariant = variants[0];
-  const mainImg = firstVariant?.image || null;
-
   const allImages = (p.images?.edges || []).map(e => e.node);
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
   const sizeOpt  = options.find(o => /^size$/i.test(o.name));
   const isDefault = variants.length === 1 && variants[0].title === 'Default Title';
 
-  // Seed card state from Printful's default variant (firstVariant = Printful-chosen default)
+  // Default to leftmost option value (Shopify display order = order set in Printful)
   const initSelected = {};
-  if (!isDefault && firstVariant?.selectedOptions) {
-    firstVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
+  if (!isDefault) {
+    options.forEach(opt => { initSelected[opt.name] = opt.values[0]; });
   }
+  const initVariant = variants.find(v =>
+    options.every(opt =>
+      v.selectedOptions?.find(o => o.name === opt.name)?.value === initSelected[opt.name]
+    )
+  ) || firstVariant;
+  const mainImg = initVariant?.image || null;
   _cards[sid] = { variants, options, selected: initSelected };
 
   const mainImgHtml = mainImg
@@ -919,7 +923,7 @@ function buildCard(p) {
     });
     if (seen.size > 1) {
       const initColor = initSelected[colorOpt.name];
-      const colorEntries = [...seen.entries()];
+      const colorEntries = colorOpt.values.filter(v => seen.has(v)).map(v => [v, seen.get(v)]);
       const visibleColors = colorEntries.slice(0, MAX_COLORS);
       const hiddenColors  = colorEntries.slice(MAX_COLORS);
       const renderBtn = ([val, v], hidden) => `<button
@@ -990,9 +994,9 @@ function buildCard(p) {
       ${descHtml}
       ${colorHtml}${sizeHtml}${legacyHtml}
       <button class="add-btn" id="add-${sid}"
-        data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
+        data-sid="${sid}" data-vid="${initVariant?.id || ''}"
         data-product-name="${esc(p.title)}"
-        data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
+        data-price="${initVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
         data-currency="${p.priceRange.minVariantPrice.currencyCode}"
         onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
         ${available ? 'Add to Cart' : 'Sold Out'}
