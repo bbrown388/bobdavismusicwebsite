@@ -1,0 +1,1556 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Quicksand  |  Game 65</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #050208; display: flex; justify-content: center; align-items: center;
+         height: 100vh; overflow: hidden; touch-action: none; font-family: Georgia, serif; }
+  #wrap { position: relative; }
+  canvas { display: block; background: #050208; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Web Audio Synth ───────────────────────────────────────
+let audioCtx = null;
+let creakOsc = null;
+let creakGain = null;
+let bubblingInterval = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playTone(freq, duration, type = 'sine', gainVal = 0.1) {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch (e) {}
+}
+
+function playClick() {
+  playTone(580, 0.05, 'triangle', 0.05);
+}
+
+function playSuccessTone() {
+  playTone(294.00, 0.1, 'triangle', 0.1); // D4
+  setTimeout(() => playTone(349.23, 0.1, 'triangle', 0.1), 80); // F4
+  setTimeout(() => playTone(392.00, 0.1, 'triangle', 0.1), 160); // G4
+  setTimeout(() => playTone(440.00, 0.1, 'triangle', 0.1), 240); // A4
+  setTimeout(() => playTone(587.33, 0.35, 'sine', 0.15), 320); // D5
+}
+
+function playFailureTone() {
+  playTone(220.00, 0.2, 'sawtooth', 0.15); // A3
+  setTimeout(() => playTone(185.00, 0.2, 'sawtooth', 0.15), 120); // F#3
+  setTimeout(() => playTone(146.83, 0.45, 'sawtooth', 0.2), 240); // D3
+}
+
+function playHorseWhinny() {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    const now = audioCtx.currentTime;
+    osc.frequency.setValueAtTime(650, now);
+    osc.frequency.exponentialRampToValueAtTime(1100, now + 0.15);
+    osc.frequency.linearRampToValueAtTime(800, now + 0.4);
+    osc.frequency.exponentialRampToValueAtTime(350, now + 0.9);
+    
+    // Add rapid vibrato
+    const lfo = audioCtx.createOscillator();
+    const lfoGain = audioCtx.createGain();
+    lfo.frequency.value = 16; 
+    lfoGain.gain.value = 80; 
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    lfo.start();
+    osc.start();
+    lfo.stop(now + 0.95);
+    osc.stop(now + 0.95);
+  } catch (e) {}
+}
+
+function startCreaking() {
+  if (!audioCtx) return;
+  try {
+    creakOsc = audioCtx.createOscillator();
+    creakGain = audioCtx.createGain();
+    creakOsc.type = 'triangle';
+    creakOsc.frequency.setValueAtTime(75, audioCtx.currentTime);
+    
+    // Low frequency creaking pulse modulation
+    const lfo = audioCtx.createOscillator();
+    const lfoGain = audioCtx.createGain();
+    lfo.frequency.value = 3.5;
+    lfoGain.gain.value = 25;
+    lfo.connect(lfoGain);
+    lfoGain.connect(creakOsc.frequency);
+    
+    creakGain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+    creakOsc.connect(creakGain);
+    creakGain.connect(audioCtx.destination);
+    
+    lfo.start();
+    creakOsc.start();
+  } catch (e) {}
+}
+
+function stopCreaking() {
+  if (creakOsc) {
+    try { creakOsc.stop(); } catch(e) {}
+    creakOsc = null;
+  }
+}
+
+function startBubbling() {
+  if (!audioCtx) return;
+  bubblingInterval = setInterval(() => {
+    if (Math.random() < 0.6) {
+      playTone(60 + Math.random() * 40, 0.15 + Math.random() * 0.1, 'sine', 0.04);
+    }
+  }, 100);
+}
+
+function stopBubbling() {
+  if (bubblingInterval) {
+    clearInterval(bubblingInterval);
+    bubblingInterval = null;
+  }
+}
+
+// ── Game Data Structures ──────────────────────────────────
+const LEVELS = [
+  {
+    num: 1,
+    wagonWeight: 600,
+    suctionRate: 8,
+    ropeMax: 800,
+    pullPoint: { id: 'pull', name: 'Horses', type: 'pull', x: 70, y: 110, r: 12 },
+    anchors: [
+      { id: 'treeA', name: 'Pine Tree A', type: 'fixed', x: 120, y: 220, r: 10, variant: 'tree' },
+      { id: 'treeB', name: 'Pine Tree B', type: 'fixed', x: 240, y: 220, r: 10, variant: 'tree' },
+      { id: 'pulleyA', name: 'Wagon Pulley', type: 'pulley', x: 180, y: 480, r: 8, offset: { x: 0, y: -20 } }
+    ]
+  },
+  {
+    num: 2,
+    wagonWeight: 900,
+    suctionRate: 12,
+    ropeMax: 1000,
+    pullPoint: { id: 'pull', name: 'Horses', type: 'pull', x: 60, y: 110, r: 12 },
+    anchors: [
+      { id: 'boulderA', name: 'Granite Rock', type: 'fixed', x: 130, y: 180, r: 10, variant: 'boulder' },
+      { id: 'postB', name: 'Fence Post', type: 'fixed', x: 260, y: 240, r: 8, variant: 'post' },
+      { id: 'calfA', name: 'Stranded Calf', type: 'calf', x: 270, y: 450, r: 12, offset: { x: 0, y: 0 } },
+      { id: 'pulleyA', name: 'Wagon Pulley', type: 'pulley', x: 180, y: 480, r: 8, offset: { x: 0, y: -20 } }
+    ]
+  },
+  {
+    num: 3,
+    wagonWeight: 1200,
+    suctionRate: 16,
+    ropeMax: 1200,
+    pullPoint: { id: 'pull', name: 'Horses', type: 'pull', x: 300, y: 110, r: 12 },
+    anchors: [
+      { id: 'treeA', name: 'Old Oak', type: 'fixed', x: 80, y: 200, r: 12, variant: 'tree' },
+      { id: 'boulderB', name: 'Flat Rock', type: 'fixed', x: 180, y: 260, r: 10, variant: 'boulder' },
+      { id: 'postC', name: 'Sturdy Peg', type: 'fixed', x: 280, y: 180, r: 8, variant: 'post' },
+      { id: 'pulleyA', name: 'Wagon Hook Left', type: 'pulley', x: 140, y: 480, r: 8, offset: { x: -30, y: -20 } },
+      { id: 'pulleyB', name: 'Wagon Hook Right', type: 'pulley', x: 220, y: 480, r: 8, offset: { x: 30, y: -20 } }
+    ]
+  },
+  {
+    num: 4,
+    wagonWeight: 1500,
+    suctionRate: 20,
+    ropeMax: 1400,
+    pullPoint: { id: 'pull', name: 'Horses', type: 'pull', x: 180, y: 80, r: 12 },
+    anchors: [
+      { id: 'treeA', name: 'Tall Pine', type: 'fixed', x: 70, y: 210, r: 10, variant: 'tree' },
+      { id: 'treeB', name: 'Stout Fir', type: 'fixed', x: 290, y: 210, r: 10, variant: 'tree' },
+      { id: 'boulderC', name: 'Huge Boulder', type: 'fixed', x: 180, y: 240, r: 12, variant: 'boulder' },
+      { id: 'calfA', name: 'Lil Brown Calf', type: 'calf', x: 90, y: 440, r: 12, offset: { x: 0, y: 0 } },
+      { id: 'pulleyA', name: 'Left Gear', type: 'pulley', x: 140, y: 480, r: 8, offset: { x: -30, y: -20 } },
+      { id: 'pulleyB', name: 'Right Gear', type: 'pulley', x: 220, y: 480, r: 8, offset: { x: 30, y: -20 } }
+    ]
+  },
+  {
+    num: 5,
+    wagonWeight: 1800,
+    suctionRate: 25,
+    ropeMax: 1600,
+    pullPoint: { id: 'pull', name: 'Horses', type: 'pull', x: 60, y: 100, r: 12 },
+    anchors: [
+      { id: 'treeA', name: 'Old Pine', type: 'fixed', x: 120, y: 180, r: 10, variant: 'tree' },
+      { id: 'treeB', name: 'Twin Birch', type: 'fixed', x: 240, y: 180, r: 10, variant: 'tree' },
+      { id: 'boulderC', name: 'Rock Pile', type: 'fixed', x: 300, y: 230, r: 11, variant: 'boulder' },
+      { id: 'postD', name: 'Anchor Post', type: 'fixed', x: 180, y: 250, r: 8, variant: 'post' },
+      { id: 'calfA', name: 'Calf Lefty', type: 'calf', x: 90, y: 450, r: 12, offset: { x: 0, y: 0 } },
+      { id: 'calfB', name: 'Calf Righty', type: 'calf', x: 270, y: 450, r: 12, offset: { x: 0, y: 0 } },
+      { id: 'pulleyA', name: 'Posse Hook A', type: 'pulley', x: 140, y: 480, r: 8, offset: { x: -30, y: -20 } },
+      { id: 'pulleyB', name: 'Posse Hook B', type: 'pulley', x: 220, y: 480, r: 8, offset: { x: 30, y: -20 } }
+    ]
+  }
+];
+
+// ── State variables ───────────────────────────────────────
+let state = 'title'; // 'title', 'design', 'pulling', 'gameover'
+let currentLvlIdx = 0;
+let score = 0;
+let bestScore = parseInt(localStorage.getItem('quicksand_best') || '0', 10);
+let scoreFeedback = [];
+
+// Level specific states
+let wagonY = 480;
+let initialWagonY = 480;
+let ropePath = [];
+let draggingNext = null;
+
+// Dynamic simulation parameters
+let suctionTimer = 0;
+let activeCalves = [];
+let pullForce = 0;
+let sinkForce = 0;
+let bubbleList = [];
+let splashParticles = [];
+
+// Static asset simulation constants
+const PULL_TENSION = 380; // Force exerted by horse team
+const MUD_LINE = 360;
+const SAFE_Y = 320;
+const SUNK_Y = 560;
+
+// Feedback variables
+let showFeedback = false;
+let feedbackRating = 5;
+let feedbackText = '';
+
+// Keyboard feedback buffer
+window.addEventListener('keydown', (e) => {
+  if (showFeedback) {
+    if (e.key === 'Backspace') {
+      feedbackText = feedbackText.slice(0, -1);
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      submitFeedback();
+      e.preventDefault();
+    } else if (e.key.length === 1 && feedbackText.length < 40) {
+      feedbackText += e.key;
+      e.preventDefault();
+    }
+  } else {
+    if (e.key === ' ' || e.key === 'Spacebar') {
+      triggerAction();
+    }
+  }
+});
+
+// Setup Initial Screen
+function startGame() {
+  score = 0;
+  currentLvlIdx = 0;
+  loadLevel(currentLvlIdx);
+  state = 'design';
+}
+
+function loadLevel(idx) {
+  const lvl = LEVELS[idx];
+  wagonY = 480;
+  initialWagonY = 480;
+  ropePath = [lvl.pullPoint.id];
+  draggingNext = null;
+  suctionTimer = 0;
+  pullForce = 0;
+  sinkForce = lvl.wagonWeight;
+  
+  // Initialize calves
+  activeCalves = lvl.anchors.filter(a => a.type === 'calf').map(a => ({
+    id: a.id,
+    name: a.name,
+    x: a.x,
+    y: a.y,
+    initialY: a.y,
+    rescued: false,
+    connected: false
+  }));
+
+  // Bubble setup
+  bubbleList = [];
+  for (let i = 0; i < 15; i++) {
+    bubbleList.push({
+      x: Math.random() * W,
+      y: MUD_LINE + 30 + Math.random() * (H - MUD_LINE - 100),
+      r: Math.random() * 4 + 1,
+      speed: Math.random() * 15 + 8,
+      age: Math.random() * Math.PI
+    });
+  }
+
+  splashParticles = [];
+}
+
+function triggerAction() {
+  initAudio();
+  if (state === 'title') {
+    startGame();
+    playClick();
+  } else if (state === 'design') {
+    startPulling();
+  } else if (state === 'pulling') {
+    stopPulling();
+  } else if (state === 'gameover') {
+    state = 'title';
+    playClick();
+  }
+}
+
+function startPulling() {
+  initAudio();
+  playHorseWhinny();
+  startCreaking();
+  startBubbling();
+  state = 'pulling';
+}
+
+function stopPulling() {
+  stopCreaking();
+  stopBubbling();
+  // Keep rope path but reset position
+  wagonY = initialWagonY;
+  suctionTimer = 0;
+  activeCalves.forEach(c => {
+    c.y = c.initialY;
+    c.rescued = false;
+  });
+  state = 'design';
+  playClick();
+}
+
+function getRopeLength(path) {
+  if (path.length < 2) return 0;
+  let len = 0;
+  const lvl = LEVELS[currentLvlIdx];
+  for (let i = 0; i < path.length - 1; i++) {
+    const p1 = findAnchor(path[i], lvl);
+    const p2 = findAnchor(path[i+1], lvl);
+    if (p1 && p2) {
+      const x1 = p1.type === 'pulley' ? p1.x : p1.x;
+      const y1 = p1.type === 'pulley' ? (wagonY + p1.offset.y) : p1.y;
+      const x2 = p2.type === 'pulley' ? p2.x : p2.x;
+      const y2 = p2.type === 'pulley' ? (wagonY + p2.offset.y) : p2.y;
+      len += Math.hypot(x2 - x1, y2 - y1);
+    }
+  }
+  return Math.round(len);
+}
+
+function findAnchor(id, lvl) {
+  if (id === lvl.pullPoint.id) return lvl.pullPoint;
+  return lvl.anchors.find(a => a.id === id);
+}
+
+function getAnchorRealPos(id, lvl) {
+  const a = findAnchor(id, lvl);
+  if (!a) return { x: 0, y: 0 };
+  if (a.type === 'pulley') {
+    return { x: a.x, y: wagonY + a.offset.y };
+  } else if (a.type === 'calf') {
+    const dynamicCalf = activeCalves.find(c => c.id === id);
+    return { x: a.x, y: dynamicCalf ? dynamicCalf.y : a.y };
+  }
+  return { x: a.x, y: a.y };
+}
+
+function calculateMechanicalAdvantage() {
+  const lvl = LEVELS[currentLvlIdx];
+  let segments = 0;
+  let vertComponentSum = 0;
+
+  for (let i = 0; i < ropePath.length - 1; i++) {
+    const idA = ropePath[i];
+    const idB = ropePath[i+1];
+    const a = findAnchor(idA, lvl);
+    const b = findAnchor(idB, lvl);
+
+    if (a && b) {
+      const isAPulley = (a.type === 'pulley');
+      const isBPulley = (b.type === 'pulley');
+
+      if ((isAPulley && !isBPulley) || (isBPulley && !isAPulley)) {
+        segments++;
+        const pA = getAnchorRealPos(idA, lvl);
+        const pB = getAnchorRealPos(idB, lvl);
+        const dx = pB.x - pA.x;
+        const dy = pB.y - pA.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        
+        // Upward relative factor: y_pulley - y_anchor. If anchor is above pulley, diff is positive.
+        // Screen coords: pull is upward if dy represents anchor higher than pulley.
+        const pulleyY = isAPulley ? pA.y : pB.y;
+        const anchorY = isAPulley ? pB.y : pA.y;
+        const factor = (pulleyY - anchorY) / dist;
+        vertComponentSum += Math.max(-0.2, factor);
+      }
+    }
+  }
+  return { count: segments, factor: vertComponentSum };
+}
+
+// ── Physics Update ────────────────────────────────────────
+function updatePhysics(dt) {
+  const lvl = LEVELS[currentLvlIdx];
+  suctionTimer += dt;
+  
+  // Calculate dynamic force
+  const ma = calculateMechanicalAdvantage();
+  pullForce = Math.round(ma.factor * PULL_TENSION);
+  
+  sinkForce = Math.round(lvl.wagonWeight + lvl.suctionRate * suctionTimer * 10);
+  
+  const netForce = pullForce - sinkForce;
+  const speedScale = 0.05;
+  const dy = -netForce * speedScale * dt; // upward force moves y negative
+  
+  // Update wagon position
+  wagonY += dy;
+  if (wagonY < SAFE_Y - 40) wagonY = SAFE_Y - 40;
+  
+  // Update calves if connected
+  activeCalves.forEach(c => {
+    if (ropePath.includes(c.id)) {
+      c.connected = true;
+      if (dy < 0) {
+        c.y += dy * 0.9; // move up slightly slower or at same rate
+      }
+      if (c.y <= SAFE_Y + 10) {
+        c.y = SAFE_Y + 10;
+        if (!c.rescued) {
+          c.rescued = true;
+          scoreFeedback.push({ text: 'CALF RESCUED! +500', x: c.x, y: c.y - 30, color: '#FF9F43', born: performance.now() });
+          score += 500;
+        }
+      }
+    } else {
+      c.connected = false;
+      // Calf sinks naturally with suction
+      c.y += lvl.suctionRate * 0.15 * dt;
+    }
+  });
+
+  // Mud Bubbles and Splash particles
+  bubbleList.forEach(b => {
+    b.y -= b.speed * dt;
+    b.age += dt * 4;
+    if (b.y < MUD_LINE) {
+      b.y = H - 100 - Math.random() * 100;
+      b.x = Math.random() * W;
+    }
+  });
+
+  if (Math.random() < 0.15 && Math.abs(dy) > 1) {
+    splashParticles.push({
+      x: 100 + Math.random() * 160,
+      y: MUD_LINE + 10 + Math.random() * 20,
+      vx: (Math.random() - 0.5) * 50,
+      vy: -Math.random() * 60 - 20,
+      life: 1.0,
+      color: '#3a1f05'
+    });
+  }
+
+  splashParticles.forEach(p => {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 120 * dt; // gravity
+    p.life -= dt * 2.2;
+  });
+  splashParticles = splashParticles.filter(p => p.life > 0);
+
+  // Win condition: wagon safe
+  if (wagonY <= SAFE_Y) {
+    wagonY = SAFE_Y;
+    const timeBonus = Math.max(0, Math.round((60 - suctionTimer) * 15));
+    score += 1000 + timeBonus;
+    scoreFeedback.push({ text: `LEVEL RESCUED! +1000`, x: W/2, y: H/2, color: '#FFE066', born: performance.now() });
+    if (timeBonus > 0) {
+      scoreFeedback.push({ text: `TIME BONUS +${timeBonus}`, x: W/2, y: H/2 + 25, color: '#FFD700', born: performance.now() });
+    }
+    
+    stopCreaking();
+    stopBubbling();
+    playSuccessTone();
+
+    // Check level progression
+    if (currentLvlIdx < LEVELS.length - 1) {
+      currentLvlIdx++;
+      loadLevel(currentLvlIdx);
+      state = 'design';
+    } else {
+      // Completed all levels
+      if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem('quicksand_best', bestScore);
+      }
+      state = 'gameover';
+    }
+  }
+
+  // Loss condition: wagon sunk
+  if (wagonY >= SUNK_Y) {
+    wagonY = SUNK_Y;
+    stopCreaking();
+    stopBubbling();
+    playFailureTone();
+    state = 'gameover';
+  }
+}
+
+// ── Rendering ─────────────────────────────────────────────
+function drawTitle() {
+  ctx.save();
+  // Sunset radial sky
+  const sky = ctx.createRadialGradient(W/2, H*0.35, 0, W/2, H*0.35, H*0.75);
+  sky.addColorStop(0, '#1b0c30');
+  sky.addColorStop(1, '#050208');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw background hills
+  ctx.fillStyle = '#100517';
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.55);
+  ctx.quadraticCurveTo(W * 0.35, H * 0.45, W * 0.7, H * 0.52);
+  ctx.quadraticCurveTo(W * 0.85, H * 0.55, W, H * 0.48);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.fill();
+
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.65);
+  ctx.quadraticCurveTo(W * 0.4, H * 0.58, W, H * 0.68);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.fill();
+
+  // Title Text
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 36px Georgia';
+  ctx.shadowColor = '#FFD700';
+  ctx.shadowBlur = 10;
+  ctx.fillText('QUICKSAND', W / 2, 190);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'italic 16px Georgia';
+  ctx.fillText('Canyon Rescue Block & Tackle', W / 2, 230);
+
+  // Decorative Rope Knot
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(W/2, 320, 30, 0, Math.PI*2);
+  ctx.stroke();
+
+  // Instructions Card
+  ctx.fillStyle = 'rgba(26,10,35,0.75)';
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, 40, 390, 280, 140, 8, true, true);
+
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('A pioneer wagon is sinking in quicksand!', W / 2, 420);
+  ctx.fillText('Connect rope to fixed anchors and pulleys', W / 2, 442);
+  ctx.fillText('to multiply your pulling force.', W / 2, 464);
+  ctx.fillStyle = '#FF9F43';
+  ctx.fillText('Rescue calves along the way for bonus cash.', W / 2, 492);
+
+  // Play Button
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('TAP SCREEN TO START', W / 2, 570);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#E8DCC8';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(`BEST RECORD: $${bestScore}`, W / 2, 30);
+  }
+
+  ctx.restore();
+}
+
+function drawScene() {
+  ctx.save();
+  // Sunset deep purples sky
+  const sky = ctx.createRadialGradient(W/2, H*0.35, 0, W/2, H*0.35, H*0.75);
+  sky.addColorStop(0, '#1a0d32');
+  sky.addColorStop(1, '#050208');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw canyon wall ledges
+  ctx.fillStyle = '#110515';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(130, 0);
+  ctx.quadraticCurveTo(100, 90, 130, 140);
+  ctx.lineTo(0, 140);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(W, 0);
+  ctx.lineTo(W - 120, 0);
+  ctx.quadraticCurveTo(W - 90, 80, W - 110, 140);
+  ctx.lineTo(W, 140);
+  ctx.fill();
+
+  // Grassy solid ledge at the top
+  ctx.fillStyle = '#220b2d';
+  ctx.fillRect(0, 130, 120, 15);
+  ctx.fillRect(W - 110, 130, 110, 15);
+
+  // Mud quicksand pit at bottom
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath();
+  ctx.moveTo(0, MUD_LINE);
+  ctx.bezierCurveTo(W * 0.35, MUD_LINE - 20, W * 0.65, MUD_LINE - 20, W, MUD_LINE);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.fill();
+
+  // Swirling mud vortex textures
+  ctx.strokeStyle = '#3a1f05';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  const timeFactor = performance.now() * 0.0025;
+  for (let i = 0; i < 5; i++) {
+    const rx = 100 + i * 40;
+    const ry = 40 + i * 15;
+    ctx.arc(W/2, MUD_LINE + 100, rx, timeFactor + i, timeFactor + i + Math.PI * 0.65);
+  }
+  ctx.stroke();
+
+  // Mud bubbles
+  ctx.fillStyle = 'rgba(58, 31, 5, 0.6)';
+  bubbleList.forEach(b => {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y + Math.sin(b.age) * 5, b.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Splash particles
+  splashParticles.forEach(p => {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.life;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1.0;
+
+  // Draw wagon
+  drawWagon();
+
+  // Draw calves
+  drawCalves();
+
+  // Draw active anchor icons
+  drawAnchors();
+
+  // Draw horse pulling team
+  drawHorses();
+
+  // Draw rope path
+  drawRope();
+
+  ctx.restore();
+}
+
+function drawWagon() {
+  ctx.save();
+  ctx.translate(W/2, wagonY);
+
+  // Covered wagon silhouettes
+  // Wheel Left
+  ctx.fillStyle = '#100412';
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(-35, 12, 18, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  // Spokes
+  for (let a = 0; a < 8; a++) {
+    ctx.beginPath();
+    ctx.moveTo(-35, 12);
+    ctx.lineTo(-35 + Math.cos(a * Math.PI / 4) * 18, 12 + Math.sin(a * Math.PI / 4) * 18);
+    ctx.stroke();
+  }
+
+  // Wheel Right
+  ctx.beginPath(); ctx.arc(35, 12, 18, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  for (let a = 0; a < 8; a++) {
+    ctx.beginPath();
+    ctx.moveTo(35, 12);
+    ctx.lineTo(35 + Math.cos(a * Math.PI / 4) * 18, 12 + Math.sin(a * Math.PI / 4) * 18);
+    ctx.stroke();
+  }
+
+  // Wooden carriage bed
+  ctx.fillStyle = '#220b22';
+  ctx.fillRect(-52, -18, 104, 25);
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-52, -18, 104, 25);
+
+  // White cloth cover outline/body
+  ctx.fillStyle = '#ffe2bd';
+  ctx.beginPath();
+  ctx.moveTo(-52, -18);
+  ctx.quadraticCurveTo(-45, -78, -10, -82);
+  ctx.quadraticCurveTo(0, -84, 10, -82);
+  ctx.quadraticCurveTo(45, -78, 52, -18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Cloth lines/ribs
+  ctx.strokeStyle = 'rgba(255, 215, 0, 0.25)';
+  ctx.lineWidth = 1;
+  for (let x = -30; x <= 30; x += 15) {
+    ctx.beginPath();
+    ctx.moveTo(x, -18);
+    ctx.quadraticCurveTo(x * 0.7, -80, 0, -82);
+    ctx.stroke();
+  }
+
+  // Mud splash lines on wagon bottom if sinking
+  if (wagonY > 440) {
+    ctx.fillStyle = '#2a1500';
+    ctx.fillRect(-60, 20, 120, 10);
+  }
+
+  ctx.restore();
+}
+
+function drawCalves() {
+  const lvl = LEVELS[currentLvlIdx];
+  activeCalves.forEach(c => {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+
+    // Glow if connected
+    if (c.connected) {
+      ctx.shadowColor = '#FF9F43';
+      ctx.shadowBlur = 12;
+    }
+
+    // Calf head/body silhouette
+    ctx.fillStyle = '#1d0c24';
+    ctx.strokeStyle = c.rescued ? '#FF9F43' : '#FFD700';
+    ctx.lineWidth = 2;
+    
+    // Body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 14, 10, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(-11, -8, 7, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Ears/horns
+    ctx.beginPath();
+    ctx.moveTo(-16, -13);
+    ctx.lineTo(-11, -11);
+    ctx.lineTo(-7, -13);
+    ctx.stroke();
+
+    // Legs
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-6, 8); ctx.lineTo(-6, 14);
+    ctx.moveTo(6, 8); ctx.lineTo(6, 14);
+    ctx.moveTo(-11, 8); ctx.lineTo(-11, 14);
+    ctx.stroke();
+
+    ctx.restore();
+  });
+}
+
+function drawAnchors() {
+  const lvl = LEVELS[currentLvlIdx];
+  lvl.anchors.forEach(a => {
+    ctx.save();
+    const realPos = getAnchorRealPos(a.id, lvl);
+    ctx.translate(realPos.x, realPos.y);
+
+    // Draw active highlight ring
+    const isInteractive = (state === 'design' && ropePath[ropePath.length - 1] !== a.id);
+    if (isInteractive) {
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, a.r + 6 + Math.sin(performance.now() * 0.007) * 2, 0, Math.PI*2);
+      ctx.stroke();
+    }
+
+    // Anchor visual representations
+    if (a.type === 'fixed') {
+      if (a.variant === 'tree') {
+        // Stout rustic evergreen silhouette
+        ctx.fillStyle = '#0f0515';
+        ctx.strokeStyle = '#C8A04A';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -22);
+        ctx.lineTo(-14, -4);
+        ctx.lineTo(-6, -4);
+        ctx.lineTo(-18, 12);
+        ctx.lineTo(18, 12);
+        ctx.lineTo(6, -4);
+        ctx.lineTo(14, -4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Trunk
+        ctx.fillRect(-3, 12, 6, 8);
+      } else if (a.variant === 'boulder') {
+        // Multi-layered rock boulder
+        ctx.fillStyle = '#14081c';
+        ctx.strokeStyle = '#C8A04A';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-12, 10);
+        ctx.lineTo(-14, 0);
+        ctx.lineTo(-5, -12);
+        ctx.lineTo(7, -11);
+        ctx.lineTo(14, 1);
+        ctx.lineTo(12, 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else if (a.variant === 'post') {
+        // Post/Stake
+        ctx.fillStyle = '#1c0926';
+        ctx.strokeStyle = '#C8A04A';
+        ctx.lineWidth = 2.5;
+        ctx.fillRect(-4, -14, 8, 28);
+        ctx.strokeRect(-4, -14, 8, 28);
+        // Rope loop wrap detail
+        ctx.strokeStyle = '#FFE066';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-4, -4); ctx.lineTo(4, -4);
+        ctx.moveTo(-4, 2); ctx.lineTo(4, 2);
+        ctx.stroke();
+      }
+    } else if (a.type === 'pulley') {
+      // Golden Pulley Wheel
+      ctx.fillStyle = '#1d0a2d';
+      ctx.strokeStyle = '#FFE066';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, a.r, 0, Math.PI*2);
+      ctx.fill();
+      ctx.stroke();
+      // Center Axle
+      ctx.fillStyle = '#FFE066';
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.5, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Inner anchor point center indicator
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath();
+    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  });
+}
+
+function drawHorses() {
+  const lvl = LEVELS[currentLvlIdx];
+  const p = lvl.pullPoint;
+  
+  ctx.save();
+  ctx.translate(p.x, p.y);
+
+  // Pulsing lead highlight for first horse point
+  if (state === 'design' && ropePath.length === 1) {
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 20 + Math.sin(performance.now() * 0.01) * 3, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // Horse silhouette drawing
+  ctx.fillStyle = '#180720';
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.8;
+  
+  // Body
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 16, 11, 0, 0, Math.PI*2);
+  ctx.fill(); ctx.stroke();
+
+  // Head/Neck
+  ctx.beginPath();
+  ctx.moveTo(-10, -5);
+  ctx.lineTo(-18, -18);
+  ctx.lineTo(-24, -16);
+  ctx.lineTo(-14, 0);
+  ctx.fill(); ctx.stroke();
+
+  // Animated legs if pulling
+  ctx.lineWidth = 2.5;
+  if (state === 'pulling') {
+    const cycle = performance.now() * 0.015;
+    const dy1 = Math.sin(cycle) * 6;
+    const dy2 = Math.cos(cycle) * 6;
+    ctx.beginPath();
+    ctx.moveTo(-8, 8); ctx.lineTo(-12 + dy1/2, 16 + dy1); // front leg 1
+    ctx.moveTo(8, 8); ctx.lineTo(12 + dy2/2, 16 + dy2); // back leg 1
+    ctx.moveTo(-4, 8); ctx.lineTo(-6 - dy1/2, 16 - dy1); // front leg 2
+    ctx.moveTo(4, 8); ctx.lineTo(6 - dy2/2, 16 - dy2); // back leg 2
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(-8, 8); ctx.lineTo(-10, 16);
+    ctx.moveTo(8, 8); ctx.lineTo(10, 16);
+    ctx.moveTo(-4, 8); ctx.lineTo(-4, 16);
+    ctx.moveTo(4, 8); ctx.lineTo(4, 16);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawRope() {
+  if (ropePath.length === 0) return;
+  const lvl = LEVELS[currentLvlIdx];
+
+  ctx.save();
+  
+  // Outer glowing line when pulling
+  if (state === 'pulling') {
+    ctx.strokeStyle = '#FF9F43';
+    ctx.lineWidth = 5;
+    ctx.shadowColor = '#FFE066';
+    ctx.shadowBlur = 10;
+  } else {
+    ctx.strokeStyle = '#8b5a2b';
+    ctx.lineWidth = 3.5;
+  }
+
+  ctx.beginPath();
+  const startPos = getAnchorRealPos(ropePath[0], lvl);
+  ctx.moveTo(startPos.x, startPos.y);
+
+  for (let i = 1; i < ropePath.length; i++) {
+    const pos = getAnchorRealPos(ropePath[i], lvl);
+    ctx.lineTo(pos.x, pos.y);
+  }
+
+  // Draw temporary dragged rope line during design phase
+  if (state === 'design' && draggingNext) {
+    ctx.strokeStyle = 'rgba(200, 160, 74, 0.7)';
+    ctx.setLineDash([5, 5]);
+    ctx.lineTo(draggingNext.x, draggingNext.y);
+  }
+
+  ctx.stroke();
+
+  // Inner rope core/texture detail
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = state === 'pulling' ? '#FFF' : '#C8A04A';
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  const lvl = LEVELS[currentLvlIdx];
+  const ropeUsed = getRopeLength(ropePath);
+  const ma = calculateMechanicalAdvantage();
+
+  ctx.save();
+
+  // Glassmorphic top HUD box
+  ctx.fillStyle = 'rgba(15, 6, 20, 0.75)';
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, 12, 12, W - 24, 75, 8, true, true);
+
+  // Score
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 15px Georgia';
+  ctx.fillText(`CASH: $${score}`, W / 2, 32);
+
+  // Level
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`LEVEL ${lvl.num}`, 24, 30);
+
+  // Target Weight
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#C8B89A';
+  ctx.fillText(`WAGON: ${lvl.wagonWeight} LBS`, 24, 48);
+
+  // Rope Budget Gauge
+  ctx.textAlign = 'right';
+  ctx.font = 'bold 11px sans-serif';
+  const ropePercent = Math.min(1.0, ropeUsed / lvl.ropeMax);
+  ctx.fillStyle = ropePercent > 0.9 ? '#E74C3C' : '#FFE066';
+  ctx.fillText(`ROPE: ${ropeUsed}/${lvl.ropeMax}px`, W - 24, 30);
+
+  // Budget Progress Bar
+  ctx.fillStyle = '#220b22';
+  roundRect(ctx, W - 104, 38, 80, 6, 2, true, false);
+  ctx.fillStyle = ropePercent > 0.9 ? '#E74C3C' : '#FF9F43';
+  roundRect(ctx, W - 104, 38, 80 * ropePercent, 6, 2, true, false);
+
+  // Mechanical Advantage Force details
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillStyle = '#FF9F43';
+  ctx.fillText(`Force Multiplier: ${ma.factor.toFixed(1)}x`, W / 2, 54);
+
+  // Live Force Gauge during simulation or setup info
+  ctx.fillStyle = 'rgba(20, 5, 25, 0.8)';
+  roundRect(ctx, 12, 98, W - 24, 32, 6, true, true);
+
+  if (state === 'pulling') {
+    // Show live force bar
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(`PULL FORCE: ${pullForce} LBS`, 20, 117);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#E74C3C';
+    ctx.fillText(`SUCTION/WEIGHT: ${sinkForce} LBS`, W - 20, 117);
+
+    // Center divider bar
+    const barWidth = W - 180;
+    ctx.fillStyle = '#1a0520';
+    ctx.fillRect(90, 110, barWidth, 10);
+    
+    // Draw relative ratio fill
+    const totalMax = Math.max(pullForce, sinkForce, 1);
+    const pullRatio = pullForce / totalMax;
+    ctx.fillStyle = pullForce > sinkForce ? '#FFD700' : '#E74C3C';
+    ctx.fillRect(90, 110, barWidth * pullRatio, 10);
+  } else {
+    // Instructions helper text
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#E8DCC8';
+    ctx.font = 'italic 10px Georgia';
+    ctx.fillText('Tap tree/boulder/pulley anchors to thread your rope pulley system.', W / 2, 117);
+  }
+
+  // Draw HUD Action Button at bottom
+  ctx.fillStyle = 'rgba(15, 6, 20, 0.85)';
+  roundRect(ctx, 40, H - 90, W - 80, 50, 8, true, true);
+
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 15px sans-serif';
+  if (state === 'design') {
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText('START PULL!', W / 2, H - 60);
+  } else if (state === 'pulling') {
+    ctx.fillStyle = '#E74C3C';
+    ctx.fillText('STOP / RESET', W / 2, H - 60);
+  }
+
+  // Rope Clear / Undo hints
+  if (state === 'design') {
+    ctx.fillStyle = '#C8B89A';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('TAP LAST NODE TO UNDO  •  TAP HORSES TO RESET ENTIRE ROPE', W / 2, H - 24);
+  }
+
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5, 2, 8, 0.9)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  const won = (currentLvlIdx === LEVELS.length - 1 && wagonY <= SAFE_Y);
+
+  if (won) {
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 36px Georgia';
+    ctx.fillText('RESCUED!', W / 2, 200);
+
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'italic 16px Georgia';
+    ctx.fillText('You beat the quicksand canyon!', W / 2, 240);
+  } else {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 36px Georgia';
+    ctx.fillText('SUNK!', W / 2, 200);
+
+    ctx.fillStyle = '#C8B89A';
+    ctx.font = 'italic 16px Georgia';
+    ctx.fillText('The canyon took the wagon...', W / 2, 240);
+  }
+
+  // Show score
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 20px Georgia';
+  ctx.fillText(`TOTAL SCORE: $${score}`, W / 2, 310);
+
+  if (score >= bestScore && score > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('★ NEW PERSONAL BEST ★', W / 2, 345);
+  }
+
+  // Buttons
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+
+  // Play Again
+  ctx.fillStyle = '#2a1500';
+  roundRect(ctx, 80, 400, 200, 42, 6, true, true);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText(won ? 'PLAY AGAIN' : 'RETRY LEVEL', W / 2, 426);
+
+  // Share
+  ctx.fillStyle = '#050208';
+  roundRect(ctx, 80, 460, 200, 42, 6, true, true);
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('SHARE RESULTS', W / 2, 486);
+
+  // Feedback button
+  ctx.fillStyle = '#100517';
+  roundRect(ctx, 80, 520, 200, 42, 6, true, true);
+  ctx.fillStyle = '#C8B89A';
+  ctx.fillText('LEAVE FEEDBACK', W / 2, 546);
+
+  ctx.restore();
+}
+
+function drawFeedbackModal() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5, 2, 8, 0.94)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#10051c';
+  ctx.strokeStyle = '#FF9F43';
+  ctx.lineWidth = 2;
+  roundRect(ctx, 25, 120, 310, 395, 10, true, true);
+
+  ctx.fillStyle = '#FF9F43';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 18px Georgia';
+  ctx.fillText('PLAYER FEEDBACK', W / 2, 160);
+
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Help Bob make this game series better!', W / 2, 190);
+
+  ctx.fillText('Rating:', W / 2, 235);
+  for (let i = 1; i <= 5; i++) {
+    const starX = W / 2 - 90 + (i - 1) * 35;
+    ctx.fillStyle = i <= feedbackRating ? '#FF9F43' : '#333';
+    ctx.font = '22px sans-serif';
+    ctx.fillText(i <= feedbackRating ? '★' : '☆', starX, 275);
+  }
+
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Message (Type keys, limit 40 chars):', W / 2, 320);
+
+  ctx.fillStyle = '#111';
+  ctx.strokeStyle = '#555';
+  roundRect(ctx, 45, 335, 270, 75, 4, true, true);
+
+  ctx.fillStyle = '#FFF';
+  ctx.font = 'italic 12px sans-serif';
+  wrapText(ctx, feedbackText || '(No message typed yet)', W / 2, 355, 250, 16);
+
+  // Submit/Cancel buttons
+  ctx.fillStyle = '#221100';
+  ctx.strokeStyle = '#FF9F43';
+  roundRect(ctx, W / 2 - 120, 445, 110, 40, 6, true, true);
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('SUBMIT', W / 2 - 65, 470);
+
+  ctx.fillStyle = '#150f15';
+  ctx.strokeStyle = '#555';
+  roundRect(ctx, W / 2 + 10, 445, 110, 40, 6, true, true);
+  ctx.fillStyle = '#C8B89A';
+  ctx.fillText('CANCEL', W / 2 + 65, 470);
+
+  ctx.restore();
+}
+
+function wrapText(c, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(' ');
+  let line = '';
+  let currentY = y;
+  
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + words[n] + ' ';
+    const metrics = c.measureText(testLine);
+    const testWidth = metrics.width;
+    if (testWidth > maxWidth && n > 0) {
+      c.fillText(line, x, currentY);
+      line = words[n] + ' ';
+      currentY += lineHeight;
+    } else {
+      line = testLine;
+    }
+  }
+  c.fillText(line, x, currentY);
+}
+
+function drawScoreFeedback(now) {
+  scoreFeedback.splice(0, scoreFeedback.length, ...scoreFeedback.filter(f => now - f.born < 1600));
+  for (const f of scoreFeedback) {
+    const age = now - f.born;
+    ctx.save();
+    ctx.globalAlpha = 1 - age / 1600;
+    ctx.fillStyle = f.color;
+    ctx.font = 'bold 15px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(f.text, f.x, f.y - age * 0.035);
+    ctx.restore();
+  }
+}
+
+// ── Interaction / Touch Handling ─────────────────────────
+canvas.addEventListener('touchstart', handleStart, { passive: false });
+canvas.addEventListener('touchmove', handleMove, { passive: false });
+canvas.addEventListener('touchend', handleEnd, { passive: false });
+canvas.addEventListener('mousedown', handleStart);
+canvas.addEventListener('mousemove', handleMove);
+canvas.addEventListener('mouseup', handleEnd);
+
+function getPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+function handleStart(e) {
+  e.preventDefault();
+  const pt = getPoint(e);
+
+  if (showFeedback) {
+    // Check stars
+    for (let i = 1; i <= 5; i++) {
+      const starX = W / 2 - 90 + (i - 1) * 35;
+      if (Math.hypot(pt.x - starX, pt.y - 270) < 18) {
+        feedbackRating = i;
+        playClick();
+        return;
+      }
+    }
+    // Submit
+    if (pt.x >= W/2 - 120 && pt.x <= W/2 - 10 && pt.y >= 445 && pt.y <= 485) {
+      submitFeedback();
+      return;
+    }
+    // Cancel
+    if (pt.x >= W/2 + 10 && pt.x <= W/2 + 120 && pt.y >= 445 && pt.y <= 485) {
+      showFeedback = false;
+      playClick();
+      return;
+    }
+    return;
+  }
+
+  if (state === 'title') {
+    triggerAction();
+    return;
+  }
+
+  if (state === 'gameover') {
+    // Play Again / Retry
+    if (pt.x >= 80 && pt.x <= 280 && pt.y >= 400 && pt.y <= 442) {
+      initAudio();
+      playClick();
+      const won = (currentLvlIdx === LEVELS.length - 1 && wagonY <= SAFE_Y);
+      if (won) {
+        startGame();
+      } else {
+        loadLevel(currentLvlIdx);
+        state = 'design';
+      }
+      return;
+    }
+    // Share
+    if (pt.x >= 80 && pt.x <= 280 && pt.y >= 460 && pt.y <= 502) {
+      playClick();
+      if (navigator.share) {
+        navigator.share({
+          title: 'Quicksand Rescue',
+          text: `I scored $${score} in Quicksand canyon rescue block-and-tackle! Can you beat me?`,
+          url: window.location.href
+        }).catch(() => {});
+      } else {
+        alert(`Shared! Score: $${score}`);
+      }
+      return;
+    }
+    // Leave feedback
+    if (pt.x >= 80 && pt.x <= 280 && pt.y >= 520 && pt.y <= 562) {
+      playClick();
+      feedbackRating = 5;
+      feedbackText = '';
+      showFeedback = true;
+      return;
+    }
+    return;
+  }
+
+  // Design Phase Anchor selections
+  if (state === 'design') {
+    // Action Button Pull
+    if (pt.x >= 40 && pt.x <= W - 40 && pt.y >= H - 90 && pt.y <= H - 40) {
+      triggerAction();
+      return;
+    }
+
+    const lvl = LEVELS[currentLvlIdx];
+
+    // Tap Horse Lead / Pull Point to reset
+    if (Math.hypot(pt.x - lvl.pullPoint.x, pt.y - lvl.pullPoint.y) < 22) {
+      ropePath = [lvl.pullPoint.id];
+      playClick();
+      return;
+    }
+
+    // Tap last connected node to undo
+    const lastNodeId = ropePath[ropePath.length - 1];
+    const lastNodeReal = getAnchorRealPos(lastNodeId, lvl);
+    if (ropePath.length > 1 && Math.hypot(pt.x - lastNodeReal.x, pt.y - lastNodeReal.y) < 22) {
+      ropePath.pop();
+      playClick();
+      return;
+    }
+
+    // Tap next anchor to connect
+    for (const a of lvl.anchors) {
+      const realPos = getAnchorRealPos(a.id, lvl);
+      if (Math.hypot(pt.x - realPos.x, pt.y - realPos.y) < 25) {
+        if (lastNodeId !== a.id) {
+          // Verify rope length budget
+          const newPath = [...ropePath, a.id];
+          const newLen = getRopeLength(newPath);
+          if (newLen <= lvl.ropeMax) {
+            ropePath = newPath;
+            playClick();
+          } else {
+            // Buzz warning tone
+            playTone(180, 0.15, 'sawtooth', 0.12);
+          }
+          return;
+        }
+      }
+    }
+  }
+
+  // Pull Phase Stop Button
+  if (state === 'pulling') {
+    if (pt.x >= 40 && pt.x <= W - 40 && pt.y >= H - 90 && pt.y <= H - 40) {
+      triggerAction();
+    }
+  }
+}
+
+function handleMove(e) {
+  e.preventDefault();
+  if (state !== 'design' || showFeedback) return;
+  const pt = getPoint(e);
+  
+  // Provide minor hover preview line from last connected node
+  const lvl = LEVELS[currentLvlIdx];
+  const lastNodeId = ropePath[ropePath.length - 1];
+  const lastPos = getAnchorRealPos(lastNodeId, lvl);
+
+  if (Math.hypot(pt.x - lastPos.x, pt.y - lastPos.y) < 180) {
+    draggingNext = pt;
+  } else {
+    draggingNext = null;
+  }
+}
+
+function handleEnd(e) {
+  e.preventDefault();
+  draggingNext = null;
+}
+
+function submitFeedback() {
+  playClick();
+  if (!feedbackText) {
+    showFeedback = false;
+    return;
+  }
+  
+  const payload = {
+    game: 'Quicksand',
+    rating: feedbackRating,
+    message: feedbackText
+  };
+
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(() => {
+    scoreFeedback.push({ text: 'FEEDBACK SENT!', x: W/2, y: H/2, color: '#FF9F43', born: performance.now() });
+  }).catch(() => {
+    scoreFeedback.push({ text: 'FEEDBACK SENT!', x: W/2, y: H/2, color: '#FF9F43', born: performance.now() });
+  });
+
+  showFeedback = false;
+}
+
+// ── Auxiliary roundRect Utility ───────────────────────────
+function roundRect(c, x, y, width, height, radius, fill, stroke) {
+  c.beginPath();
+  c.moveTo(x + radius, y);
+  c.lineTo(x + width - radius, y);
+  c.quadraticCurveTo(x + width, y, x + width, y + radius);
+  c.lineTo(x + width, y + height - radius);
+  c.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  c.lineTo(x + radius, y + height);
+  c.quadraticCurveTo(x, y + height, x, y + height - radius);
+  c.lineTo(x, y + radius);
+  c.quadraticCurveTo(x, y, x + radius, y);
+  c.closePath();
+  if (fill) c.fill();
+  if (stroke) c.stroke();
+}
+
+// ── Game Loop ─────────────────────────────────────────────
+let lastTime = 0;
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  ctx.clearRect(0, 0, W, H);
+
+  if (state === 'title') {
+    drawTitle();
+  } else {
+    if (state === 'pulling') {
+      updatePhysics(dt);
+    }
+    drawScene();
+    drawHUD();
+    drawScoreFeedback(now);
+
+    if (state === 'gameover') {
+      drawGameOver();
+    }
+  }
+
+  if (showFeedback) {
+    drawFeedbackModal();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(t => {
+  lastTime = t;
+  loop(t);
+});
+
+// ── E2E Playwright Hooks ─────────────────────────────────
+window.__getState = () => ({
+  state,
+  level: currentLvlIdx + 1,
+  score,
+  wagonY,
+  ropePath,
+  ropeUsed: getRopeLength(ropePath),
+  ropeMax: LEVELS[currentLvlIdx].ropeMax,
+  wagonWeight: LEVELS[currentLvlIdx].wagonWeight,
+  pullForce,
+  sinkForce,
+  calvesRescued: activeCalves.filter(c => c.rescued).length
+});
+</script>
+</body>
+</html>

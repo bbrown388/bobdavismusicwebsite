@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Saddlebag &#x2014; Bob Davis</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+#fb-overlay {
+  display:none; position:absolute; inset:0;
+  background:rgba(0,0,0,0.88); z-index:10;
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  font-family:Georgia,serif; color:#FFE066;
+}
+#fb-overlay.open { display:flex; }
+#fb-overlay h2 { font-size:20px; margin-bottom:4px; }
+#fb-stars { display:flex; gap:8px; font-size:28px; cursor:pointer; }
+#fb-stars span { opacity:0.35; transition:opacity 0.15s; }
+#fb-stars span.on { opacity:1; }
+#fb-text { width:280px; height:70px; background:#1a0d35; border:1px solid #C8A04A;
+           color:#FFE066; font-size:14px; padding:8px; resize:none; border-radius:6px; }
+#fb-submit { background:#C8A04A; color:#000; border:none; padding:10px 32px;
+             font-size:15px; font-family:Georgia,serif; border-radius:6px; cursor:pointer; }
+#fb-close { position:absolute; top:12px; right:16px; font-size:22px; cursor:pointer;
+            color:#888; background:none; border:none; }
+#fb-select { background:#1a0d35; border:1px solid #C8A04A; color:#FFE066;
+             padding:6px 10px; font-size:13px; border-radius:6px; width:280px; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-overlay">
+    <button id="fb-close">&#x2715;</button>
+    <h2>How'd we do?</h2>
+    <div id="fb-stars">
+      <span data-s="1">&#9733;</span><span data-s="2">&#9733;</span>
+      <span data-s="3">&#9733;</span><span data-s="4">&#9733;</span><span data-s="5">&#9733;</span>
+    </div>
+    <select id="fb-select">
+      <option value="Saddlebag">Saddlebag (this game)</option>
+      <option value="general">General / next game</option>
+      <option value="Drought Rider">Upcoming: Drought Rider (Game 59)</option>
+      <option value="Night Herd">Upcoming: Night Herd (Game 60)</option>
+    </select>
+    <textarea id="fb-text" placeholder="Any thoughts? (optional)"></textarea>
+    <button id="fb-submit">Send Feedback</button>
+  </div>
+</div>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// === Canvas setup ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+const W = 360, H = 640;
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  wrap.style.width = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// === Constants ===
+const COLS = 6, ROWS = 8, CS = 32;  // grid cols, rows, cell size px
+const GX = 158, GY = 92;             // grid top-left position
+const TX = 4, TW = 148;              // tray x-start, width
+const TRAY_TOP = 90, TRAY_BOT = 558; // tray y range
+const ROTATE_BTN = { x: TX, y: 566, w: TW, h: 36 };
+const FB_BTN = { x: 270, y: 610, w: 82, h: 24 };
+
+const ITEM_COLORS = [
+  '#E8B840', '#E07838', '#C87A50', '#72A868',
+  '#8870C0', '#4890B0', '#D07850', '#9AC840',
+];
+
+const ITEM_DEFS = {
+  I3: { baseCells: [[0,0],[0,1],[0,2]],             value: 90,  name: 'Rope Coil'  },
+  L3: { baseCells: [[0,0],[1,0],[1,1]],             value: 80,  name: 'Horseshoe'  },
+  S3: { baseCells: [[0,0],[0,1],[1,1]],             value: 75,  name: 'Boot Spur'  },
+  J3: { baseCells: [[0,1],[1,0],[1,1]],             value: 75,  name: 'Spur'       },
+  I4: { baseCells: [[0,0],[0,1],[0,2],[0,3]],       value: 120, name: 'Rifle'      },
+  L4: { baseCells: [[0,0],[1,0],[2,0],[2,1]],       value: 150, name: 'Lantern'    },
+  J4: { baseCells: [[0,1],[1,1],[2,0],[2,1]],       value: 150, name: 'Canteen'    },
+  T4: { baseCells: [[0,0],[0,1],[0,2],[1,1]],       value: 180, name: 'Tin Star'   },
+  S4: { baseCells: [[0,1],[0,2],[1,0],[1,1]],       value: 160, name: 'Stirrups'   },
+  Z4: { baseCells: [[0,0],[0,1],[1,1],[1,2]],       value: 160, name: 'Saddle Horn'},
+  O4: { baseCells: [[0,0],[0,1],[1,0],[1,1]],       value: 200, name: 'Bedroll'    },
+};
+
+const ROUND_CONFIG = [
+  { timer: 45, defs: ['I3','L3','S3','J3']                   },
+  { timer: 42, defs: ['I4','L4','T4','S4']                   },
+  { timer: 38, defs: ['I4','L4','T4','S4','J4']              },
+  { timer: 33, defs: ['I4','T4','S4','Z4','J4','O4']         },
+  { timer: 28, defs: ['I4','L4','T4','S4','Z4','J4','O4']    },
+];
+
+// === State ===
+let state = 'title';
+let round = 0;
+let grid = [];
+let items = [];
+let selectedItem = null;
+let timer = 0;
+let totalScore = 0;
+let roundScore = 0;
+let roundTimeBonus = 0;
+let roundPackBonus = 0;
+let best = parseInt(localStorage.getItem('saddlebag_best') || '0');
+let ghost = null;
+let ghostOnGrid = false;
+let popups = [];
+let warningPlayed = 0;
+let roundEndDelay = 0;
+let lastTime = 0;
+let blinkT = 0;
+
+// === Audio ===
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playSelect() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(660, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(440, ac.currentTime + 0.15);
+    g.gain.setValueAtTime(0.14, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.2);
+    o.start(); o.stop(ac.currentTime + 0.2);
+  } catch(e) {}
+}
+
+function playRotate() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(320, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(640, ac.currentTime + 0.1);
+    g.gain.setValueAtTime(0.1, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.12);
+    o.start(); o.stop(ac.currentTime + 0.12);
+  } catch(e) {}
+}
+
+function playPlace() {
+  try {
+    const ac = getAC();
+    const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * 0.07), ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * (1 - i/d.length);
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const filt = ac.createBiquadFilter(); filt.type = 'bandpass';
+    filt.frequency.value = 280; filt.Q.value = 2;
+    const g = ac.createGain(); g.gain.value = 0.28;
+    src.connect(filt); filt.connect(g); g.connect(ac.destination); src.start();
+
+    const o = ac.createOscillator(), g2 = ac.createGain();
+    o.connect(g2); g2.connect(ac.destination);
+    o.type = 'sine'; o.frequency.value = 120;
+    g2.gain.setValueAtTime(0.18, ac.currentTime);
+    g2.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
+    o.start(); o.stop(ac.currentTime + 0.18);
+  } catch(e) {}
+}
+
+function playUnplace() {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(440, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(260, ac.currentTime + 0.16);
+    g.gain.setValueAtTime(0.1, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
+    o.start(); o.stop(ac.currentTime + 0.18);
+  } catch(e) {}
+}
+
+function playBeep(freq) {
+  try {
+    const ac = getAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.12, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.1);
+    o.start(); o.stop(ac.currentTime + 0.1);
+  } catch(e) {}
+}
+
+function playRoundEnd() {
+  try {
+    const ac = getAC();
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'triangle'; o.frequency.value = f;
+      const t = ac.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0.18, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      o.start(t); o.stop(t + 0.35);
+    });
+  } catch(e) {}
+}
+
+function playGameOver() {
+  try {
+    const ac = getAC();
+    [523, 659, 784].forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'triangle'; o.frequency.value = f;
+      const t = ac.currentTime + i * 0.14;
+      g.gain.setValueAtTime(0.20, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      o.start(t); o.stop(t + 0.5);
+    });
+  } catch(e) {}
+}
+
+// === Shape logic ===
+function rotateCW(cells) {
+  const maxR = Math.max(...cells.map(([r]) => r));
+  const rot = cells.map(([r, c]) => [c, maxR - r]);
+  const minR = Math.min(...rot.map(([r]) => r));
+  const minC = Math.min(...rot.map(([, c]) => c));
+  return rot.map(([r, c]) => [r - minR, c - minC]);
+}
+
+function cellBounds(cells) {
+  return {
+    maxR: Math.max(...cells.map(([r]) => r)),
+    maxC: Math.max(...cells.map(([, c]) => c)),
+  };
+}
+
+function canPlace(cells, row, col) {
+  return cells.every(([dr, dc]) => {
+    const r = row + dr, c = col + dc;
+    return r >= 0 && r < ROWS && c >= 0 && c < COLS && grid[r][c] === null;
+  });
+}
+
+function getAnchor(cells, tapRow, tapCol) {
+  const { maxR, maxC } = cellBounds(cells);
+  const r0 = Math.max(0, Math.min(tapRow, ROWS - 1 - maxR));
+  const c0 = Math.max(0, Math.min(tapCol, COLS - 1 - maxC));
+  return [r0, c0];
+}
+
+function doPlace(itemIdx, row, col) {
+  const item = items[itemIdx];
+  item.cells.forEach(([dr, dc]) => { grid[row + dr][col + dc] = itemIdx; });
+  item.anchorRow = row;
+  item.anchorCol = col;
+  item.placed = true;
+}
+
+function doUnplace(itemIdx) {
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[r][c] === itemIdx) grid[r][c] = null;
+  items[itemIdx].placed = false;
+  items[itemIdx].anchorRow = -1;
+  items[itemIdx].anchorCol = -1;
+}
+
+function getCardH() {
+  return Math.min(80, Math.floor((TRAY_BOT - TRAY_TOP) / items.length));
+}
+
+function getGridCell(px, py) {
+  const c = Math.floor((px - GX) / CS);
+  const r = Math.floor((py - GY) / CS);
+  if (r >= 0 && r < ROWS && c >= 0 && c < COLS) return { row: r, col: c };
+  return null;
+}
+
+function getTrayIdx(px, py) {
+  if (px < TX || px > TX + TW) return null;
+  const cardH = getCardH();
+  const idx = Math.floor((py - TRAY_TOP) / cardH);
+  if (idx >= 0 && idx < items.length) return idx;
+  return null;
+}
+
+function inBtn(btn, px, py) {
+  return px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h;
+}
+
+// === Game state ===
+function startGame() {
+  totalScore = 0;
+  round = 0;
+  state = 'playing';
+  startRound(0);
+}
+
+function startRound(n) {
+  const cfg = ROUND_CONFIG[n];
+  timer = cfg.timer;
+  selectedItem = null;
+  ghost = null;
+  ghostOnGrid = false;
+  warningPlayed = 0;
+  popups = [];
+  grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  items = cfg.defs.map((key, idx) => ({
+    key,
+    name: ITEM_DEFS[key].name,
+    value: ITEM_DEFS[key].value,
+    cells: ITEM_DEFS[key].baseCells.map(c => [...c]),
+    color: ITEM_COLORS[idx % ITEM_COLORS.length],
+    placed: false,
+    anchorRow: -1,
+    anchorCol: -1,
+  }));
+  selectedItem = 0;
+}
+
+function endRound() {
+  const placedVal = items.reduce((s, it) => s + (it.placed ? it.value : 0), 0);
+  const allPlaced = items.every(it => it.placed);
+  roundTimeBonus = Math.floor(Math.max(0, timer)) * 5;
+  roundPackBonus = allPlaced ? 300 : 0;
+  roundScore = placedVal + roundTimeBonus + roundPackBonus;
+  totalScore += roundScore;
+  state = 'roundEnd';
+  roundEndDelay = 0;
+  playRoundEnd();
+}
+
+function nextRound() {
+  round++;
+  if (round >= ROUND_CONFIG.length) {
+    if (totalScore > best) {
+      best = totalScore;
+      localStorage.setItem('saddlebag_best', best);
+    }
+    state = 'gameover';
+    playGameOver();
+  } else {
+    startRound(round);
+    state = 'playing';
+  }
+}
+
+function addPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, t: 0.8 });
+}
+
+// === Update ===
+function update(dt) {
+  blinkT += dt;
+  popups = popups.filter(p => p.t > 0);
+  popups.forEach(p => { p.t -= dt; p.y -= 28 * dt; });
+
+  if (state === 'roundEnd') {
+    roundEndDelay += dt;
+    return;
+  }
+  if (state !== 'playing') return;
+
+  timer -= dt;
+
+  if (timer <= 10 && Math.floor(warningPlayed) < Math.floor(11 - timer)) {
+    warningPlayed = Math.floor(11 - timer);
+    playBeep(80);
+  }
+
+  if (timer <= 0) {
+    timer = 0;
+    endRound();
+    return;
+  }
+
+  if (items.length > 0 && items.every(it => it.placed)) {
+    endRound();
+  }
+}
+
+// === Input ===
+function handleTap(px, py) {
+  if (state === 'title') { startGame(); return; }
+  if (state === 'roundEnd') { if (roundEndDelay > 0.4) nextRound(); return; }
+  if (state === 'gameover') { startGame(); return; }
+  if (state !== 'playing') return;
+
+  // Feedback button
+  if (inBtn(FB_BTN, px, py)) {
+    document.getElementById('fb-overlay').classList.add('open');
+    return;
+  }
+
+  // Rotate button
+  if (inBtn(ROTATE_BTN, px, py)) {
+    if (selectedItem !== null && !items[selectedItem].placed) {
+      items[selectedItem].cells = rotateCW(items[selectedItem].cells);
+      playRotate();
+    }
+    return;
+  }
+
+  // Grid tap
+  const cell = getGridCell(px, py);
+  if (cell) {
+    const occupant = grid[cell.row][cell.col];
+    if (occupant !== null) {
+      // Unplace occupant
+      doUnplace(occupant);
+      selectedItem = occupant;
+      playUnplace();
+      addPopup(
+        GX + cell.col * CS + CS / 2, GY + cell.row * CS - 4,
+        'UNPACKED', '#FF9F43'
+      );
+      return;
+    }
+    if (selectedItem !== null && !items[selectedItem].placed) {
+      const [r0, c0] = getAnchor(items[selectedItem].cells, cell.row, cell.col);
+      if (canPlace(items[selectedItem].cells, r0, c0)) {
+        doPlace(selectedItem, r0, c0);
+        addPopup(
+          GX + (c0 + cellBounds(items[selectedItem].cells).maxC / 2) * CS + CS / 2,
+          GY + r0 * CS - 4, '+$' + items[selectedItem].value, '#FFE066'
+        );
+        playPlace();
+        const prev = selectedItem;
+        const next = items.findIndex((it, i) => !it.placed && i !== prev);
+        selectedItem = next >= 0 ? next : null;
+      } else {
+        addPopup(px, py - 10, 'NO FIT', '#E74C3C');
+      }
+    }
+    return;
+  }
+
+  // Tray tap
+  const tIdx = getTrayIdx(px, py);
+  if (tIdx !== null) {
+    if (items[tIdx].placed) return;
+    if (selectedItem === tIdx) {
+      items[tIdx].cells = rotateCW(items[tIdx].cells);
+      playRotate();
+    } else {
+      selectedItem = tIdx;
+      playSelect();
+    }
+  }
+}
+
+// === Pointer / Touch ===
+function toCanvas(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const s = W / r.width;
+  return { px: (clientX - r.left) * s, py: (clientY - r.top) * s };
+}
+
+function updateGhost(px, py) {
+  if (state !== 'playing' || selectedItem === null || items[selectedItem].placed) {
+    ghost = null; return;
+  }
+  const cell = getGridCell(px, py);
+  if (!cell) { ghost = null; return; }
+  const [r0, c0] = getAnchor(items[selectedItem].cells, cell.row, cell.col);
+  ghost = { row: r0, col: c0, valid: canPlace(items[selectedItem].cells, r0, c0) };
+}
+
+function commitGhost() {
+  if (!ghost || !ghost.valid || selectedItem === null || items[selectedItem].placed) {
+    ghost = null; ghostOnGrid = false; return false;
+  }
+  doPlace(selectedItem, ghost.row, ghost.col);
+  const b = cellBounds(items[selectedItem].cells);
+  addPopup(
+    GX + (ghost.col + b.maxC / 2) * CS + CS / 2,
+    GY + ghost.row * CS - 4,
+    '+$' + items[selectedItem].value, '#FFE066'
+  );
+  playPlace();
+  const prev = selectedItem;
+  const next = items.findIndex((it, i) => !it.placed && i !== prev);
+  selectedItem = next >= 0 ? next : null;
+  ghost = null; ghostOnGrid = false;
+  return true;
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const { px, py } = toCanvas(e.touches[0].clientX, e.touches[0].clientY);
+  ghostOnGrid = false; ghost = null;
+  if (state === 'playing' && selectedItem !== null && !items[selectedItem].placed) {
+    const cell = getGridCell(px, py);
+    if (cell) {
+      const [r0, c0] = getAnchor(items[selectedItem].cells, cell.row, cell.col);
+      ghost = { row: r0, col: c0, valid: canPlace(items[selectedItem].cells, r0, c0) };
+      ghostOnGrid = true;
+      return;
+    }
+  }
+  handleTap(px, py);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!ghostOnGrid) return;
+  const { px, py } = toCanvas(e.touches[0].clientX, e.touches[0].clientY);
+  updateGhost(px, py);
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  const { px, py } = toCanvas(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+  if (ghostOnGrid) {
+    if (!commitGhost()) handleTap(px, py);
+  }
+  ghostOnGrid = false;
+}, { passive: false });
+
+let mouseGhostActive = false;
+canvas.addEventListener('mousedown', (e) => {
+  const { px, py } = toCanvas(e.clientX, e.clientY);
+  mouseGhostActive = false; ghost = null;
+  if (state === 'playing' && selectedItem !== null && !items[selectedItem].placed) {
+    const cell = getGridCell(px, py);
+    if (cell) {
+      const [r0, c0] = getAnchor(items[selectedItem].cells, cell.row, cell.col);
+      ghost = { row: r0, col: c0, valid: canPlace(items[selectedItem].cells, r0, c0) };
+      mouseGhostActive = true;
+      return;
+    }
+  }
+  handleTap(px, py);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  const { px, py } = toCanvas(e.clientX, e.clientY);
+  if (!mouseGhostActive) {
+    updateGhost(px, py);
+    return;
+  }
+  updateGhost(px, py);
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  const { px, py } = toCanvas(e.clientX, e.clientY);
+  if (mouseGhostActive) {
+    mouseGhostActive = false;
+    if (!commitGhost()) handleTap(px, py);
+    return;
+  }
+  ghost = null;
+});
+
+canvas.addEventListener('mouseleave', () => { if (!mouseGhostActive) ghost = null; });
+
+// === Draw helpers ===
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function pill(x, y, w, h, fill, stroke, lw) {
+  rr(x, y, w, h, h / 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+}
+
+function hex2rgba(hex, a) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// === Draw functions ===
+function drawBg() {
+  ctx.save();
+  const gr = ctx.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#06020C');
+  gr.addColorStop(1, '#12052A');
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, 0, W, H);
+  // stars
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 30; i++) {
+    const sx = ((i * 137 + 17) % 360);
+    const sy = ((i * 89 + 11) % 88);
+    const tw = Math.sin(blinkT * 0.8 + i * 1.3) * 0.5 + 0.5;
+    ctx.globalAlpha = 0.2 + tw * 0.3;
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Top bar background
+  rr(4, 4, W - 8, 82, 8);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fill();
+
+  // Round indicator
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 12px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('ROUND ' + (round + 1) + '/5', 14, 22);
+
+  // Title
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SADDLEBAG', W / 2, 22);
+
+  // Score
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('$' + totalScore, W - 14, 22);
+
+  // Items packed count
+  const packed = items.filter(it => it.placed).length;
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(packed + '/' + items.length + ' packed', 14, 38);
+
+  // Round score live
+  const liveScore = items.reduce((s, it) => s + (it.placed ? it.value : 0), 0);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#E8B840';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('this round: $' + liveScore, W - 14, 38);
+
+  // Timer bar
+  const barX = 14, barY = 50, barW = W - 28, barH = 14;
+  rr(barX, barY, barW, barH, 7);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fill();
+
+  const pct = Math.max(0, timer / ROUND_CONFIG[round].timer);
+  const barColor = timer <= 10 ?
+    (Math.floor(blinkT * 4) % 2 === 0 ? '#E74C3C' : '#FF7050') :
+    (timer <= 20 ? '#FF9F43' : '#C8A04A');
+  if (pct > 0) {
+    rr(barX, barY, barW * pct, barH, 7);
+    ctx.fillStyle = barColor;
+    ctx.fill();
+  }
+
+  // Timer text
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.ceil(timer) + 's', W / 2, barY + 10);
+
+  // Departure text
+  ctx.fillStyle = timer <= 10 ? '#E74C3C' : '#888';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(
+    timer > 10 ? 'Stage departs in ' + Math.ceil(timer) + 's' : 'STAGE LEAVING SOON',
+    14, 78
+  );
+
+  ctx.restore();
+}
+
+function drawGrid() {
+  ctx.save();
+  const gw = COLS * CS, gh = ROWS * CS;
+
+  // Leather background
+  const lg = ctx.createLinearGradient(GX, GY, GX + gw, GY + gh);
+  lg.addColorStop(0, '#2A1200');
+  lg.addColorStop(0.5, '#3A1A04');
+  lg.addColorStop(1, '#2A1200');
+  rr(GX - 4, GY - 4, gw + 8, gh + 8, 6);
+  ctx.fillStyle = '#1A0800';
+  ctx.fill();
+  rr(GX - 2, GY - 2, gw + 4, gh + 4, 5);
+  ctx.fillStyle = lg;
+  ctx.fill();
+
+  // Stitching border
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  rr(GX - 6, GY - 6, gw + 12, gh + 12, 8);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(90,50,20,0.6)';
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r <= ROWS; r++) {
+    ctx.beginPath();
+    ctx.moveTo(GX, GY + r * CS);
+    ctx.lineTo(GX + gw, GY + r * CS);
+    ctx.stroke();
+  }
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath();
+    ctx.moveTo(GX + c * CS, GY);
+    ctx.lineTo(GX + c * CS, GY + gh);
+    ctx.stroke();
+  }
+
+  // Placed items
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const idx = grid[r][c];
+      if (idx !== null) {
+        const item = items[idx];
+        ctx.fillStyle = item.color;
+        ctx.fillRect(GX + c * CS + 1, GY + r * CS + 1, CS - 2, CS - 2);
+        // Inner highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillRect(GX + c * CS + 1, GY + r * CS + 1, CS - 2, 5);
+      }
+    }
+  }
+
+  // Ghost preview
+  if (ghost && selectedItem !== null && !items[selectedItem].placed) {
+    const item = items[selectedItem];
+    ctx.globalAlpha = ghost.valid ? 0.55 : 0.3;
+    ctx.fillStyle = ghost.valid ? item.color : '#E74C3C';
+    item.cells.forEach(([dr, dc]) => {
+      const pr = ghost.row + dr, pc = ghost.col + dc;
+      if (pr >= 0 && pr < ROWS && pc >= 0 && pc < COLS) {
+        ctx.fillRect(GX + pc * CS + 1, GY + pr * CS + 1, CS - 2, CS - 2);
+      }
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // "SADDLEBAG" label at bottom
+  ctx.fillStyle = 'rgba(200,160,74,0.25)';
+  ctx.font = 'bold 11px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SADDLEBAG', GX + gw / 2, GY + gh - 5);
+
+  ctx.restore();
+}
+
+function drawTray() {
+  ctx.save();
+  const cardH = getCardH();
+
+  items.forEach((item, idx) => {
+    const cy = TRAY_TOP + idx * cardH;
+    const isSelected = (selectedItem === idx && !item.placed);
+    const isFaded = item.placed;
+
+    // Card background
+    rr(TX, cy + 2, TW, cardH - 4, 6);
+    ctx.fillStyle = isFaded ? 'rgba(30,15,0,0.6)' : (isSelected ? 'rgba(60,35,0,0.9)' : 'rgba(20,10,0,0.7)');
+    ctx.fill();
+
+    // Card border
+    rr(TX, cy + 2, TW, cardH - 4, 6);
+    ctx.strokeStyle = isFaded ? '#333' : (isSelected ? '#FFE066' : '#5A3820');
+    ctx.lineWidth = isSelected ? 2 : 1;
+    ctx.stroke();
+
+    // Shape preview area (left ~52px)
+    const b = cellBounds(item.cells);
+    const ps = Math.min(11, Math.floor((cardH - 12) / (b.maxR + 2)));
+    const pw = (b.maxC + 1) * ps, ph = (b.maxR + 1) * ps;
+    const px0 = TX + 4 + (52 - pw) / 2;
+    const py0 = cy + (cardH - ph) / 2;
+
+    item.cells.forEach(([dr, dc]) => {
+      ctx.fillStyle = isFaded ? '#444' : item.color;
+      ctx.fillRect(px0 + dc * ps + 0.5, py0 + dr * ps + 0.5, ps - 1, ps - 1);
+      if (!isFaded) {
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.fillRect(px0 + dc * ps + 0.5, py0 + dr * ps + 0.5, ps - 1, 3);
+      }
+    });
+
+    // Text: name, value, status
+    const tx0 = TX + 58;
+    ctx.fillStyle = isFaded ? '#555' : '#FFE066';
+    ctx.font = 'bold ' + (cardH > 55 ? 11 : 10) + 'px Georgia, serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(item.name, tx0, cy + 16);
+
+    ctx.fillStyle = isFaded ? '#444' : '#C8A04A';
+    ctx.font = (cardH > 55 ? 11 : 10) + 'px sans-serif';
+    ctx.fillText('$' + item.value, tx0, cy + 30);
+
+    if (isFaded) {
+      ctx.fillStyle = '#3A7A3A';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText('PACKED', tx0, cy + 44);
+    } else if (isSelected) {
+      ctx.fillStyle = '#888';
+      ctx.font = '9px sans-serif';
+      ctx.fillText('tap again = rotate', tx0, cy + cardH - 8);
+    }
+  });
+
+  ctx.restore();
+}
+
+function drawRotateBtn() {
+  ctx.save();
+  const b = ROTATE_BTN;
+  const hasSelected = selectedItem !== null && !items[selectedItem].placed;
+  rr(b.x, b.y, b.w, b.h, 8);
+  ctx.fillStyle = hasSelected ? '#C8A04A' : '#2A1800';
+  ctx.fill();
+  rr(b.x, b.y, b.w, b.h, 8);
+  ctx.strokeStyle = hasSelected ? '#FFE066' : '#3A2810';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = hasSelected ? '#000' : '#444';
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ROTATE', b.x + b.w / 2, b.y + 23);
+  ctx.restore();
+}
+
+function drawFeedbackBtn() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(200,160,74,0.18)';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#555';
+  ctx.fillText('feedback', FB_BTN.x + FB_BTN.w, FB_BTN.y + 14);
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  popups.forEach(p => {
+    const alpha = Math.min(1, p.t * 2.5);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPlaying() {
+  drawBg();
+  drawHUD();
+  drawGrid();
+  drawTray();
+  drawRotateBtn();
+  drawFeedbackBtn();
+  drawPopups();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBg();
+
+  // Stars (extra for title)
+  ctx.fillStyle = '#FFE066';
+  for (let i = 0; i < 8; i++) {
+    const sx = 20 + (i * 47) % 320;
+    const sy = 30 + (i * 61) % 180;
+    const tw = Math.sin(blinkT * 0.9 + i * 0.7) * 0.4 + 0.6;
+    ctx.globalAlpha = tw * 0.4;
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // Title
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 42px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#C8A04A';
+  ctx.shadowBlur = 18;
+  ctx.fillText('SADDLEBAG', W / 2, 180);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia, serif';
+  ctx.fillText('Pack your gear before the stage leaves', W / 2, 218);
+
+  // Decorative saddlebag silhouette
+  ctx.save();
+  ctx.translate(W / 2, 320);
+  // Bag body
+  ctx.fillStyle = '#2A1200';
+  rr(-55, -60, 110, 110, 14);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  rr(-55, -60, 110, 110, 14);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Buckle
+  ctx.fillStyle = '#C8A04A';
+  rr(-18, -80, 36, 24, 6);
+  ctx.fill();
+  rr(-10, -76, 20, 16, 4);
+  ctx.fillStyle = '#2A1200';
+  ctx.fill();
+  // Gear shapes inside bag
+  ctx.fillStyle = '#E8B840';
+  ctx.globalAlpha = 0.4;
+  [[0,0],[1,0],[1,1]].forEach(([dr,dc]) => ctx.fillRect(-40+dc*18, -40+dr*18, 15, 15));
+  [[0,0],[0,1],[0,2]].forEach(([dr,dc]) => ctx.fillRect(0+dc*18, -40+dr*18, 15, 15));
+  [[0,0],[1,0]].forEach(([dr,dc]) => ctx.fillRect(-40+dc*18, 5+dr*18, 15, 15));
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // Controls hint
+  ctx.fillStyle = '#888';
+  ctx.font = '13px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Select gear • Rotate • Tap grid to place', W / 2, 460);
+
+  // Best
+  if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Best: $' + best, W / 2, 490);
+  }
+
+  // Start prompt
+  const vis = Math.sin(blinkT * 3) > 0;
+  if (vis) {
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 17px Georgia, serif';
+    ctx.fillText('TAP TO PACK', W / 2, 545);
+  }
+  ctx.restore();
+}
+
+function drawRoundEnd() {
+  ctx.save();
+  drawBg();
+  drawGrid();
+  drawTray();
+
+  // Overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.78)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 28px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ROUND ' + (round + 1) + ' DONE', W / 2, 220);
+
+  const packed = items.filter(it => it.placed).length;
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia, serif';
+  ctx.fillText(packed + '/' + items.length + ' items packed', W / 2, 260);
+
+  const baseVal = roundScore - roundTimeBonus - roundPackBonus;
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Gear value:   $' + baseVal, W / 2, 295);
+  ctx.fillText('Time bonus:  +$' + roundTimeBonus, W / 2, 315);
+  if (roundPackBonus > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.fillText('ALL PACKED!  +$' + roundPackBonus, W / 2, 335);
+  }
+
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W/2-80, 345); ctx.lineTo(W/2+80, 345); ctx.stroke();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('Round: $' + roundScore, W / 2, 370);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('Total: $' + totalScore, W / 2, 395);
+
+  if (round < ROUND_CONFIG.length - 1) {
+    const vis = Math.sin(blinkT * 3) > 0;
+    if (vis) {
+      ctx.fillStyle = '#FFE066';
+      ctx.font = 'bold 16px Georgia, serif';
+      ctx.fillText('TAP TO CONTINUE', W / 2, 450);
+    }
+  } else {
+    const vis2 = Math.sin(blinkT * 3) > 0;
+    if (vis2) {
+      ctx.fillStyle = '#FFE066';
+      ctx.font = 'bold 16px Georgia, serif';
+      ctx.fillText('TAP FOR FINAL SCORE', W / 2, 450);
+    }
+  }
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  drawBg();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 32px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#C8A04A';
+  ctx.shadowBlur = 12;
+  ctx.fillText('WAGON\'S GONE', W / 2, 200);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia, serif';
+  ctx.fillText('Here\'s your haul:', W / 2, 240);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 48px Georgia, serif';
+  ctx.fillText('$' + totalScore, W / 2, 310);
+
+  if (totalScore > 0 && totalScore >= best) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 18px Georgia, serif';
+    const pulse = Math.sin(blinkT * 5) * 0.15 + 0.85;
+    ctx.globalAlpha = pulse;
+    ctx.fillText('NEW RECORD!', W / 2, 350);
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctx.fillStyle = '#888';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('Best: $' + best, W / 2, 350);
+  }
+
+  // Share button
+  rr(W/2-80, 390, 160, 44, 10);
+  ctx.fillStyle = '#C8A04A';
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.fillText('SHARE', W / 2, 418);
+
+  // Play again
+  rr(W/2-80, 448, 160, 44, 10);
+  ctx.fillStyle = '#1a0d35';
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('PLAY AGAIN', W / 2, 476);
+
+  // Feedback
+  ctx.fillStyle = '#555';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('feedback', W / 2, 528);
+
+  ctx.restore();
+}
+
+canvas.addEventListener('click', (e) => {
+  if (state !== 'gameover') return;
+  const { px, py } = toCanvas(e.clientX, e.clientY);
+  // Share
+  if (px >= W/2-80 && px <= W/2+80 && py >= 390 && py <= 434) {
+    if (navigator.share) {
+      navigator.share({ title: 'Saddlebag', text: 'I packed $' + totalScore + ' in gear on Saddlebag!', url: location.href })
+        .catch(() => {});
+    }
+    return;
+  }
+  // Play again
+  if (px >= W/2-80 && px <= W/2+80 && py >= 448 && py <= 492) {
+    startGame();
+    return;
+  }
+  // Feedback
+  if (Math.abs(px - W/2) < 50 && py >= 520 && py <= 535) {
+    document.getElementById('fb-overlay').classList.add('open');
+    return;
+  }
+});
+
+// === Draw dispatch ===
+function draw() {
+  ctx.save();
+  if (state === 'title') drawTitle();
+  else if (state === 'playing') drawPlaying();
+  else if (state === 'roundEnd') drawRoundEnd();
+  else if (state === 'gameover') drawGameOver();
+  ctx.restore();
+}
+
+// === Game loop ===
+let rafId = null;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.1);
+    lastTime = ts;
+    update(dt);
+    draw();
+  } catch(e) {
+    console.error('Game loop error:', e);
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+rafId = requestAnimationFrame((ts) => {
+  lastTime = ts;
+  rafId = requestAnimationFrame(loop);
+});
+
+// === Feedback overlay logic ===
+const fbOverlay = document.getElementById('fb-overlay');
+document.getElementById('fb-close').addEventListener('click', () => fbOverlay.classList.remove('open'));
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const rating = fbOverlay.querySelector('#fb-stars span.on') ? [...fbOverlay.querySelectorAll('#fb-stars span.on')].length : 0;
+  const game = fbOverlay.querySelector('#fb-select').value;
+  const msg = fbOverlay.querySelector('#fb-text').value.trim();
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game, rating, message: msg, source: 'saddlebag' }),
+  });
+  fbOverlay.classList.remove('open');
+  fbOverlay.querySelector('#fb-text').value = '';
+});
+fbOverlay.querySelectorAll('#fb-stars span').forEach((el) => {
+  el.addEventListener('click', () => {
+    const n = +el.dataset.s;
+    fbOverlay.querySelectorAll('#fb-stars span').forEach((s, i) => s.classList.toggle('on', i < n));
+  });
+});
+
+// === Test API ===
+window.__run = {
+  get state() { return state; },
+  set state(v) { state = v; },
+  get round() { return round; },
+  set round(v) { round = v; },
+  get grid() { return grid; },
+  get items() { return items; },
+  get selectedItem() { return selectedItem; },
+  set selectedItem(v) { selectedItem = v; },
+  get timer() { return timer; },
+  set timer(v) { timer = v; },
+  get totalScore() { return totalScore; },
+  set totalScore(v) { totalScore = v; },
+  get roundScore() { return roundScore; },
+  get ghost() { return ghost; },
+  get best() { return best; },
+  get popups() { return popups; },
+
+  COLS, ROWS, CS, GX, GY, ITEM_DEFS, ITEM_COLORS, ROUND_CONFIG,
+  startGame,
+  startRound: (n) => { round = n; startRound(n); },
+  endRound,
+  nextRound,
+  rotateCW,
+  canPlace: (cells, r, c) => canPlace(cells, r, c),
+  getAnchor: (cells, r, c) => getAnchor(cells, r, c),
+  doPlace: (idx, r, c) => doPlace(idx, r, c),
+  doUnplace: (idx) => doUnplace(idx),
+  cellBounds,
+  handleTap,
+  addPopup,
+  update: (dt) => update(dt),
+  getCardH,
+  getGridCell: (px, py) => getGridCell(px, py),
+  getTrayIdx: (px, py) => getTrayIdx(px, py),
+};
+</script>
+</body>
+</html>

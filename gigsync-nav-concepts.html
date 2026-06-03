@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<title>GigSync Nav Concepts</title>
+<style>
+  :root {
+    --bg: #0f0b1e;
+    --surface: #1a1530;
+    --surface2: #221b3d;
+    --border: #2c2447;
+    --text: #ece9f5;
+    --muted: #8b84a3;
+    --accent: #a78bfa;
+    --accent-deep: #2e1f5e;
+    --danger: #dc2626;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 0 0 64px; }
+
+  .page-head { padding: 18px 16px 8px; }
+  .page-head h1 { font-size: 18px; margin: 0 0 4px; }
+  .page-head p { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.5; }
+
+  /* approach selector */
+  .picker { position: sticky; top: 0; z-index: 40; background: rgba(15,11,30,0.92);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+    display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px; scrollbar-width: none; }
+  .picker::-webkit-scrollbar { display: none; }
+  .pick {
+    flex: 0 0 auto; font-size: 12px; font-weight: 600; padding: 7px 12px;
+    border-radius: 9999px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--muted); white-space: nowrap; cursor: pointer; }
+  .pick.active { background: var(--accent-deep); color: var(--accent); border-color: #3d2a7a; }
+
+  .caption { padding: 14px 16px 4px; }
+  .caption h2 { font-size: 15px; margin: 0 0 6px; color: var(--text); }
+  .caption .trade { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin: 0; }
+  .caption .trade b { color: var(--accent); font-weight: 600; }
+
+  /* phone frame */
+  .frame-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 16px 16px 6px; }
+  .phone { margin: 0 12px; border: 1px solid var(--border); border-radius: 18px;
+    overflow: hidden; background: var(--bg); box-shadow: 0 8px 28px rgba(0,0,0,0.4); }
+
+  /* shared app nav bits */
+  .brand { font-weight: 700; font-size: 14px; }
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); background: var(--surface); }
+  .hamb { margin-left: auto; display: flex; flex-direction: column; gap: 3px; padding: 4px; cursor: pointer; }
+  .hamb span { width: 18px; height: 2px; background: var(--muted); display: block; }
+  .content { padding: 22px 16px 28px; min-height: 220px; }
+  .content .h { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+  .content .sub { font-size: 12.5px; color: var(--muted); margin: 0; }
+  .pill { display: inline-block; font-size: 11px; color: var(--accent);
+    background: var(--accent-deep); border: 1px solid #3d2a7a; border-radius: 9999px;
+    padding: 2px 9px; margin-top: 14px; }
+
+  .link { font-size: 13.5px; color: var(--muted); padding: 9px 0; display: block; cursor: pointer; }
+  .link.active { color: var(--text); }
+  .badge { display: inline-flex; align-items: center; justify-content: center;
+    background: var(--danger); color: #fff; border-radius: 9999px; font-size: 10px;
+    font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 6px; }
+
+  /* 1. flat bar (current) */
+  .flatbar { display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); background: var(--surface); }
+  .flatbar a { font-size: 12.5px; color: var(--muted); }
+  .flatbar a.active { color: var(--text); }
+
+  /* 2. grouped dropdowns */
+  .ddbar { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-wrap: wrap; }
+  .dd { position: relative; }
+  .dd > button { font-size: 12.5px; font-weight: 600; color: var(--text); background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 11px; cursor: pointer; }
+  .dd.open > button { border-color: var(--accent); color: var(--accent); }
+  .dd-menu { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 6px; min-width: 150px; box-shadow: 0 10px 24px rgba(0,0,0,0.45); }
+  .dd.open .dd-menu { display: block; }
+  .dd-menu a { display: block; font-size: 13px; color: var(--muted); padding: 8px 10px; border-radius: 6px; }
+  .dd-menu a:active { background: var(--accent-deep); color: var(--accent); }
+
+  /* 3. sidebar */
+  .side-wrap { display: flex; min-height: 320px; }
+  .side { width: 168px; flex: 0 0 auto; border-right: 1px solid var(--border);
+    background: var(--surface); padding: 10px 0; }
+  .side-grp { padding: 4px 0; }
+  .side-grp > .gh { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--muted); padding: 8px 14px 4px; display: flex; align-items: center; cursor: pointer; }
+  .side-grp .caret { margin-left: auto; transition: transform .15s; font-size: 9px; }
+  .side-grp.collapsed .caret { transform: rotate(-90deg); }
+  .side-grp .items { overflow: hidden; }
+  .side-grp.collapsed .items { display: none; }
+  .side a { display: block; font-size: 13px; color: var(--muted); padding: 7px 14px 7px 20px; }
+  .side a.active { color: var(--text); background: var(--accent-deep);
+    box-shadow: inset 3px 0 0 var(--accent); }
+  .side-content { flex: 1; padding: 20px 14px; }
+
+  /* 4. command palette */
+  .cmd-trigger { display: flex; align-items: center; gap: 8px; margin: 14px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 11px 12px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .cmd-trigger .kbd { margin-left: auto; font-size: 11px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; }
+  .palette { position: absolute; inset: 0; background: rgba(8,6,16,0.8); z-index: 50;
+    display: none; align-items: flex-start; justify-content: center; padding-top: 14px; }
+  .palette.open { display: flex; }
+  .palette-box { width: 92%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.6); }
+  .palette-box input { width: 100%; border: none; background: transparent; color: var(--text);
+    font-size: 14px; padding: 14px; outline: none; border-bottom: 1px solid var(--border); }
+  .palette-list { max-height: 260px; overflow-y: auto; padding: 6px; }
+  .palette-list a { display: flex; align-items: center; gap: 8px; font-size: 13px;
+    color: var(--muted); padding: 9px 10px; border-radius: 7px; }
+  .palette-list a .grp { margin-left: auto; font-size: 10.5px; color: #5f5980; }
+  .palette-list a:active { background: var(--accent-deep); color: var(--accent); }
+
+  /* 5. primary + more */
+  .primbar { display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); background: var(--surface); }
+  .primbar a { font-size: 12.5px; color: var(--muted); }
+  .primbar a.active { color: var(--text); }
+  .more { margin-left: auto; position: relative; }
+  .more > button { font-size: 12.5px; color: var(--accent); background: none; border: none; cursor: pointer; }
+  .more-menu { display: none; position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 6px;
+    min-width: 150px; box-shadow: 0 10px 24px rgba(0,0,0,0.45); }
+  .more.open .more-menu { display: block; }
+  .more-menu a { display: block; font-size: 13px; color: var(--muted); padding: 8px 10px; border-radius: 6px; }
+
+  /* 6. persona presets */
+  .persona-row { display: flex; gap: 8px; padding: 12px 14px; overflow-x: auto;
+    border-bottom: 1px solid var(--border); background: var(--surface); scrollbar-width: none; }
+  .persona-row::-webkit-scrollbar { display: none; }
+  .persona { flex: 0 0 auto; font-size: 12px; font-weight: 600; padding: 7px 12px;
+    border-radius: 9999px; border: 1px solid var(--border); background: var(--surface2);
+    color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .persona.active { background: var(--accent-deep); color: var(--accent); border-color: #3d2a7a; }
+  .persona-hint { font-size: 11.5px; color: var(--muted); padding: 8px 14px 0; }
+
+  /* 7. hub landing */
+  .hub { padding: 16px; }
+  .hub h3 { font-size: 12px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.06em; margin: 16px 0 8px; }
+  .hub h3:first-child { margin-top: 4px; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 12px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .card .dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--accent);
+    display: inline-block; margin-right: 7px; }
+
+  /* 8. two-level tabs */
+  .l1 { display: flex; gap: 4px; padding: 10px 12px 0; background: var(--surface);
+    border-bottom: 1px solid var(--border); }
+  .l1 button { font-size: 13px; font-weight: 600; color: var(--muted); background: none;
+    border: none; padding: 8px 12px 12px; cursor: pointer; position: relative; }
+  .l1 button.active { color: var(--text); }
+  .l1 button.active::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0;
+    height: 2px; background: var(--accent); border-radius: 2px; }
+  .l2 { display: flex; gap: 16px; padding: 10px 16px; overflow-x: auto;
+    border-bottom: 1px solid var(--border); background: var(--surface2); scrollbar-width: none; }
+  .l2::-webkit-scrollbar { display: none; }
+  .l2 a { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .l2 a.active { color: var(--text); }
+
+  /* 9. feature activation */
+  .feat { padding: 14px 16px; }
+  .feat .row { display: flex; align-items: center; gap: 10px; padding: 11px 0;
+    border-bottom: 1px solid var(--border); }
+  .feat .row:last-child { border-bottom: none; }
+  .feat .row .name { font-size: 13.5px; }
+  .feat .row .name small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .toggle { margin-left: auto; width: 38px; height: 22px; border-radius: 9999px;
+    background: var(--surface); border: 1px solid var(--border); position: relative; cursor: pointer; flex: 0 0 auto; }
+  .toggle .knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 9999px; background: var(--muted); transition: all .15s; }
+  .toggle.on { background: var(--accent-deep); border-color: #3d2a7a; }
+  .toggle.on .knob { left: 18px; background: var(--accent); }
+
+  .footnote { font-size: 11.5px; color: var(--muted); padding: 18px 16px 0; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-head">
+    <h1>GigSync navigation concepts</h1>
+    <p>Tap an approach to preview it. Each uses the real GigSync sections. Sized for your phone.</p>
+  </div>
+
+  <div class="picker" id="picker"></div>
+  <div class="caption" id="caption"></div>
+  <div class="frame-label">Phone preview</div>
+  <div class="phone" id="phone" style="position:relative;"></div>
+  <div class="footnote" id="footnote"></div>
+</div>
+
+<script>
+const GROUPS = [
+  { key:'shows',    label:'Shows',    items:['Shows','Schedule','Calendars','Booking','Venues'] },
+  { key:'audience', label:'Audience', items:['Fans','Requests','Analytics'] },
+  { key:'music',    label:'Music',    items:['Songs','Setlists','Perform','Media'] },
+  { key:'social',   label:'Social',   items:['Drafts','Templates'] },
+  { key:'money',    label:'Money',    items:['Earnings','Royalties','Billing','Invoices'] },
+  { key:'system',   label:'More',     items:['Archive','Settings'] },
+];
+const FLAT = GROUPS.flatMap(g => g.items);
+
+const PERSONAS = {
+  'Performer': ['Shows','Schedule','Songs','Setlists','Perform','Requests'],
+  'Booker':    ['Shows','Schedule','Calendars','Booking','Venues','Earnings'],
+  'Promoter':  ['Fans','Analytics','Drafts','Templates','Requests'],
+  'Everything': FLAT,
+};
+
+function pageStub(name, extra='') {
+  return `<div class="content">
+    <div class="h">${name}</div>
+    <p class="sub">This is where the ${name} page content would render.</p>
+    ${extra}
+    <span class="pill">mockup, not wired up</span>
+  </div>`;
+}
+
+const APPROACHES = [
+  {
+    id:'current', tab:'Current',
+    title:'Current: one flat bar',
+    trade:'<b>Today.</b> All 20 links sit as peers and wrap onto several rows. Fast to click but visually overwhelming, and nothing signals what is for whom.',
+    render: renderFlat,
+    foot:'This is the baseline the others are trying to beat.'
+  },
+  {
+    id:'dropdowns', tab:'Grouped menus',
+    title:'Grouped dropdown menus',
+    trade:'20 links collapse into 6 category buttons. <b>Smallest change</b> to the current top bar. Tradeoff: one extra tap to reach any page, and a couple of pages straddle two groups.',
+    render: renderDropdowns,
+    foot:'Tap a category to open its menu.'
+  },
+  {
+    id:'sidebar', tab:'Sidebar',
+    title:'Left sidebar, grouped + collapsible',
+    trade:'Vertical space holds 20 items easily, grouped under headers you can collapse. <b>The dominant SaaS pattern</b> (Stripe, Linear). Tradeoff: biggest layout change and it eats some content width.',
+    render: renderSidebar,
+    foot:'Tap a group header to collapse or expand it.'
+  },
+  {
+    id:'palette', tab:'Cmd-K',
+    title:'Command palette (search to jump)',
+    trade:'Keep nav minimal, add fuzzy "jump to anything." <b>Scales infinitely</b> and power users love it. Tradeoff: it complements a visible nav rather than replacing it, since new users do not know what exists.',
+    render: renderPalette,
+    foot:'Tap the search box and type to filter.'
+  },
+  {
+    id:'more', tab:'Primary + More',
+    title:'A few primary links, rest under More',
+    trade:'Show the 5 most-used inline, hide the long tail behind one "More" menu. <b>Tiny code change.</b> Tradeoff: the More bucket becomes a junk drawer, and "which 5 are primary" varies by user.',
+    render: renderMore,
+    foot:'Tap More to reveal the rest.'
+  },
+  {
+    id:'persona', tab:'Personas',
+    title:'Persona presets',
+    trade:'Pick a role once and the nav shows a curated set. <b>Sensible bundles, not 20 toggles.</b> Tradeoff: needs good defaults and an easy "show everything" escape hatch.',
+    render: renderPersona,
+    foot:'Tap a persona to swap the preset.'
+  },
+  {
+    id:'hub', tab:'Hub page',
+    title:'Hub landing page',
+    trade:'Nav shrinks to a handful, the home page becomes a launcher grid grouped by category. <b>Best for discovery and onboarding.</b> Tradeoff: adds a hop to reach frequent destinations.',
+    render: renderHub,
+    foot:'This is the home screen, not the top bar.'
+  },
+  {
+    id:'tabs', tab:'Two-level tabs',
+    title:'Two-level tabs',
+    trade:'Top bar holds ~5 primary destinations, each with its own sub-tabs. <b>Clean hierarchy.</b> Tradeoff: every page must commit to exactly one parent, and some straddle two.',
+    render: renderTabs,
+    foot:'Tap a top tab, then a sub-tab.'
+  },
+  {
+    id:'activation', tab:'Feature switches',
+    title:'Feature activation (app directory)',
+    trade:'Users turn features on, like Shopify apps or Slack. New sections start off until enabled. <b>Cleanest fit with the feature-flag direction.</b> Tradeoff: the most build work.',
+    render: renderActivation,
+    foot:'Toggle features on or off. Off means hidden from nav.'
+  },
+];
+
+let current = 'current';
+
+// ---------- renderers ----------
+function renderFlat() {
+  const links = FLAT.map((l,i) =>
+    `<a class="${i===0?'active':''}">${l}${l==='Shows'?'<span class="badge">3</span>':''}</a>`).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span></div>
+    <div class="flatbar">${links}</div>${pageStub('Shows')}`;
+}
+
+function renderDropdowns() {
+  const dds = GROUPS.map(g => {
+    const links = g.items.map(i => `<a>${i}</a>`).join('');
+    return `<div class="dd" data-dd>
+      <button data-ddbtn>${g.label} &#9662;</button>
+      <div class="dd-menu">${links}</div>
+    </div>`;
+  }).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span></div>
+    <div class="ddbar">${dds}</div>${pageStub('Shows')}`;
+}
+
+function renderSidebar() {
+  const grps = GROUPS.map((g,gi) => {
+    const items = g.items.map((it,ii) =>
+      `<a class="${gi===0&&ii===0?'active':''}">${it}</a>`).join('');
+    return `<div class="side-grp" data-sgrp>
+      <div class="gh" data-sgh>${g.label}<span class="caret">&#9662;</span></div>
+      <div class="items">${items}</div>
+    </div>`;
+  }).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span>
+      <div class="hamb"><span></span><span></span><span></span></div></div>
+    <div class="side-wrap">
+      <div class="side">${grps}</div>
+      <div class="side-content">
+        <div class="h">Shows</div>
+        <p class="sub">Sidebar keeps every section one scroll away, grouped.</p>
+        <span class="pill">mockup</span>
+      </div>
+    </div>`;
+}
+
+function renderPalette() {
+  const rows = FLAT.map(l => {
+    const grp = GROUPS.find(g => g.items.includes(l)).label;
+    return `<a data-pal-item data-name="${l.toLowerCase()}">${l}<span class="grp">${grp}</span></a>`;
+  }).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span>
+      <div class="hamb"><span></span><span></span><span></span></div></div>
+    <div class="cmd-trigger" data-pal-open>
+      <span>Search or jump to...</span><span class="kbd">Cmd K</span>
+    </div>
+    ${pageStub('Shows')}
+    <div class="palette" data-pal>
+      <div class="palette-box">
+        <input type="text" placeholder="Type a page name..." data-pal-input autocomplete="off" />
+        <div class="palette-list" data-pal-list>${rows}</div>
+      </div>
+    </div>`;
+}
+
+function renderMore() {
+  const primary = ['Shows','Schedule','Earnings','Songs','Requests'];
+  const rest = FLAT.filter(l => !primary.includes(l));
+  const prim = primary.map((l,i) =>
+    `<a class="${i===0?'active':''}">${l}</a>`).join('');
+  const restLinks = rest.map(l => `<a>${l}</a>`).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span></div>
+    <div class="primbar">${prim}
+      <div class="more" data-more>
+        <button data-morebtn>More &#9662;</button>
+        <div class="more-menu">${restLinks}</div>
+      </div>
+    </div>${pageStub('Shows')}`;
+}
+
+function renderPersona() {
+  const tabs = Object.keys(PERSONAS).map((p,i) =>
+    `<div class="persona ${i===0?'active':''}" data-persona="${p}">${p}</div>`).join('');
+  const first = Object.keys(PERSONAS)[0];
+  return `<div class="topbar"><span class="brand">GigSync</span></div>
+    <div class="persona-row">${tabs}</div>
+    <div class="persona-hint">Showing the <b>${first}</b> preset</div>
+    <div class="flatbar" data-persona-links>${PERSONAS[first].map((l,i)=>`<a class="${i===0?'active':''}">${l}</a>`).join('')}</div>
+    ${pageStub('Shows')}`;
+}
+
+function renderHub() {
+  const sections = GROUPS.map(g => {
+    const cards = g.items.map(it =>
+      `<div class="card"><span class="dot"></span>${it}</div>`).join('');
+    return `<h3>${g.label}</h3><div class="cards">${cards}</div>`;
+  }).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span>
+      <div class="hamb"><span></span><span></span><span></span></div></div>
+    <div class="hub">${sections}</div>`;
+}
+
+function renderTabs() {
+  const top = GROUPS.map((g,i) =>
+    `<button data-l1="${i}" class="${i===0?'active':''}">${g.label}</button>`).join('');
+  const sub = GROUPS[0].items.map((it,i) =>
+    `<a class="${i===0?'active':''}">${it}</a>`).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span></div>
+    <div class="l1">${top}</div>
+    <div class="l2" data-l2>${sub}</div>
+    ${pageStub(GROUPS[0].items[0])}`;
+}
+
+function renderActivation() {
+  const rows = GROUPS.flatMap(g => g.items).map((it,i) => {
+    const on = i < 8;
+    return `<div class="row">
+      <div class="name">${it}<small>${GROUPS.find(g=>g.items.includes(it)).label}</small></div>
+      <div class="toggle ${on?'on':''}" data-toggle><div class="knob"></div></div>
+    </div>`;
+  }).join('');
+  return `<div class="topbar"><span class="brand">GigSync</span>
+      <div class="hamb"><span></span><span></span><span></span></div></div>
+    <div class="feat">
+      <div class="h" style="font-size:14px;margin:0 0 4px;">Your features</div>
+      <p class="sub" style="margin:0 0 8px;">Turn on what you use. Off features stay out of your nav.</p>
+      ${rows}
+    </div>`;
+}
+
+// ---------- wiring ----------
+const picker = document.getElementById('picker');
+const caption = document.getElementById('caption');
+const phone = document.getElementById('phone');
+const footnote = document.getElementById('footnote');
+
+APPROACHES.forEach(a => {
+  const b = document.createElement('div');
+  b.className = 'pick' + (a.id===current?' active':'');
+  b.textContent = a.tab;
+  b.onclick = () => select(a.id);
+  picker.appendChild(b);
+});
+
+function select(id) {
+  current = id;
+  const a = APPROACHES.find(x => x.id===id);
+  [...picker.children].forEach((c,i) => c.classList.toggle('active', APPROACHES[i].id===id));
+  caption.innerHTML = `<h2>${a.title}</h2><p class="trade">${a.trade}</p>`;
+  phone.innerHTML = a.render();
+  footnote.textContent = a.foot;
+  bind();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function bind() {
+  // dropdowns
+  phone.querySelectorAll('[data-ddbtn]').forEach(btn => {
+    btn.onclick = e => {
+      const dd = btn.closest('[data-dd]');
+      const wasOpen = dd.classList.contains('open');
+      phone.querySelectorAll('[data-dd]').forEach(d => d.classList.remove('open'));
+      if (!wasOpen) dd.classList.add('open');
+      e.stopPropagation();
+    };
+  });
+  // sidebar collapse
+  phone.querySelectorAll('[data-sgh]').forEach(gh => {
+    gh.onclick = () => gh.closest('[data-sgrp]').classList.toggle('collapsed');
+  });
+  // palette
+  const palOpen = phone.querySelector('[data-pal-open]');
+  const pal = phone.querySelector('[data-pal]');
+  if (palOpen && pal) {
+    palOpen.onclick = () => { pal.classList.add('open'); const i = pal.querySelector('input'); if (i) i.focus(); };
+    pal.onclick = e => { if (e.target === pal) pal.classList.remove('open'); };
+    const input = pal.querySelector('[data-pal-input]');
+    input.oninput = () => {
+      const q = input.value.toLowerCase();
+      pal.querySelectorAll('[data-pal-item]').forEach(it => {
+        it.style.display = it.dataset.name.includes(q) ? 'flex' : 'none';
+      });
+    };
+  }
+  // more
+  const moreBtn = phone.querySelector('[data-morebtn]');
+  if (moreBtn) moreBtn.onclick = e => { moreBtn.closest('[data-more]').classList.toggle('open'); e.stopPropagation(); };
+  // persona
+  phone.querySelectorAll('[data-persona]').forEach(p => {
+    p.onclick = () => {
+      phone.querySelectorAll('[data-persona]').forEach(x => x.classList.remove('active'));
+      p.classList.add('active');
+      const name = p.dataset.persona;
+      const links = PERSONAS[name].map((l,i)=>`<a class="${i===0?'active':''}">${l}</a>`).join('');
+      phone.querySelector('[data-persona-links]').innerHTML = links;
+      phone.querySelector('.persona-hint').innerHTML = `Showing the <b>${name}</b> preset`;
+    };
+  });
+  // two-level tabs
+  phone.querySelectorAll('[data-l1]').forEach(btn => {
+    btn.onclick = () => {
+      phone.querySelectorAll('[data-l1]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const g = GROUPS[+btn.dataset.l1];
+      phone.querySelector('[data-l2]').innerHTML =
+        g.items.map((it,i)=>`<a class="${i===0?'active':''}">${it}</a>`).join('');
+    };
+  });
+  // activation toggles
+  phone.querySelectorAll('[data-toggle]').forEach(t => {
+    t.onclick = () => t.classList.toggle('on');
+  });
+}
+
+// close menus on outside tap
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-dd]')) phone.querySelectorAll('[data-dd]').forEach(d => d.classList.remove('open'));
+  if (!e.target.closest('[data-more]')) phone.querySelectorAll('[data-more]').forEach(d => d.classList.remove('open'));
+});
+
+select('current');
+</script>
+</body>
+</html>

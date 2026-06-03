@@ -1,0 +1,914 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dead Eye  |  Bob Davis</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+#fb-overlay {
+  display:none; position:absolute; inset:0;
+  background:rgba(0,0,0,0.88); z-index:10;
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  font-family:Georgia,serif; color:#FFE066;
+}
+#fb-overlay.open { display:flex; }
+#fb-overlay h2 { font-size:20px; margin-bottom:4px; }
+#fb-stars { display:flex; gap:8px; font-size:28px; cursor:pointer; }
+#fb-stars span { opacity:0.35; transition:opacity 0.15s; }
+#fb-stars span.on { opacity:1; }
+#fb-text { width:280px; height:70px; background:#1a0d35; border:1px solid #C8A04A;
+           color:#FFE066; font-size:14px; padding:8px; resize:none; border-radius:6px; }
+#fb-submit { background:#C8A04A; color:#000; border:none; padding:10px 32px;
+             font-size:15px; font-family:Georgia,serif; border-radius:6px; cursor:pointer; }
+#fb-close { position:absolute; top:12px; right:16px; font-size:22px; cursor:pointer;
+            color:#888; background:none; border:none; }
+#fb-select { background:#1a0d35; border:1px solid #C8A04A; color:#FFE066;
+             padding:6px 10px; font-size:13px; border-radius:6px; width:280px; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-overlay">
+    <button id="fb-close">&#x2715;</button>
+    <h2>How'd we do?</h2>
+    <div id="fb-stars">
+      <span data-s="1">&#9733;</span><span data-s="2">&#9733;</span>
+      <span data-s="3">&#9733;</span><span data-s="4">&#9733;</span><span data-s="5">&#9733;</span>
+    </div>
+    <select id="fb-select">
+      <option value="Dead Eye">Dead Eye (this game)</option>
+      <option value="general">General / next game</option>
+      <option value="Canyon Run">Upcoming: Canyon Run (Game 57)</option>
+      <option value="Saddlebag">Upcoming: Saddlebag (Game 58)</option>
+    </select>
+    <textarea id="fb-text" placeholder="Any thoughts? (optional)"></textarea>
+    <button id="fb-submit">Send Feedback</button>
+  </div>
+</div>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// === Canvas setup ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+const W = 360, H = 640;
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  wrap.style.width = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// === Audio ===
+let ac;
+function getAC() {
+  if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (ac.state === 'suspended') ac.resume();
+  return ac;
+}
+
+function playGunshot() {
+  const a = getAC();
+  const len = Math.floor(a.sampleRate * 0.2);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 0.35);
+  const src = a.createBufferSource(); src.buffer = buf;
+  const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  const g = a.createGain();
+  g.gain.setValueAtTime(1.0, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.18);
+  src.connect(lp).connect(g).connect(a.destination);
+  src.start();
+}
+
+function playHit(isRider) {
+  const a = getAC();
+  const osc = a.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(isRider ? 500 : 1400, a.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(isRider ? 150 : 350, a.currentTime + 0.1);
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.25, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.12);
+  osc.connect(g).connect(a.destination);
+  osc.start(); osc.stop(a.currentTime + 0.12);
+}
+
+function playMiss() {
+  const a = getAC();
+  const osc = a.createOscillator();
+  osc.type = 'sine'; osc.frequency.value = 160;
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.08, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.06);
+  osc.connect(g).connect(a.destination);
+  osc.start(); osc.stop(a.currentTime + 0.06);
+}
+
+function playEmpty() {
+  const a = getAC();
+  const osc = a.createOscillator();
+  osc.type = 'sine'; osc.frequency.value = 220;
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.05, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.04);
+  osc.connect(g).connect(a.destination);
+  osc.start(); osc.stop(a.currentTime + 0.04);
+}
+
+let windBuf = null, windSrc = null, windGain = null;
+function updateWindAudio(level) {
+  try {
+    const a = getAC();
+    if (!windBuf) {
+      const len = a.sampleRate * 3;
+      windBuf = a.createBuffer(1, len, a.sampleRate);
+      const d = windBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (!windSrc) {
+      windSrc = a.createBufferSource(); windSrc.buffer = windBuf; windSrc.loop = true;
+      const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 400; bp.Q.value = 2.5;
+      windGain = a.createGain(); windGain.gain.value = 0;
+      windSrc.connect(bp).connect(windGain).connect(a.destination);
+      windSrc.start();
+    }
+    windGain.gain.setTargetAtTime(level * 0.06, a.currentTime, 0.4);
+  } catch (e) {}
+}
+
+let droneOscs = null;
+function startDrone() {
+  if (droneOscs) return;
+  try {
+    const a = getAC();
+    const freqs = [110, 146.83, 165, 220];
+    droneOscs = freqs.map(f => {
+      const osc = a.createOscillator(); osc.type = 'sine'; osc.frequency.value = f;
+      const g = a.createGain(); g.gain.value = 0.012;
+      osc.connect(g).connect(a.destination); osc.start();
+      return { osc, g };
+    });
+  } catch (e) {}
+}
+
+function stopDrone() {
+  if (!droneOscs) return;
+  try {
+    const a = getAC();
+    droneOscs.forEach(({ osc, g }) => {
+      g.gain.setTargetAtTime(0, a.currentTime, 0.3);
+      osc.stop(a.currentTime + 1);
+    });
+  } catch (e) {}
+  droneOscs = null;
+}
+
+// === Round configs ===
+const ROUNDS = [
+  { windAmp: 45,  targetCount: 5, riderChance: 0.00, posterSpeed: 32, riderSpeed: 80  },
+  { windAmp: 65,  targetCount: 5, riderChance: 0.15, posterSpeed: 38, riderSpeed: 88  },
+  { windAmp: 85,  targetCount: 6, riderChance: 0.25, posterSpeed: 44, riderSpeed: 96  },
+  { windAmp: 105, targetCount: 7, riderChance: 0.35, posterSpeed: 50, riderSpeed: 106 },
+  { windAmp: 130, targetCount: 8, riderChance: 0.45, posterSpeed: 56, riderSpeed: 116 },
+];
+
+// === Constants ===
+const AMMO_MAX    = 6;
+const WIN_SCORE   = 1200;
+const FENCE_Y     = 425;
+const POST_XS     = [28, 88, 148, 208, 268, 328];
+const TARGET_VAL  = { can: 100, poster: 200, rider: 350 };
+const TARGET_LIFE = { can: 4.5, poster: 5.2, rider: 3.8 };
+const TARGET_RAD  = { can: 18, poster: 26, rider: 28 };
+const SPRING      = 6;   // crosshair follow speed (units: 1/s)
+const WIND_PERIODS = [3.2, 2.8, 3.8, 2.5, 4.2]; // wind oscillation period per round
+
+// === State ===
+let state = 'title'; // 'title' | 'playing' | 'round_result' | 'result'
+let round = 0;
+let totalScore = 0;
+let roundScore = 0;
+let ammo = AMMO_MAX;
+let crossX = W / 2, crossY = H * 0.4;
+let aimX = W / 2, aimY = H * 0.4;
+let pointerHeld = false;
+let windX = 0, windPhase = 0;
+let targets = [];
+let popups = [];
+let shots = [];
+let muzzleFlash = 0;
+let spawnedCount = 0, spawnTimer = 0;
+let roundEndTimer = -1;
+let resultTimer = 0;
+let best = parseInt(localStorage.getItem('dead_eye_best') || '0');
+
+// === Game logic ===
+function startGame() {
+  round = 0;
+  totalScore = 0;
+  stopDrone();
+  startRound();
+}
+
+function startRound() {
+  roundScore = 0;
+  ammo = AMMO_MAX;
+  targets = [];
+  popups = [];
+  shots = [];
+  spawnedCount = 0;
+  spawnTimer = 1.2;
+  roundEndTimer = -1;
+  resultTimer = 0;
+  crossX = W / 2; crossY = H * 0.38;
+  aimX = W / 2;   aimY = H * 0.38;
+  windPhase = Math.random() * Math.PI * 2;
+  state = 'playing';
+  startDrone();
+}
+
+function endRound() {
+  totalScore += roundScore;
+  state = 'round_result';
+  resultTimer = 0;
+  stopDrone();
+  if (windGain) try { windGain.gain.setTargetAtTime(0, getAC().currentTime, 0.3); } catch (e) {}
+}
+
+function nextRound() {
+  round++;
+  if (round >= 5) {
+    if (totalScore > best) {
+      best = totalScore;
+      localStorage.setItem('dead_eye_best', best);
+    }
+    state = 'result';
+  } else {
+    startRound();
+  }
+}
+
+function spawnTarget() {
+  const cfg = ROUNDS[round];
+  const r = Math.random();
+  let type, x, y, vx;
+
+  if (r < cfg.riderChance) {
+    type = 'rider';
+    const left = Math.random() < 0.5;
+    x = left ? -72 : W + 72; y = FENCE_Y - 42;
+    vx = left ? cfg.riderSpeed : -cfg.riderSpeed;
+  } else if (r < cfg.riderChance + 0.36) {
+    type = 'poster';
+    const left = Math.random() < 0.5;
+    x = left ? -55 : W + 55; y = 270 + Math.random() * 80;
+    vx = left ? cfg.posterSpeed : -cfg.posterSpeed;
+  } else {
+    type = 'can';
+    // Pick a random post that doesn't already have a can
+    const occupied = new Set(
+      targets.filter(t => t.type === 'can' && t.alive).map(t => t.postIdx)
+    );
+    const free = POST_XS.map((_, i) => i).filter(i => !occupied.has(i));
+    const postIdx = free.length ? free[Math.floor(Math.random() * free.length)]
+                                : Math.floor(Math.random() * POST_XS.length);
+    x = POST_XS[postIdx]; y = FENCE_Y - 24; vx = 0;
+    targets.push({ type, x, y, vx, alive: true, age: 0, hit: false, hitTimer: 0,
+                   maxLife: TARGET_LIFE.can, fromLeft: false, postIdx });
+    return;
+  }
+
+  targets.push({ type, x, y, vx, alive: true, age: 0, hit: false, hitTimer: 0,
+                 maxLife: TARGET_LIFE[type], fromLeft: vx > 0 });
+}
+
+function fire(fx, fy) {
+  if (state !== 'playing') return;
+  if (ammo <= 0) { playEmpty(); return; }
+  playGunshot();
+  muzzleFlash = 0.14;
+  ammo--;
+  shots.push({ x: fx, y: fy, age: 0, maxAge: 0.28 });
+
+  let hitTarget = null, hitDist = Infinity;
+  targets.forEach(t => {
+    if (!t.alive || t.hit) return;
+    const d = Math.hypot(fx - t.x, fy - t.y);
+    if (d < TARGET_RAD[t.type] && d < hitDist) { hitDist = d; hitTarget = t; }
+  });
+
+  if (hitTarget) {
+    hitTarget.alive = false; hitTarget.hit = true; hitTarget.hitTimer = 0.4;
+    playHit(hitTarget.type === 'rider');
+    const ratio = 1 - hitDist / TARGET_RAD[hitTarget.type];
+    const bonus = Math.round(ratio * TARGET_VAL[hitTarget.type] * 0.5);
+    const earned = TARGET_VAL[hitTarget.type] + bonus;
+    roundScore += earned;
+    popups.push({ x: hitTarget.x, y: hitTarget.y - 24, text: '+$' + earned, color: '#FFE066', age: 0 });
+  } else {
+    playMiss();
+    popups.push({ x: fx, y: fy - 14, text: 'MISS', color: '#E74C3C', age: 0 });
+  }
+
+  if (ammo <= 0) roundEndTimer = 1.2;
+}
+
+function update(dt) {
+  if (state !== 'playing') return;
+  const cfg = ROUNDS[round];
+  const period = WIND_PERIODS[round];
+
+  windPhase += (dt / period) * Math.PI * 2;
+  windX = cfg.windAmp * Math.sin(windPhase);
+
+  updateWindAudio(Math.abs(windX) / cfg.windAmp);
+
+  // Spring-follow with wind push
+  crossX += (aimX - crossX) * SPRING * dt + windX * dt;
+  crossY += (aimY - crossY) * SPRING * dt;
+  crossX = Math.max(24, Math.min(W - 24, crossX));
+  crossY = Math.max(80, Math.min(H - 110, crossY));
+
+  // Spawn
+  if (spawnedCount < cfg.targetCount) {
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnTarget(); spawnedCount++;
+      const interval = Math.max(1.4, 3.0 - round * 0.25) + (Math.random() - 0.5) * 0.7;
+      spawnTimer = interval;
+    }
+  }
+
+  // Update targets
+  targets.forEach(t => {
+    if (t.hit) { t.hitTimer -= dt; return; }
+    if (!t.alive) return;
+    t.age += dt;
+    t.x += t.vx * dt;
+    if (t.age > t.maxLife) t.alive = false;
+    if (t.type !== 'can' && (t.x < -90 || t.x > W + 90)) t.alive = false;
+  });
+  targets = targets.filter(t => t.alive || (t.hit && t.hitTimer > 0));
+
+  popups.forEach(p => p.age += dt);
+  popups = popups.filter(p => p.age < 1.0);
+  shots.forEach(s => s.age += dt);
+  shots = shots.filter(s => s.age < s.maxAge);
+  if (muzzleFlash > 0) muzzleFlash -= dt;
+
+  if (roundEndTimer > 0) { roundEndTimer -= dt; if (roundEndTimer <= 0) endRound(); }
+
+  // All targets spawned and cleared with ammo remaining
+  if (spawnedCount >= cfg.targetCount && targets.length === 0 && ammo > 0 && roundEndTimer < 0) {
+    roundEndTimer = 1.0;
+  }
+}
+
+// === Drawing ===
+
+function drawBackground() {
+  ctx.save();
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, 430);
+  sky.addColorStop(0, '#0a0320');
+  sky.addColorStop(0.45, '#1e0c38');
+  sky.addColorStop(0.78, '#602818');
+  sky.addColorStop(1, '#bb5510');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, 430);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,210,0.55)';
+  [[38,28],[75,14],[115,42],[162,18],[215,32],[276,11],[318,47],[58,78],[198,62],[300,37],[135,88],[248,72],[45,52],[160,6],[290,55]].forEach(([sx,sy]) => {
+    ctx.beginPath(); ctx.arc(sx, sy, 0.9 + Math.random() * 0.4, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // Moon
+  ctx.fillStyle = '#ffe8a0';
+  ctx.beginPath(); ctx.arc(306, 58, 20, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1e0c38';
+  ctx.beginPath(); ctx.arc(314, 55, 17, 0, Math.PI * 2); ctx.fill();
+
+  // Distant mesas
+  ctx.fillStyle = '#140628';
+  [[22, 355, 85, 72], [148, 342, 120, 65], [268, 350, 95, 60]].forEach(([mx, my, mw, mh]) => {
+    ctx.beginPath();
+    ctx.moveTo(mx, my); ctx.lineTo(mx + mw * 0.12, my - mh);
+    ctx.lineTo(mx + mw * 0.88, my - mh); ctx.lineTo(mx + mw, my);
+    ctx.closePath(); ctx.fill();
+  });
+
+  // Ground
+  const gnd = ctx.createLinearGradient(0, 430, 0, H);
+  gnd.addColorStop(0, '#5a2c08'); gnd.addColorStop(0.25, '#7a3e10'); gnd.addColorStop(1, '#241200');
+  ctx.fillStyle = gnd;
+  ctx.fillRect(0, 430, W, H - 430);
+
+  // Dust at horizon
+  ctx.fillStyle = 'rgba(200,140,60,0.12)';
+  ctx.fillRect(0, 420, W, 18);
+
+  ctx.restore();
+}
+
+function drawFence() {
+  ctx.save();
+  // Top rail
+  ctx.strokeStyle = '#4a2408'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(0, FENCE_Y); ctx.lineTo(W, FENCE_Y); ctx.stroke();
+  ctx.strokeStyle = '#6a3410'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(0, FENCE_Y - 16); ctx.lineTo(W, FENCE_Y - 16); ctx.stroke();
+  // Posts
+  POST_XS.forEach(px => {
+    ctx.fillStyle = '#3e1e06';
+    ctx.fillRect(px - 5, FENCE_Y - 46, 10, 66);
+    ctx.fillStyle = '#502810';
+    ctx.fillRect(px - 6, FENCE_Y - 50, 12, 8);
+  });
+  ctx.restore();
+}
+
+function drawCan(t) {
+  ctx.save();
+  ctx.translate(t.x, t.y);
+  let alpha = 1;
+  if (t.hit) {
+    const p = 1 - t.hitTimer / 0.4;
+    ctx.translate(p * 28, -p * 55); ctx.rotate(p * Math.PI * 1.8);
+    alpha = Math.max(0, 1 - p * 1.2);
+  }
+  ctx.globalAlpha = alpha;
+  // Can body
+  ctx.fillStyle = '#8eaab2';
+  ctx.fillRect(-9, -22, 18, 22);
+  ctx.fillStyle = '#bbd0d8';
+  ctx.fillRect(-9, -25, 18, 5);
+  // Label stripe
+  ctx.fillStyle = '#d06020';
+  ctx.fillRect(-8, -19, 16, 10);
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.fillRect(-8, -19, 5, 10);
+  ctx.restore();
+}
+
+function drawPoster(t) {
+  ctx.save();
+  ctx.translate(t.x, t.y);
+  let alpha = 1;
+  if (t.hit) {
+    const p = 1 - t.hitTimer / 0.4;
+    const dir = t.fromLeft ? 1 : -1;
+    ctx.translate(dir * p * 25, -p * 45); ctx.rotate(dir * p * 0.7);
+    alpha = Math.max(0, 1 - p * 1.2);
+  }
+  ctx.globalAlpha = alpha;
+  // Slight swing for poster
+  if (!t.hit) ctx.rotate(Math.sin(t.age * 1.8) * 0.05);
+
+  const pw = 50, ph = 64;
+  ctx.fillStyle = '#c8a050'; ctx.fillRect(-pw/2, -ph/2, pw, ph);
+  ctx.strokeStyle = '#7a4a14'; ctx.lineWidth = 2;
+  ctx.strokeRect(-pw/2+2, -ph/2+2, pw-4, ph-4);
+  ctx.fillStyle = '#1a0800'; ctx.font = 'bold 9px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.fillText('WANTED', 0, -ph/2+13);
+  // Silhouette figure
+  ctx.fillStyle = '#2e1504';
+  ctx.beginPath(); ctx.arc(0, -4, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(-7, 6, 14, 16);
+  ctx.fillRect(-12, -14, 24, 5);
+  ctx.fillRect(-8, -20, 16, 7);
+  ctx.restore();
+}
+
+function drawRider(t) {
+  ctx.save();
+  ctx.translate(t.x, t.y);
+  if (!t.fromLeft) ctx.scale(-1, 1);
+  let alpha = 1;
+  if (t.hit) {
+    const p = 1 - t.hitTimer / 0.4;
+    ctx.translate(p * 50, -p * 90); ctx.rotate(p * 0.6);
+    alpha = Math.max(0, 1 - p * 1.2);
+  }
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#160420';
+  // Horse body
+  ctx.beginPath(); ctx.ellipse(0, 8, 34, 17, 0, 0, Math.PI * 2); ctx.fill();
+  // Horse head & neck
+  ctx.beginPath(); ctx.ellipse(36, -2, 13, 9, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(24, -10, 10, 14);
+  // Legs with gallop
+  const gait = t.hit ? 0 : Math.sin(t.age * 9);
+  [[-20, 1], [-8, -1], [8, 1], [20, -1]].forEach(([lx, phase]) => {
+    const swing = gait * phase * 7;
+    ctx.fillRect(lx - 3, 23, 6, 17 + swing);
+  });
+  // Tail
+  ctx.beginPath(); ctx.moveTo(-32, 8);
+  ctx.quadraticCurveTo(-48, 0, -44, -14);
+  ctx.lineWidth = 4; ctx.strokeStyle = '#160420'; ctx.stroke();
+  // Rider body
+  ctx.beginPath(); ctx.ellipse(4, -19, 11, 17, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -38, 8, 0, Math.PI * 2); ctx.fill();
+  // Hat
+  ctx.fillRect(-5, -50, 18, 5); ctx.fillRect(-2, -56, 12, 8);
+  ctx.restore();
+}
+
+function drawCrosshair() {
+  ctx.save();
+  const cx = crossX, cy = crossY;
+  const R = 22, gap = 5, len = 12;
+  ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.8; ctx.globalAlpha = 0.88;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+  // 4 lines
+  [[0,-1],[0,1],[-1,0],[1,0]].forEach(([dx, dy]) => {
+    ctx.beginPath();
+    ctx.moveTo(cx + dx*(R+gap), cy + dy*(R+gap));
+    ctx.lineTo(cx + dx*(R+gap+len), cy + dy*(R+gap+len));
+    ctx.stroke();
+  });
+  ctx.fillStyle = '#FFE066'; ctx.globalAlpha = 0.95;
+  ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+  // Muzzle flash
+  if (muzzleFlash > 0) {
+    ctx.globalAlpha = (muzzleFlash / 0.14) * 0.25;
+    ctx.fillStyle = '#ffe8a0';
+    ctx.beginPath(); ctx.arc(cx, cy, R + 10, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, W, 42);
+
+  // Round score (left)
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 18px Georgia,serif'; ctx.textAlign = 'left';
+  ctx.fillText('$' + roundScore, 10, 27);
+
+  // Round (center top)
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 12px Georgia,serif'; ctx.textAlign = 'center';
+  ctx.fillText('ROUND ' + (round + 1) + ' / 5', W / 2, 16);
+  ctx.fillStyle = '#776040'; ctx.font = '11px sans-serif';
+  ctx.fillText('Total $' + totalScore, W / 2, 30);
+
+  // Goal (right)
+  ctx.fillStyle = totalScore >= WIN_SCORE ? '#FF9F43' : '#886840';
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText('Goal $' + WIN_SCORE, W - 8, 16);
+  ctx.fillStyle = '#556'; ctx.font = '10px sans-serif';
+  ctx.fillText('Ammo: ' + ammo + '/' + AMMO_MAX, W - 8, 30);
+
+  ctx.restore();
+}
+
+function drawWindGauge() {
+  ctx.save();
+  ctx.translate(W / 2, 572);
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.beginPath(); ctx.roundRect(-145, -18, 290, 36, 8); ctx.fill();
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 10px Georgia,serif';
+  ctx.textAlign = 'left'; ctx.fillText('WIND', -138, 4);
+
+  const cfg = ROUNDS[round];
+  const norm = windX / cfg.windAmp; // -1..1
+  const barX = -90, barW = 160;
+
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(barX, -10, barW, 20);
+  ctx.fillStyle = norm >= 0 ? '#F4C842' : '#FF9F43';
+  const fw = Math.abs(norm) * barW / 2;
+  ctx.fillRect(norm >= 0 ? barX + barW/2 : barX + barW/2 - fw, -9, fw, 18);
+
+  // Center line
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(barX + barW/2, -10); ctx.lineTo(barX + barW/2, 10); ctx.stroke();
+
+  // Direction label
+  ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  const strength = Math.abs(norm) < 0.15 ? 'CALM' : Math.abs(norm) < 0.55 ? (norm > 0 ? '→' : '←') : (norm > 0 ? '→→' : '←←');
+  ctx.fillText(strength, barX + barW/2 + norm * barW/2 * 0.7, 4);
+
+  ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText('Aim against the wind', 128, 4);
+
+  ctx.restore();
+}
+
+function drawAmmo() {
+  ctx.save();
+  ctx.translate(W / 2, 610);
+  const sp = 30, sx = -(AMMO_MAX - 1) / 2 * sp;
+  for (let i = 0; i < AMMO_MAX; i++) {
+    const x = sx + i * sp;
+    const used = i >= ammo;
+    ctx.fillStyle = used ? '#2a2a2a' : '#C8A04A';
+    ctx.strokeStyle = used ? '#444' : '#FFE066';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect(x - 5, -13, 10, 21, 3); ctx.fill(); ctx.stroke();
+    if (!used) {
+      ctx.fillStyle = '#FFE066';
+      ctx.beginPath(); ctx.arc(x, -14, 5, Math.PI, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  popups.forEach(p => {
+    const a = 1 - p.age;
+    if (a <= 0) return;
+    ctx.globalAlpha = a; ctx.fillStyle = p.color;
+    ctx.font = 'bold 17px Georgia,serif'; ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y - p.age * 38);
+  });
+  ctx.restore();
+}
+
+function drawShotRings() {
+  ctx.save();
+  shots.forEach(s => {
+    const p = s.age / s.maxAge;
+    ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 2;
+    ctx.globalAlpha = (1 - p) * 0.35;
+    ctx.beginPath(); ctx.arc(s.x, s.y, p * 28, 0, Math.PI * 2); ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function drawTitleScreen() {
+  ctx.save();
+  drawBackground();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 62px Georgia,serif'; ctx.textAlign = 'center';
+  ctx.fillText('DEAD', W / 2, 195);
+  ctx.fillText('EYE', W / 2, 262);
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = '15px Georgia,serif';
+  ctx.fillText('Shooting Gallery', W / 2, 290);
+
+  ctx.fillStyle = '#999'; ctx.font = '13px Georgia,serif';
+  ctx.fillText('Drag to aim  |  tap / click to fire', W / 2, 335);
+  ctx.fillStyle = '#FF9F43'; ctx.font = '13px Georgia,serif';
+  ctx.fillText('Wind pushes your crosshair!', W / 2, 358);
+  ctx.fillStyle = '#888'; ctx.font = '12px Georgia,serif';
+  ctx.fillText('Aim against the wind to compensate.', W / 2, 378);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '12px Georgia,serif';
+  ctx.fillText('Tin can $100  Poster $200  Rider $350', W / 2, 400);
+  ctx.fillText('Score $' + WIN_SCORE + ' over 5 rounds to win.', W / 2, 420);
+
+  if (best > 0) {
+    ctx.fillStyle = '#664'; ctx.font = '12px sans-serif';
+    ctx.fillText('Best: $' + best, W / 2, 442);
+  }
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath(); ctx.roundRect(W/2-80, 458, 160, 50, 10); ctx.fill();
+  ctx.fillStyle = '#000'; ctx.font = 'bold 22px Georgia,serif';
+  ctx.fillText('PLAY', W / 2, 489);
+
+  ctx.restore();
+}
+
+function drawRoundResult() {
+  ctx.save();
+  drawBackground(); drawFence();
+  ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0, 0, W, H);
+
+  const isLast = round >= 4;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 26px Georgia,serif'; ctx.textAlign = 'center';
+  ctx.fillText(isLast ? 'FINAL SCORE' : 'ROUND ' + (round + 1) + ' DONE', W / 2, 175);
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = '18px Georgia,serif';
+  ctx.fillText('Round:  $' + roundScore, W / 2, 222);
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 20px Georgia,serif';
+  ctx.fillText('Total:  $' + totalScore, W / 2, 254);
+
+  if (isLast) {
+    const won = totalScore >= WIN_SCORE;
+    ctx.fillStyle = won ? '#FF9F43' : '#E74C3C';
+    ctx.font = 'bold ' + (won ? '34px' : '26px') + ' Georgia,serif';
+    ctx.fillText(won ? 'DEAD EYE!' : 'Keep practicing...', W / 2, 304);
+    if (best > 0 && totalScore >= best) {
+      ctx.fillStyle = '#FFE066'; ctx.font = 'bold 18px Georgia,serif';
+      ctx.fillText('NEW RECORD!', W / 2, 338);
+    }
+  } else {
+    const remaining = 4 - round, needed = WIN_SCORE - totalScore;
+    ctx.fillStyle = needed <= 0 ? '#FF9F43' : '#888';
+    ctx.font = '14px Georgia,serif';
+    ctx.fillText(needed <= 0 ? 'On track!' : 'Need $' + needed + ' in ' + remaining + ' rounds', W / 2, 296);
+  }
+
+  // Next button
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath(); ctx.roundRect(W/2-90, 420, 180, 48, 10); ctx.fill();
+  ctx.fillStyle = '#000'; ctx.font = 'bold 18px Georgia,serif';
+  ctx.fillText(isLast ? 'PLAY AGAIN' : 'NEXT ROUND', W / 2, 449);
+
+  // Share on last round
+  if (isLast) {
+    ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(W/2-90, 482, 180, 44, 10); ctx.stroke();
+    ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 16px Georgia,serif';
+    ctx.fillText('SHARE', W / 2, 509);
+
+    // Feedback
+    ctx.fillStyle = '#554'; ctx.font = '12px sans-serif';
+    ctx.fillText('Send feedback ↓', W / 2, 548);
+  }
+
+  ctx.restore();
+}
+
+function draw() {
+  try {
+    ctx.clearRect(0, 0, W, H);
+    if (state === 'title') { drawTitleScreen(); return; }
+    if (state === 'round_result' || state === 'result') { drawRoundResult(); return; }
+
+    drawBackground();
+    drawFence();
+    drawShotRings();
+    targets.forEach(t => {
+      try {
+        if (t.type === 'can') drawCan(t);
+        else if (t.type === 'poster') drawPoster(t);
+        else drawRider(t);
+      } catch (e) {}
+    });
+    drawPopups();
+    drawCrosshair();
+
+    // Bottom HUD bar
+    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 555, W, H - 555);
+    drawWindGauge();
+    drawAmmo();
+    drawHUD();
+  } catch (e) {
+    console.error('[dead-eye] draw error:', e);
+  }
+}
+
+// === Input ===
+function canvasXY(e, touch) {
+  const r = canvas.getBoundingClientRect(), s = W / r.width;
+  const src = touch ? e.changedTouches[0] : e;
+  return [(src.clientX - r.left) * s, (src.clientY - r.top) * s];
+}
+
+function handleNav(x, y) {
+  if (state === 'title') {
+    if (y > 442 && y < 522) startGame();
+  } else if (state === 'round_result' || state === 'result') {
+    if (y > 405 && y < 478) {
+      if (round >= 4) { round = 0; startGame(); } else nextRound();
+    } else if (round >= 4 && y > 466 && y < 540) {
+      const won = totalScore >= WIN_SCORE;
+      const msg = won
+        ? `Dead Eye: scored $${totalScore}  |  earned the title! 🤠 bobdavis.com`
+        : `Dead Eye: scored $${totalScore}/$${WIN_SCORE}. Keep shooting! 🎯 bobdavis.com`;
+      if (navigator.share) navigator.share({ text: msg });
+    }
+  }
+}
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); getAC();
+  if (state === 'playing') {
+    const [x, y] = canvasXY(e, true);
+    aimX = x; aimY = y; pointerHeld = true;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (state === 'playing') { const [x, y] = canvasXY(e, true); aimX = x; aimY = y; }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const [x, y] = canvasXY(e, true);
+  if (state === 'playing') { pointerHeld = false; fire(crossX, crossY); }
+  else handleNav(x, y);
+}, { passive: false });
+
+canvas.addEventListener('mousemove', e => {
+  const [x, y] = canvasXY(e, false); aimX = x; aimY = y; pointerHeld = true;
+});
+canvas.addEventListener('click', e => {
+  getAC();
+  const [x, y] = canvasXY(e, false);
+  if (state === 'playing') fire(crossX, crossY); else handleNav(x, y);
+});
+canvas.addEventListener('mouseleave', () => { pointerHeld = false; });
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault(); getAC();
+    if (state === 'playing') fire(crossX, crossY); else handleNav(W/2, 465);
+  }
+});
+
+// === Feedback overlay ===
+const fbOverlay = document.getElementById('fb-overlay');
+let fbRating = 0;
+const stars = document.querySelectorAll('#fb-stars span');
+
+stars.forEach(s => {
+  s.addEventListener('click', () => {
+    fbRating = parseInt(s.dataset.s);
+    stars.forEach((st, i) => st.classList.toggle('on', i < fbRating));
+  });
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  fbOverlay.classList.remove('open');
+});
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const game = document.getElementById('fb-select').value;
+  const msg  = document.getElementById('fb-text').value.trim();
+  if (!fbRating && !msg) return;
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game, rating: fbRating, message: msg })
+  });
+  fbOverlay.classList.remove('open');
+  fbRating = 0; stars.forEach(st => st.classList.remove('on'));
+  document.getElementById('fb-text').value = '';
+});
+
+// Show feedback button on result screen (draw a feedback trigger area)
+// Intercept taps on y > 540 in round_result when isLast
+canvas.addEventListener('click', e => {
+  if ((state === 'round_result' || state === 'result') && round >= 4) {
+    const [, y] = canvasXY(e, false);
+    if (y > 540) fbOverlay.classList.add('open');
+  }
+});
+
+// === Game loop ===
+let lastTime = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+    update(dt);
+    draw();
+  } catch (e) { console.error('[dead-eye] loop error:', e); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(t => { lastTime = t; requestAnimationFrame(loop); });
+
+// === Test API ===
+window.__eye = {
+  get state() { return state; },
+  get round() { return round; }, set round(v) { round = v; },
+  get totalScore() { return totalScore; }, set totalScore(v) { totalScore = v; },
+  get roundScore() { return roundScore; }, set roundScore(v) { roundScore = v; },
+  get ammo() { return ammo; }, set ammo(v) { ammo = v; },
+  get crossX() { return crossX; }, set crossX(v) { crossX = v; },
+  get crossY() { return crossY; }, set crossY(v) { crossY = v; },
+  get aimX() { return aimX; }, set aimX(v) { aimX = v; },
+  get aimY() { return aimY; }, set aimY(v) { aimY = v; },
+  get targets() { return targets; },
+  get windX() { return windX; }, set windX(v) { windX = v; },
+  get windPhase() { return windPhase; }, set windPhase(v) { windPhase = v; },
+  get popups() { return popups; },
+  get spawnedCount() { return spawnedCount; }, set spawnedCount(v) { spawnedCount = v; },
+  get roundEndTimer() { return roundEndTimer; }, set roundEndTimer(v) { roundEndTimer = v; },
+  get muzzleFlash() { return muzzleFlash; },
+  startGame, startRound, endRound, nextRound, fire, spawnTarget, update,
+  ROUNDS, TARGET_RAD, TARGET_VAL, WIN_SCORE, AMMO_MAX, FENCE_Y, POST_XS,
+  getRoundConfig: () => ({ ...ROUNDS[round] }),
+};
+</script>
+</body>
+</html>

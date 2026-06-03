@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Outlaw Auction</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+    #fb-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.88); z-index: 10; justify-content: center;
+      align-items: center; flex-direction: column;
+    }
+    #fb-overlay.active { display: flex; }
+    #fb-overlay select, #fb-overlay button, #fb-overlay textarea {
+      margin-top: 8px; width: 280px; background: #1a0520; color: #FFE066;
+      border: 1px solid #FFE066; font-size: 14px; border-radius: 4px;
+    }
+    #fb-overlay select, #fb-overlay button { padding: 8px; cursor: pointer; }
+    #fb-overlay textarea { padding: 8px; height: 80px; resize: none; }
+    #fb-overlay label { color: #FFE066; font-family: Georgia, serif; font-size: 13px; margin-top: 8px; }
+    #fb-close { background: #2a0f30 !important; margin-top: 16px; }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-X1W0TNHM51');
+  </script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <label>How was Outlaw Auction?</label>
+  <select id="fb-rating">
+    <option value="5">5 stars - loved it</option>
+    <option value="4">4 stars - really good</option>
+    <option value="3">3 stars - it's alright</option>
+    <option value="2">2 stars - needs work</option>
+    <option value="1">1 star - not for me</option>
+  </select>
+  <label>Feedback (optional):</label>
+  <textarea id="fb-text" placeholder="What did you think?"></textarea>
+  <button id="fb-submit">Submit</button>
+  <button id="fb-close">Close</button>
+</div>
+<script>
+'use strict';
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+
+// === CONFIG ===
+const NUM_LOTS         = 6;
+const STARTING_BANKROLL = 3000;
+const COOLDOWN_TIME    = 3.8;   // seconds silence after last bid -> lot closes
+const COOLDOWN_INITIAL = 5.5;   // extra time before first rival bid
+const LOT_ANNOUNCE_DUR = 2.0;
+const LOT_RESULT_DUR   = 3.6;
+
+// Outlaw pool - pick NUM_LOTS each session
+const OUTLAW_DEFS = [
+  { name: 'Snake Pete',     crime: 'Horse Thief',     minBounty: 200,  maxBounty: 650  },
+  { name: 'Two-Gun Ned',    crime: 'Bank Robber',     minBounty: 750,  maxBounty: 1450 },
+  { name: 'Black Rose',     crime: 'Train Bandit',    minBounty: 500,  maxBounty: 1150 },
+  { name: 'Dirty Earl',     crime: 'Cattle Rustler',  minBounty: 300,  maxBounty: 850  },
+  { name: 'Mad Dog Quinn',  crime: 'Wanted Killer',   minBounty: 1100, maxBounty: 2500 },
+  { name: 'Cold Creek Kid', crime: 'Stage Robber',    minBounty: 600,  maxBounty: 1600 },
+  { name: 'Gallows Jack',   crime: 'Escaped Convict', minBounty: 900,  maxBounty: 2100 },
+  { name: 'Red Mesa Bart',  crime: 'Hired Gun',       minBounty: 1500, maxBounty: 3200 },
+];
+
+// Rival definitions
+// speed: base seconds between bid attempts (lower = more eager)
+// accuracy: 0..1, how well bids track true bounty
+// bluffsLow: bids eagerly on low-value outlaws too (unreliable)
+const RIVAL_DEFS = [
+  { name: 'Jake',  label: 'EAGER',    color: '#FF9F43', speed: 1.0, accuracy: 0.70, bluffsLow: false, x: 48,  y: 200 },
+  { name: 'Rosa',  label: 'PATIENT',  color: '#4CAF50', speed: 3.2, accuracy: 0.90, bluffsLow: false, x: 312, y: 200 },
+  { name: 'Hank',  label: 'STEADY',   color: '#C8A04A', speed: 2.0, accuracy: 0.74, bluffsLow: false, x: 48,  y: 355 },
+  { name: 'Mae',   label: 'CAUTIOUS', color: '#87CEEB', speed: 2.8, accuracy: 0.62, bluffsLow: false, x: 312, y: 355 },
+  { name: 'Billy', label: 'BLUFFER',  color: '#E74C3C', speed: 1.3, accuracy: 0.35, bluffsLow: true,  x: 180, y: 430 },
+];
+
+// === CANVAS ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// roundRect polyfill
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
+// === AUDIO ===
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playBidSound(isPlayer) {
+  try {
+    const ac = getAC();
+    const freq = isPlayer ? 660 : 440;
+    const osc = ac.createOscillator();
+    const g   = ac.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.82, ac.currentTime + 0.09);
+    g.gain.setValueAtTime(isPlayer ? 0.20 : 0.10, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.14);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.16);
+  } catch(_) {}
+}
+
+function playGavelSound() {
+  try {
+    const ac  = getAC();
+    const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * 0.20), ac.sampleRate);
+    const d   = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const t = i / ac.sampleRate;
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-t * 25) * 0.9;
+    }
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const g = ac.createGain(); g.gain.value = 0.75;
+    src.connect(g); g.connect(ac.destination);
+    src.start();
+  } catch(_) {}
+}
+
+function playRevealSound(profit) {
+  try {
+    const ac = getAC();
+    const freqs = profit >= 0
+      ? [330, 440, 523.25, 659.25, 880]
+      : [440, 392, 330, 277.18, 220];
+    freqs.forEach((freq, i) => {
+      const osc = ac.createOscillator();
+      const g   = ac.createGain();
+      osc.type  = 'triangle';
+      osc.frequency.value = freq;
+      const t = ac.currentTime + i * 0.10;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(profit >= 0 ? 0.12 : 0.08, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t); osc.stop(t + 0.6);
+    });
+  } catch(_) {}
+}
+
+function playFoldSound() {
+  try {
+    const ac = getAC();
+    const osc = ac.createOscillator();
+    const g   = ac.createGain();
+    osc.type  = 'sawtooth';
+    osc.frequency.setValueAtTime(300, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, ac.currentTime + 0.25);
+    g.gain.setValueAtTime(0.12, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.28);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.30);
+  } catch(_) {}
+}
+
+// === STATE ===
+let gameState    = 'title'; // title | announce | bidding | reveal | gameover
+let lots         = [];
+let currentLot   = 0;
+let bankroll     = STARTING_BANKROLL;
+let lotResults   = [];
+let sessionProfit = 0;
+
+// Per-lot
+let currentPrice  = 0;
+let lastBidder    = null;  // null | 'player' | rival idx (number)
+let rivals        = [];
+let playerDropped = false;
+let cooldown      = COOLDOWN_TIME;
+let announceTimer = 0;
+let resultTimer   = 0;
+let bidPopups     = [];
+let revealedBounty = 0;
+let lotClosed     = false;
+let closeWinner   = null;   // 'player' | rival.name | 'none'
+let revealProfit  = 0;
+let revealAnimT   = 0;      // 0..1 reveal animation progress
+
+// === LOT SETUP ===
+function initLots() {
+  const pool = [...OUTLAW_DEFS].sort(() => Math.random() - 0.5);
+  lots = pool.slice(0, NUM_LOTS).map(def => {
+    const range   = def.maxBounty - def.minBounty;
+    const bounty  = Math.round((def.minBounty + Math.random() * range) / 50) * 50;
+    const start   = Math.round(def.minBounty * 0.22 / 50) * 50 || 50;
+    return { ...def, bounty, startPrice: Math.max(50, start) };
+  });
+}
+
+function initRivalsForLot() {
+  const lot = lots[currentLot];
+  rivals = RIVAL_DEFS.map((def, i) => {
+    // Each rival perceives value with noise inversely proportional to their accuracy
+    const noise     = (1 - def.accuracy) * (Math.random() * 2 - 1);
+    let perceived   = lot.bounty * (1 + noise * 0.65);
+    if (def.bluffsLow && Math.random() < 0.38) {
+      perceived = lot.bounty * (1.3 + Math.random() * 1.0);
+    }
+    const maxWilling = Math.round(Math.max(lot.startPrice * 1.5, perceived * 0.82) / 50) * 50;
+    const excite     = Math.max(0.05, Math.min(0.98,
+      (maxWilling - lot.startPrice) / Math.max(1, lot.bounty - lot.startPrice)
+    ));
+    return {
+      ...def, idx: i,
+      maxWilling,
+      dropped: false,
+      bidTimer: def.speed * (0.8 + Math.random() * 0.6) + 1.2,
+      bidCount: 0,
+      excite,
+      raiseTimer: 0,
+    };
+  });
+}
+
+function startLot() {
+  currentPrice  = lots[currentLot].startPrice;
+  lastBidder    = null;
+  playerDropped = false;
+  cooldown      = COOLDOWN_INITIAL;
+  lotClosed     = false;
+  closeWinner   = null;
+  bidPopups     = [];
+  revealedBounty = 0;
+  revealProfit   = 0;
+  revealAnimT    = 0;
+  initRivalsForLot();
+  gameState     = 'announce';
+  announceTimer = LOT_ANNOUNCE_DUR;
+}
+
+// === BIDDING ===
+function bidIncrement() {
+  if (currentPrice < 400)  return 50;
+  if (currentPrice < 900)  return 100;
+  if (currentPrice < 1800) return 150;
+  return 200;
+}
+
+function addPopup(x, y, text, color) {
+  bidPopups.push({ x, y, text, color: color || '#FFE066', alpha: 1.0, vy: -44 });
+}
+
+function doCloseLot(winner) {
+  if (lotClosed) return;
+  lotClosed   = true;
+  closeWinner = winner;
+  playGavelSound();
+
+  const lot    = lots[currentLot];
+  revealedBounty = lot.bounty;
+  let profit   = 0;
+  const won    = (winner === 'player');
+
+  if (won) {
+    profit       = lot.bounty - currentPrice;
+    bankroll    += profit;
+    sessionProfit += profit;
+  }
+  revealProfit = profit;
+
+  lotResults.push({
+    name:      lot.name,
+    crime:     lot.crime,
+    bounty:    lot.bounty,
+    pricePaid: won ? currentPrice : 0,
+    profit:    won ? profit : 0,
+    won,
+    winner:    won ? 'player' : (typeof winner === 'number' ? rivals[winner].name : winner),
+  });
+
+  playRevealSound(won ? profit : 0);
+  gameState   = 'reveal';
+  resultTimer = LOT_RESULT_DUR;
+}
+
+function playerBid() {
+  if (lotClosed || playerDropped || gameState !== 'bidding') return false;
+  const next = currentPrice + bidIncrement();
+  currentPrice = next;
+  lastBidder   = 'player';
+  cooldown     = COOLDOWN_TIME;
+  // Drop any rivals whose maxWilling is now below price
+  rivals.forEach(r => { if (!r.dropped && r.maxWilling < currentPrice) r.dropped = true; });
+  addPopup(W / 2, 533, '$' + currentPrice, '#FFE066');
+  playBidSound(true);
+  return true;
+}
+
+function playerFold() {
+  if (lotClosed || playerDropped || gameState !== 'bidding') return false;
+  playerDropped = true;
+  playFoldSound();
+  return true;
+}
+
+function tryRivalBid(r, dt) {
+  if (r.dropped || lotClosed || gameState !== 'bidding') return;
+  if (lastBidder === r.idx) return;
+  r.bidTimer -= dt;
+  if (r.bidTimer > 0) return;
+  r.bidTimer = r.speed * (0.55 + Math.random() * 0.9);
+
+  const next = currentPrice + bidIncrement();
+  if (next > r.maxWilling) { r.dropped = true; return; }
+
+  currentPrice = next;
+  lastBidder   = r.idx;
+  cooldown     = COOLDOWN_TIME;
+  r.bidCount++;
+  r.raiseTimer = 0.95;
+  addPopup(r.x, r.y - 32, '$' + currentPrice, r.color);
+  playBidSound(false);
+}
+
+// === UPDATE ===
+function tickUpdate(dt) {
+  if (gameState === 'announce') {
+    announceTimer -= dt;
+    if (announceTimer <= 0) gameState = 'bidding';
+    return;
+  }
+
+  if (gameState === 'reveal') {
+    revealAnimT = Math.min(1, revealAnimT + dt * 1.4);
+    resultTimer -= dt;
+    if (resultTimer <= 0) advanceLot();
+    return;
+  }
+
+  if (gameState !== 'bidding') return;
+
+  // Rival bid attempts
+  rivals.forEach(r => tryRivalBid(r, dt));
+
+  // Cooldown timer - only if there has been at least one bid or player didn't fold (rivals can still bid)
+  cooldown -= dt;
+
+  if (cooldown <= 0) {
+    if (lastBidder === null) {
+      doCloseLot('none');
+    } else if (lastBidder === 'player') {
+      doCloseLot('player');
+    } else {
+      doCloseLot(lastBidder);
+    }
+    return;
+  }
+
+  // Bid popup decay
+  bidPopups.forEach(p => {
+    p.y   += p.vy * dt;
+    p.alpha -= dt * 0.95;
+  });
+  bidPopups = bidPopups.filter(p => p.alpha > 0);
+
+  // Rival raise timer
+  rivals.forEach(r => { if (r.raiseTimer > 0) r.raiseTimer -= dt; });
+}
+
+function advanceLot() {
+  currentLot++;
+  if (currentLot >= NUM_LOTS) {
+    finishGame();
+  } else {
+    startLot();
+  }
+}
+
+function finishGame() {
+  const best = parseInt(localStorage.getItem('outlaw-auction_best') || '0');
+  if (bankroll > best) localStorage.setItem('outlaw-auction_best', String(bankroll));
+  gameState = 'gameover';
+}
+
+function startGame() {
+  gtag('event', 'game_start', { game_name: 'Outlaw Auction' });
+  currentLot    = 0;
+  bankroll      = STARTING_BANKROLL;
+  sessionProfit = 0;
+  lotResults    = [];
+  bidPopups     = [];
+  initLots();
+  startLot();
+}
+
+// === DRAWING ===
+function drawBackground() {
+  ctx.save();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0b0608');
+  grad.addColorStop(0.5, '#1a0d15');
+  grad.addColorStop(1, '#0f0c05');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // Subtle wood grain lines
+  ctx.strokeStyle = 'rgba(90,50,10,0.08)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 12; i++) {
+    const y = 80 + i * 50;
+    ctx.beginPath();
+    ctx.moveTo(0, y + Math.sin(i * 2.1) * 4);
+    ctx.lineTo(W, y + Math.sin(i * 2.1 + 3) * 4);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, 62);
+  // LOT counter
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.textAlign = 'left';
+  ctx.fillText('LOT', 16, 22);
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText((currentLot + 1) + ' / ' + NUM_LOTS, 16, 48);
+  // Bankroll center
+  ctx.textAlign = 'center';
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('BANKROLL', W / 2, 22);
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillStyle = bankroll >= STARTING_BANKROLL ? '#FFE066' : (bankroll > 0 ? '#FF9F43' : '#E74C3C');
+  ctx.fillText('$' + bankroll, W / 2, 48);
+  // Session profit right
+  ctx.textAlign = 'right';
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('PROFIT', W - 16, 22);
+  ctx.font = 'bold 18px Georgia, serif';
+  const profColor = sessionProfit >= 0 ? '#4CAF50' : '#E74C3C';
+  ctx.fillStyle = profColor;
+  ctx.fillText((sessionProfit >= 0 ? '+' : '') + '$' + sessionProfit, W - 16, 46);
+  ctx.restore();
+}
+
+function drawWantedPoster(revealed) {
+  ctx.save();
+  const px = 95, py = 74, pw = 170, ph = 230;
+  const cx = px + pw / 2, cy = py + ph / 2;
+  // Poster shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.roundRect(px + 5, py + 5, pw, ph, 4);
+  ctx.fill();
+  // Poster background (aged paper)
+  const paperGrad = ctx.createLinearGradient(px, py, px + pw, py + ph);
+  paperGrad.addColorStop(0, '#C8A04A');
+  paperGrad.addColorStop(0.3, '#B8903A');
+  paperGrad.addColorStop(1, '#9A7828');
+  ctx.fillStyle = paperGrad;
+  ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 4); ctx.fill();
+  // Aged border
+  ctx.strokeStyle = '#6B4E10';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(px + 6, py + 6, pw - 12, ph - 12, 2); ctx.stroke();
+  ctx.strokeStyle = '#4a3008';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(px + 9, py + 9, pw - 18, ph - 18, 1); ctx.stroke();
+
+  // "WANTED" header
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillStyle = '#1a0d05';
+  ctx.textAlign = 'center';
+  ctx.fillText('WANTED', cx, py + 24);
+  // Divider
+  ctx.fillStyle = '#4a3008';
+  ctx.fillRect(px + 14, py + 29, pw - 28, 2);
+
+  // Outlaw silhouette
+  const lot = lots[currentLot];
+  if (lot) {
+    drawOutlawSilhouette(cx, py + 110);
+    // Name
+    ctx.fillStyle = '#1a0d05';
+    ctx.font = 'bold 13px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(lot.name.toUpperCase(), cx, py + 175);
+    // Crime
+    ctx.font = '10px Georgia, serif';
+    ctx.fillStyle = '#3a2008';
+    ctx.fillText(lot.crime.toUpperCase(), cx, py + 191);
+    // Divider
+    ctx.fillStyle = '#4a3008';
+    ctx.fillRect(px + 14, py + 197, pw - 28, 1);
+    // Bounty section
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillStyle = '#1a0d05';
+    ctx.fillText('BOUNTY', cx, py + 214);
+    if (revealed) {
+      const t = Math.min(1, revealAnimT * 2);
+      ctx.globalAlpha = t;
+      ctx.font = 'bold 22px Georgia, serif';
+      ctx.fillStyle = '#1a0d05';
+      ctx.fillText('$' + revealedBounty, cx, py + 237);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.font = 'bold 20px Georgia, serif';
+      ctx.fillStyle = '#3a2008';
+      ctx.fillText('???', cx, py + 237);
+    }
+  }
+  ctx.restore();
+}
+
+function drawOutlawSilhouette(cx, cy) {
+  ctx.save();
+  ctx.fillStyle = '#1a0d05';
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 46, 24, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1a0d05';
+  // Body
+  ctx.beginPath(); ctx.roundRect(cx - 16, cy - 4, 32, 38, 6); ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.arc(cx, cy - 14, 13, 0, Math.PI * 2); ctx.fill();
+  // Hat brim
+  ctx.beginPath(); ctx.roundRect(cx - 19, cy - 29, 38, 9, 3); ctx.fill();
+  // Hat crown
+  ctx.beginPath(); ctx.roundRect(cx - 12, cy - 48, 24, 21, 4); ctx.fill();
+  // Legs
+  ctx.fillStyle = '#0f0805';
+  ctx.beginPath(); ctx.roundRect(cx - 14, cy + 32, 10, 28, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(cx + 4,  cy + 32, 10, 28, 3); ctx.fill();
+  // Arms
+  ctx.beginPath(); ctx.roundRect(cx - 26, cy - 2, 12, 24, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(cx + 14, cy - 2, 12, 24, 4); ctx.fill();
+  ctx.restore();
+}
+
+function drawRival(r) {
+  ctx.save();
+  const { x, y, name, dropped, label, color, raiseTimer, excite, bidCount } = r;
+  const isLast = (lastBidder === r.idx);
+
+  if (isLast && !dropped) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 18;
+  }
+
+  // Ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  ctx.beginPath(); ctx.ellipse(x, y + 32, 16, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+  const bodyCol = dropped ? '#1e1e1e' : '#1a0520';
+  ctx.fillStyle = bodyCol;
+  ctx.shadowBlur = (isLast && !dropped) ? 18 : 0;
+  ctx.shadowColor = color;
+
+  // Body
+  ctx.beginPath(); ctx.roundRect(x - 11, y + 6, 22, 26, 6); ctx.fill();
+  // Head
+  ctx.beginPath(); ctx.arc(x, y - 2, 11, 0, Math.PI * 2); ctx.fill();
+  // Hat brim
+  ctx.beginPath(); ctx.roundRect(x - 14, y - 15, 28, 8, 2); ctx.fill();
+  // Hat crown
+  ctx.beginPath(); ctx.roundRect(x - 9,  y - 29, 18, 16, 3); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Raised arm when bidding
+  if (raiseTimer > 0 && !dropped) {
+    ctx.strokeStyle = bodyCol;
+    ctx.lineWidth   = 5;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y + 14);
+    ctx.lineTo(x + 24, y - 8);
+    ctx.stroke();
+    ctx.fillStyle = bodyCol;
+    ctx.beginPath(); ctx.arc(x + 25, y - 11, 4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Tell indicator bar
+  const barW = 34, barH = 5;
+  const bx   = x - barW / 2;
+  const by   = y - 42;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 2); ctx.fill();
+  if (!dropped) {
+    const fillColor = excite > 0.65 ? '#FF9F43' : excite > 0.35 ? '#FFE066' : '#87CEEB';
+    ctx.fillStyle   = fillColor;
+    ctx.beginPath(); ctx.roundRect(bx, by, barW * excite, barH, 2); ctx.fill();
+  }
+
+  // Name and status
+  ctx.font      = 'bold 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = dropped ? '#444' : (isLast ? color : '#C8A04A');
+  ctx.fillText(name.toUpperCase(), x, y + 46);
+  if (dropped) {
+    ctx.fillStyle = '#555';
+    ctx.font      = '8px sans-serif';
+    ctx.fillText('OUT', x, y + 56);
+  } else {
+    ctx.fillStyle = '#5a3a10';
+    ctx.font      = '7px sans-serif';
+    ctx.fillText(label, x, y + 56);
+  }
+
+  ctx.restore();
+}
+
+function drawBidPopups() {
+  ctx.save();
+  bidPopups.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.alpha);
+    ctx.font        = 'bold 13px Georgia, serif';
+    ctx.fillStyle   = p.color;
+    ctx.textAlign   = 'center';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur  = 4;
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawCooldownBar() {
+  ctx.save();
+  const bx = 30, by = 524, bw = W - 60, bh = 14, br = 7;
+  const pct = Math.max(0, Math.min(1, cooldown / COOLDOWN_TIME));
+  ctx.font      = '9px sans-serif';
+  ctx.fillStyle = '#5a3a10';
+  ctx.textAlign = 'left';
+  ctx.fillText('HAMMER', bx, by - 4);
+  ctx.textAlign = 'right';
+  const barColor = pct > 0.55 ? '#FFE066' : pct > 0.25 ? '#FF9F43' : '#E74C3C';
+  ctx.fillStyle  = barColor;
+  ctx.fillText(cooldown <= 0 ? 'SOLD' : (cooldown < COOLDOWN_TIME ? Math.ceil(cooldown) + 's' : ''), bx + bw, by - 4);
+  // Track
+  ctx.fillStyle = '#1a0d05';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, br); ctx.fill();
+  // Fill
+  if (pct > 0) {
+    const fg = ctx.createLinearGradient(bx, 0, bx + bw * pct, 0);
+    fg.addColorStop(0, '#8B2200'); fg.addColorStop(0.6, '#FF9F43'); fg.addColorStop(1, '#FFE066');
+    ctx.fillStyle = fg;
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, br); ctx.clip();
+    ctx.fillRect(bx, by, bw * pct, bh);
+    ctx.restore();
+  }
+  ctx.strokeStyle = '#3a2010'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, br); ctx.stroke();
+  ctx.restore();
+}
+
+function drawBidArea() {
+  ctx.save();
+  const lot = lots[currentLot];
+  if (!lot) { ctx.restore(); return; }
+
+  // Current bid price display
+  ctx.textAlign = 'center';
+  ctx.font      = '10px sans-serif';
+  ctx.fillStyle = '#5a3a10';
+  ctx.fillText('CURRENT BID', W / 2, 480);
+  ctx.font      = 'bold 32px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur  = 6;
+  ctx.fillText('$' + currentPrice, W / 2, 518);
+  ctx.shadowBlur  = 0;
+  if (lastBidder !== null) {
+    ctx.font      = '10px sans-serif';
+    ctx.fillStyle = '#C8A04A';
+    const bidName = lastBidder === 'player' ? 'YOU' : rivals[lastBidder].name.toUpperCase();
+    ctx.fillText(bidName + ' BID', W / 2, 536);
+  }
+
+  ctx.restore();
+}
+
+function drawButtons() {
+  ctx.save();
+  const folded   = playerDropped;
+  const inactive = lotClosed || gameState !== 'bidding';
+
+  // BID button
+  const bidActive = !folded && !inactive;
+  const bidBg = bidActive ? '#C8A04A' : '#2a2a2a';
+  ctx.fillStyle = bidBg;
+  ctx.beginPath(); ctx.roundRect(24, 555, 138, 50, 10); ctx.fill();
+  if (bidActive) {
+    ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 8;
+  }
+  ctx.font      = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = bidActive ? '#1a0d05' : '#444';
+  ctx.shadowBlur = 0;
+  ctx.fillText('BID', 93, 577);
+  ctx.font      = '10px sans-serif';
+  ctx.fillStyle = bidActive ? '#3a2008' : '#333';
+  const nextBid = currentPrice + bidIncrement();
+  ctx.fillText(bidActive ? '+$' + nextBid : '--', 93, 594);
+
+  // FOLD button
+  const foldActive = !folded && !inactive;
+  ctx.fillStyle = foldActive ? '#2a0f1a' : '#111';
+  ctx.beginPath(); ctx.roundRect(198, 555, 138, 50, 10); ctx.fill();
+  ctx.strokeStyle = foldActive ? '#8B2200' : '#222';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.font      = 'bold 16px Georgia, serif';
+  ctx.fillStyle = foldActive ? '#E74C3C' : '#333';
+  ctx.textAlign = 'center';
+  ctx.fillText(folded ? 'FOLDED' : 'FOLD', 267, 577);
+  ctx.font      = '10px sans-serif';
+  ctx.fillStyle = foldActive ? '#8B2200' : '#222';
+  ctx.fillText(folded ? 'watching...' : 'step back', 267, 594);
+
+  ctx.restore();
+}
+
+function drawAnnounceBanner() {
+  ctx.save();
+  const lot = lots[currentLot];
+  if (!lot) { ctx.restore(); return; }
+  ctx.fillStyle = 'rgba(0,0,0,0.80)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.font      = '12px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('LOT ' + (currentLot + 1) + ' OF ' + NUM_LOTS, W / 2, 268);
+  ctx.font      = 'bold 42px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = '#FF9F43'; ctx.shadowBlur = 16;
+  ctx.fillText(lot.name.toUpperCase(), W / 2, 318);
+  ctx.shadowBlur = 0;
+  ctx.font      = '13px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText(lot.crime, W / 2, 348);
+  ctx.font      = '11px sans-serif';
+  ctx.fillStyle = '#5a3a10';
+  ctx.fillText('Starting bid: $' + lot.startPrice, W / 2, 378);
+  ctx.restore();
+}
+
+function drawRevealOverlay() {
+  ctx.save();
+  const t = revealAnimT;
+  ctx.fillStyle = 'rgba(0,0,0,' + (0.3 + 0.5 * t) + ')';
+  ctx.fillRect(0, 0, W, H);
+
+  const won = (closeWinner === 'player');
+  const lot = lotResults[lotResults.length - 1];
+  if (!lot) { ctx.restore(); return; }
+
+  ctx.textAlign = 'center';
+
+  // Result label
+  ctx.font      = 'bold 32px Georgia, serif';
+  if (won) {
+    ctx.fillStyle = '#FFE066';
+    ctx.shadowColor = '#FF9F43'; ctx.shadowBlur = 18;
+    ctx.fillText('BOUNTY CLAIMED', W / 2, 240);
+  } else if (closeWinner === 'none') {
+    ctx.fillStyle = '#E74C3C';
+    ctx.shadowColor = '#E74C3C'; ctx.shadowBlur = 14;
+    ctx.fillText('NO SALE', W / 2, 240);
+  } else {
+    ctx.fillStyle = '#C8A04A';
+    ctx.shadowBlur = 0;
+    ctx.fillText('OUTBID', W / 2, 240);
+  }
+  ctx.shadowBlur = 0;
+
+  // Bounty reveal
+  const revT = Math.max(0, Math.min(1, (t - 0.3) / 0.7));
+  ctx.globalAlpha = revT;
+  ctx.font        = 'bold 52px Georgia, serif';
+  ctx.fillStyle   = won ? '#FFE066' : '#888';
+  ctx.fillText('$' + revealedBounty, W / 2, 310);
+  ctx.globalAlpha = 1;
+
+  ctx.font      = '11px sans-serif';
+  ctx.fillStyle = '#5a3a10';
+  ctx.fillText('hidden bounty', W / 2, 332);
+
+  // Profit / loss
+  if (won && revT > 0.5) {
+    const netT = Math.min(1, (revT - 0.5) / 0.5);
+    ctx.globalAlpha = netT;
+    const profit    = lot.profit;
+    ctx.font        = 'bold 26px Georgia, serif';
+    ctx.fillStyle   = profit >= 0 ? '#4CAF50' : '#E74C3C';
+    ctx.fillText((profit >= 0 ? '+' : '') + '$' + profit + ' NET', W / 2, 368);
+    ctx.globalAlpha = 1;
+    ctx.font        = '11px sans-serif';
+    ctx.fillStyle   = '#5a3a10';
+    ctx.fillText('paid $' + lot.pricePaid, W / 2, 386);
+  } else if (!won && closeWinner !== 'none' && revT > 0.5) {
+    ctx.globalAlpha = Math.min(1, (revT - 0.5) / 0.5);
+    ctx.font        = '13px sans-serif';
+    ctx.fillStyle   = '#8B6914';
+    ctx.fillText('won by ' + lot.winner, W / 2, 368);
+    ctx.globalAlpha = 1;
+  }
+
+  // Tell recap: show rivals' maxWilling for learning
+  if (revT > 0.75 && gameState === 'reveal') {
+    const ta = Math.min(1, (revT - 0.75) / 0.25);
+    ctx.globalAlpha = ta * 0.82;
+    ctx.font        = '9px sans-serif';
+    ctx.fillStyle   = '#5a3a10';
+    ctx.fillText('rival limits', W / 2, 414);
+    rivals.forEach((r, i) => {
+      const col = i % 2 === 0 ? 78 : 242;
+      const row = Math.floor(i / 2);
+      const ry  = 428 + row * 14;
+      ctx.font      = '9px sans-serif';
+      ctx.textAlign = i % 2 === 0 ? 'right' : 'left';
+      ctx.fillStyle = r.color;
+      const infoX = i % 2 === 0 ? col + 4 : col - 4;
+      ctx.fillText(r.name + ': $' + r.maxWilling, infoX, ry);
+    });
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBackground();
+  // Stars
+  ctx.fillStyle = 'rgba(255,224,102,0.15)';
+  for (let i = 0; i < 45; i++) {
+    const sx = (i * 139.7) % W;
+    const sy = (i * 83.1) % (H * 0.58);
+    ctx.beginPath(); ctx.arc(sx, sy, 0.8 + (i % 3) * 0.5, 0, Math.PI * 2); ctx.fill();
+  }
+  // Gavel
+  ctx.save();
+  ctx.translate(W / 2, 180);
+  ctx.rotate(-0.35);
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.roundRect(-6, -36, 12, 72, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-13, -50, 26, 22, 5); ctx.fill();
+  ctx.restore();
+  // Title
+  ctx.textAlign   = 'center';
+  ctx.font        = 'bold 44px Georgia, serif';
+  ctx.fillStyle   = '#FFE066';
+  ctx.shadowColor = '#FF9F43';
+  ctx.shadowBlur  = 22;
+  ctx.fillText('OUTLAW', W / 2, 286);
+  ctx.fillText('AUCTION', W / 2, 338);
+  ctx.shadowBlur  = 0;
+  ctx.font        = '13px sans-serif';
+  ctx.fillStyle   = '#C8A04A';
+  ctx.fillText('Read the room. Bid your bounty.', W / 2, 370);
+  ctx.font        = '11px sans-serif';
+  ctx.fillStyle   = '#5a3a10';
+  ctx.fillText('Hidden values. Rival tells. No second chances.', W / 2, 392);
+  const best = parseInt(localStorage.getItem('outlaw-auction_best') || '0');
+  if (best > 0) {
+    ctx.font = '12px sans-serif'; ctx.fillStyle = '#8B6914';
+    ctx.fillText('Best bankroll: $' + best, W / 2, 416);
+  }
+  const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 430);
+  ctx.globalAlpha = pulse;
+  ctx.font        = 'bold 16px Georgia, serif';
+  ctx.fillStyle   = '#FFE066';
+  ctx.fillText('TAP TO START', W / 2, 466);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  drawBackground();
+  ctx.textAlign = 'center';
+  ctx.font      = 'bold 30px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = '#FF9F43'; ctx.shadowBlur = 16;
+  ctx.fillText('AUCTION CLOSED', W / 2, 92);
+  ctx.shadowBlur = 0;
+
+  ctx.font      = 'bold 52px Georgia, serif';
+  ctx.fillStyle = bankroll >= STARTING_BANKROLL ? '#FFE066' : (bankroll > 0 ? '#FF9F43' : '#E74C3C');
+  ctx.fillText('$' + bankroll, W / 2, 162);
+  ctx.font      = '12px sans-serif';
+  ctx.fillStyle = '#5a3a10';
+  ctx.fillText('final bankroll', W / 2, 182);
+
+  const netProfit = bankroll - STARTING_BANKROLL;
+  const profSign  = netProfit >= 0 ? '+' : '';
+  ctx.font      = 'bold 20px Georgia, serif';
+  ctx.fillStyle = netProfit >= 0 ? '#4CAF50' : '#E74C3C';
+  ctx.fillText(profSign + '$' + netProfit + ' net', W / 2, 210);
+
+  const wonCount = lotResults.filter(r => r.won).length;
+  ctx.font      = '13px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText(wonCount + ' of ' + NUM_LOTS + ' outlaws claimed', W / 2, 234);
+
+  const pct   = bankroll / (STARTING_BANKROLL * 2.5);
+  const rank  = pct >= 0.80 ? 'Bounty Baron'
+              : pct >= 0.55 ? 'Hired Gun'
+              : pct >= 0.38 ? 'Trail Hunter'
+              : 'Green Bounty';
+  ctx.font      = 'bold 22px Georgia, serif';
+  ctx.fillStyle = pct >= 0.80 ? '#FFE066' : pct >= 0.55 ? '#FF9F43' : '#C8A04A';
+  ctx.fillText(rank, W / 2, 266);
+
+  const best = parseInt(localStorage.getItem('outlaw-auction_best') || '0');
+  if (bankroll >= best) {
+    const p = 0.6 + 0.4 * Math.sin(Date.now() / 360);
+    ctx.globalAlpha = p;
+    ctx.font      = 'bold 13px Georgia, serif';
+    ctx.fillStyle = '#FFE066';
+    ctx.fillText('NEW RECORD!', W / 2, 290);
+    ctx.globalAlpha = 1;
+  }
+
+  // Lot results grid
+  ctx.font      = '9px sans-serif';
+  ctx.fillStyle = '#3a2010';
+  ctx.fillText('LOT RESULTS', W / 2, 312);
+  lotResults.forEach((r, i) => {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const lx  = 56 + col * 88;
+    const ly  = 326 + row * 28;
+    ctx.fillStyle = r.won ? (r.profit >= 0 ? '#4CAF50' : '#FF9F43') : '#444';
+    ctx.font      = '9px sans-serif';
+    ctx.fillText(r.name, lx, ly);
+    ctx.fillStyle = r.won ? (r.profit >= 0 ? '#4CAF50' : '#E74C3C') : '#333';
+    ctx.font      = 'bold 11px sans-serif';
+    ctx.fillText(r.won ? (r.profit >= 0 ? '+$' + r.profit : '-$' + Math.abs(r.profit)) : 'PASSED', lx, ly + 13);
+  });
+
+  // Play Again
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 80, 408, 160, 44, 10); ctx.fill();
+  ctx.font      = 'bold 17px Georgia, serif';
+  ctx.fillStyle = '#1a0520';
+  ctx.fillText('PLAY AGAIN', W / 2, 436);
+
+  // Share
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 70, 462, 140, 38, 10); ctx.fill();
+  ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font      = '14px sans-serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('Share', W / 2, 486);
+
+  // Feedback
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 70, 510, 140, 36, 10); ctx.fill();
+  ctx.strokeStyle = '#3a2010'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font      = '13px sans-serif';
+  ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Leave Feedback', W / 2, 533);
+  ctx.restore();
+}
+
+// === GAME LOOP ===
+let lastTime = 0;
+function loop(ts) {
+  const dt = Math.min((ts - lastTime) / 1000, 0.1);
+  lastTime = ts;
+  try {
+    if (gameState === 'title') {
+      drawTitle();
+      requestAnimationFrame(loop);
+      return;
+    }
+    if (gameState === 'gameover') {
+      drawGameOver();
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    tickUpdate(dt);
+    drawBackground();
+
+    if (gameState === 'announce') {
+      drawWantedPoster(false);
+      drawAnnounceBanner();
+    } else {
+      drawHUD();
+      drawWantedPoster(gameState === 'reveal');
+      rivals.forEach(drawRival);
+      drawBidArea();
+      drawCooldownBar();
+      drawButtons();
+      drawBidPopups();
+      if (gameState === 'reveal') drawRevealOverlay();
+    }
+  } catch(e) {
+    console.error('Game loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// === INPUT ===
+function onTap(x, y) {
+  if (gameState === 'title') { startGame(); return; }
+  if (gameState === 'announce') return;
+  if (gameState === 'gameover') {
+    if (y >= 408 && y <= 452 && x >= W / 2 - 80 && x <= W / 2 + 80) { startGame(); return; }
+    if (y >= 462 && y <= 500) {
+      if (navigator.share) navigator.share({ title: 'Outlaw Auction', text: 'My final bankroll was $' + bankroll + ' at Outlaw Auction!' }).catch(() => {});
+      return;
+    }
+    if (y >= 510 && y <= 546) { document.getElementById('fb-overlay').classList.add('active'); return; }
+    return;
+  }
+  if (gameState === 'reveal') return;
+  if (gameState === 'bidding') {
+    // BID button: x 24-162, y 555-605
+    if (x >= 24 && x <= 162 && y >= 555 && y <= 605) { playerBid(); return; }
+    // FOLD button: x 198-336, y 555-605
+    if (x >= 198 && x <= 336 && y >= 555 && y <= 605) { playerFold(); return; }
+  }
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  onTap((e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  const t = e.touches[0];
+  onTap((t.clientX - rect.left) * sx, (t.clientY - rect.top) * sy);
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); onTap(93, 570); }
+  if (e.code === 'KeyF')  { playerFold(); }
+});
+
+// Feedback form
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const rating = document.getElementById('fb-rating').value;
+  const text   = document.getElementById('fb-text').value.trim();
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game: 'Outlaw Auction', rating: parseInt(rating), message: text }),
+  }).catch(() => {});
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+
+// Music
+if (MUSIC_SRC) {
+  const aud = new Audio(MUSIC_SRC);
+  aud.loop = true; aud.volume = 0.4;
+  document.addEventListener('click', () => aud.play().catch(() => {}), { once: true });
+}
+
+// === TEST API ===
+window.__oa = {
+  // Constants
+  NUM_LOTS, STARTING_BANKROLL, COOLDOWN_TIME, COOLDOWN_INITIAL,
+  LOT_ANNOUNCE_DUR, LOT_RESULT_DUR, OUTLAW_DEFS, RIVAL_DEFS,
+  FEEDBACK_ENDPOINT,
+  // State getters/setters
+  get state()          { return gameState; },
+  set state(v)         { gameState = v; },
+  get lots()           { return lots; },
+  set lots(v)          { lots = v; },
+  get currentLot()     { return currentLot; },
+  set currentLot(v)    { currentLot = v; },
+  get bankroll()       { return bankroll; },
+  set bankroll(v)      { bankroll = v; },
+  get sessionProfit()  { return sessionProfit; },
+  set sessionProfit(v) { sessionProfit = v; },
+  get lotResults()     { return lotResults; },
+  get rivals()         { return rivals; },
+  set rivals(v)        { rivals = v; },
+  get currentPrice()   { return currentPrice; },
+  set currentPrice(v)  { currentPrice = v; },
+  get lastBidder()     { return lastBidder; },
+  set lastBidder(v)    { lastBidder = v; },
+  get playerDropped()  { return playerDropped; },
+  set playerDropped(v) { playerDropped = v; },
+  get cooldown()       { return cooldown; },
+  set cooldown(v)      { cooldown = v; },
+  get lotClosed()      { return lotClosed; },
+  set lotClosed(v)     { lotClosed = v; },
+  get closeWinner()    { return closeWinner; },
+  get revealedBounty() { return revealedBounty; },
+  // Functions
+  startGame, initLots, startLot, initRivalsForLot,
+  playerBid, playerFold,
+  tryRivalBid, doCloseLot, advanceLot, finishGame,
+  tickUpdate, bidIncrement, addPopup,
+};
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

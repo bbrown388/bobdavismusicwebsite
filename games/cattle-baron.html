@@ -1,0 +1,834 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Cattle Baron</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+'use strict';
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const NUM_ROUNDS = 10;
+const START_GOLD = 1200;
+const ACTIONS_PER_ROUND = 2;
+const DEFEND_COST = 80;
+const REPAIR_COST = 120;
+
+const COLS = 4, ROWS = 4;
+const CELL = 65, GAP = 5;
+const GRID_W = COLS * CELL + (COLS - 1) * GAP;  // 275
+const GRID_H = ROWS * CELL + (ROWS - 1) * GAP;  // 275
+const GX = Math.round((W - GRID_W) / 2);         // 42
+const GY = 132;
+
+const ROW_PRICES = [480, 300, 160, 0];
+const GRAZE_INCOME = [0, 120, 200, 260];
+
+const THREAT_POOL = [
+  { id: 'drought_mild',  label: 'Drought',      desc: 'Overgrazed land may wither',    color: '#E8A020' },
+  { id: 'drought_heavy', label: 'Heavy Drought', desc: 'All grazed land at risk',       color: '#E84020' },
+  { id: 'rustlers',      label: 'Rustlers',      desc: 'Unguarded cattle may be raided',color: '#8B2020' },
+  { id: 'rustlers_gang', label: 'Rustler Gang',  desc: 'Multiple raids incoming',       color: '#CC2020' },
+  { id: 'wildfire',      label: 'Wildfire',      desc: 'Fire through one column',       color: '#FF4500' },
+  { id: 'flash_flood',   label: 'Flash Flood',   desc: 'Low land may flood',            color: '#2060EE' },
+  { id: 'peaceful',      label: 'Clear Skies',   desc: 'No threats this round',         color: '#44AA44' },
+  { id: 'good_grazing',  label: 'Good Grazing',  desc: 'Bonus income for all cattle',   color: '#66CC44' },
+];
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = W * scale + 'px';
+  canvas.style.height = H * scale + 'px';
+  wrap.style.width    = W * scale + 'px';
+  wrap.style.height   = H * scale + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ────────────────────────────────────────────────────────────────────
+let actx = null;
+function getActx() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  return actx;
+}
+function playTone(freq, dur, type = 'triangle', vol = 0.12) {
+  try {
+    const ac = getActx();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    o.start(); o.stop(ac.currentTime + dur);
+  } catch(e) {}
+}
+function playCoins() {
+  [523, 659, 784].forEach((f, i) => setTimeout(() => playTone(f, 0.15, 'triangle', 0.10), i * 80));
+}
+function playDanger() { playTone(200, 0.45, 'sawtooth', 0.08); }
+function playWin() {
+  [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 0.2, 'triangle', 0.10), i * 90));
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let state = 'title';
+let round = 1;
+let gold = START_GOLD;
+let score = 0;
+let actionsLeft = ACTIONS_PER_ROUND;
+let mode = null;
+let threats = [];
+let roundLog = [];
+let popups = [];
+let parcels = [];
+let bestScore = parseInt(localStorage.getItem('cattle_baron_best') || '0', 10);
+
+// ── Parcel init ──────────────────────────────────────────────────────────────
+function makeParcels() {
+  parcels = [];
+  for (let r = 0; r < ROWS; r++) {
+    parcels[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      parcels[r][c] = {
+        owned: r === ROWS - 1,
+        grazeTurns: 0,
+        defended: false,
+        damaged: false,
+        price: ROW_PRICES[r]
+      };
+    }
+  }
+}
+
+function startGame() {
+  round = 1;
+  gold = START_GOLD;
+  score = 0;
+  actionsLeft = ACTIONS_PER_ROUND;
+  mode = null;
+  popups = [];
+  roundLog = [];
+  makeParcels();
+  drawThreats();
+  state = 'playing';
+}
+
+// ── Threats ──────────────────────────────────────────────────────────────────
+function drawThreats() {
+  if (round >= NUM_ROUNDS) {
+    threats = [
+      THREAT_POOL.find(t => t.id === 'good_grazing'),
+      THREAT_POOL.find(t => t.id === 'peaceful')
+    ];
+    return;
+  }
+  const hazards = THREAT_POOL.filter(t => t.id !== 'peaceful' && t.id !== 'good_grazing');
+  const t1 = hazards[Math.floor(Math.random() * hazards.length)];
+  const peacefulChance = Math.max(0.15, 0.55 - round * 0.04);
+  let t2;
+  if (Math.random() < peacefulChance) {
+    t2 = THREAT_POOL.find(t => t.id === 'peaceful');
+  } else {
+    const others = hazards.filter(t => t.id !== t1.id);
+    t2 = others.length > 0 ? others[Math.floor(Math.random() * others.length)]
+                            : THREAT_POOL.find(t => t.id === 'peaceful');
+  }
+  threats = [t1, t2];
+}
+
+// ── Grid helpers ─────────────────────────────────────────────────────────────
+function cellX(c) { return GX + c * (CELL + GAP); }
+function cellY(r) { return GY + r * (CELL + GAP); }
+function cellCX(c) { return cellX(c) + CELL / 2; }
+function cellCY(r) { return cellY(r) + CELL / 2; }
+
+function isAdjacent(r, c) {
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  return dirs.some(([dr, dc]) => {
+    const nr = r + dr, nc = c + dc;
+    return nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && parcels[nr][nc].owned;
+  });
+}
+
+function calcIncome() {
+  let total = 0;
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++) {
+      const p = parcels[r][c];
+      if (p.owned && !p.damaged) total += GRAZE_INCOME[Math.min(p.grazeTurns, 3)];
+    }
+  return total;
+}
+
+// ── Popups ───────────────────────────────────────────────────────────────────
+function addPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, born: performance.now() });
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────────
+function applyAction(r, c) {
+  if (state !== 'playing' || actionsLeft <= 0 || !mode) return false;
+  const p = parcels[r][c];
+
+  if (mode === 'buy') {
+    if (p.owned) { addPopup(cellCX(c), cellCY(r) - 20, 'ALREADY YOURS', '#888'); return false; }
+    if (!isAdjacent(r, c)) { addPopup(cellCX(c), cellCY(r) - 20, 'NOT ADJACENT', '#888'); return false; }
+    if (gold < p.price) { addPopup(W/2, GY + GRID_H/2, 'NOT ENOUGH GOLD', '#E74C3C'); return false; }
+    gold -= p.price;
+    p.owned = true;
+    actionsLeft--;
+    addPopup(cellCX(c), cellCY(r) - 20, 'ACQUIRED!', '#FFD700');
+    playTone(440, 0.12);
+    return true;
+  }
+  if (mode === 'graze') {
+    if (!p.owned) { addPopup(cellCX(c), cellCY(r) - 20, 'NOT YOUR LAND', '#888'); return false; }
+    if (p.damaged) { addPopup(cellCX(c), cellCY(r) - 20, 'REPAIR FIRST', '#E74C3C'); return false; }
+    if (p.grazeTurns >= 3) { addPopup(cellCX(c), cellCY(r) - 20, 'MAX GRAZED', '#888'); return false; }
+    p.grazeTurns++;
+    actionsLeft--;
+    addPopup(cellCX(c), cellCY(r) - 20, '+$' + GRAZE_INCOME[p.grazeTurns] + '/round', '#44CC44');
+    playTone(523, 0.10);
+    return true;
+  }
+  if (mode === 'defend') {
+    if (!p.owned) { addPopup(cellCX(c), cellCY(r) - 20, 'NOT YOUR LAND', '#888'); return false; }
+    if (p.defended) { addPopup(cellCX(c), cellCY(r) - 20, 'ALREADY FENCED', '#888'); return false; }
+    if (gold < DEFEND_COST) { addPopup(W/2, GY + GRID_H/2, 'NOT ENOUGH GOLD', '#E74C3C'); return false; }
+    gold -= DEFEND_COST;
+    p.defended = true;
+    actionsLeft--;
+    addPopup(cellCX(c), cellCY(r) - 20, 'FENCED -$' + DEFEND_COST, '#44AACC');
+    playTone(392, 0.10);
+    return true;
+  }
+  if (mode === 'repair') {
+    if (!p.owned) { addPopup(cellCX(c), cellCY(r) - 20, 'NOT YOUR LAND', '#888'); return false; }
+    if (!p.damaged) { addPopup(cellCX(c), cellCY(r) - 20, 'NOT DAMAGED', '#888'); return false; }
+    if (gold < REPAIR_COST) { addPopup(W/2, GY + GRID_H/2, 'NOT ENOUGH GOLD', '#E74C3C'); return false; }
+    gold -= REPAIR_COST;
+    p.damaged = false;
+    actionsLeft--;
+    addPopup(cellCX(c), cellCY(r) - 20, 'REPAIRED!', '#FF8C00');
+    playTone(330, 0.12);
+    return true;
+  }
+  return false;
+}
+
+// ── Threat resolution ────────────────────────────────────────────────────────
+function resolveThreat(threat) {
+  if (threat.id === 'drought_mild') {
+    let hit = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const p = parcels[r][c];
+      if (p.owned && !p.damaged && p.grazeTurns >= 2 && !p.defended && Math.random() < 0.5) {
+        p.damaged = true; p.grazeTurns = 0; hit++;
+      }
+    }
+    roundLog.push({ text: 'Drought: ' + (hit > 0 ? hit + ' parcel(s) damaged' : 'no damage'), color: hit > 0 ? '#E8A020' : '#666' });
+    if (hit > 0) playDanger();
+  } else if (threat.id === 'drought_heavy') {
+    let hit = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const p = parcels[r][c];
+      if (p.owned && !p.damaged && p.grazeTurns >= 1 && !p.defended) {
+        const chance = p.grazeTurns >= 2 ? 0.85 : 0.40;
+        if (Math.random() < chance) { p.damaged = true; p.grazeTurns = 0; hit++; }
+      }
+    }
+    roundLog.push({ text: 'Heavy drought: ' + (hit > 0 ? hit + ' destroyed' : 'no damage'), color: hit > 0 ? '#E84020' : '#666' });
+    if (hit > 0) playDanger();
+  } else if (threat.id === 'rustlers') {
+    const targets = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const p = parcels[r][c];
+      if (p.owned && !p.damaged && p.grazeTurns >= 1 && !p.defended) targets.push([r, c]);
+    }
+    if (targets.length > 0) {
+      const [r, c] = targets[Math.floor(Math.random() * targets.length)];
+      parcels[r][c].grazeTurns = Math.max(0, parcels[r][c].grazeTurns - 1);
+      gold = Math.max(0, gold - 100);
+      roundLog.push({ text: 'Rustlers: -$100, cattle scattered', color: '#CC4040' });
+      playDanger();
+    } else {
+      roundLog.push({ text: 'Rustlers: no targets found', color: '#666' });
+    }
+  } else if (threat.id === 'rustlers_gang') {
+    const targets = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const p = parcels[r][c];
+      if (p.owned && !p.damaged && p.grazeTurns >= 1 && !p.defended) targets.push([r, c]);
+    }
+    let stolen = 0;
+    const hits = Math.min(2, targets.length);
+    for (let i = 0; i < hits; i++) {
+      const idx = Math.floor(Math.random() * (targets.length - i));
+      const [r, c] = targets.splice(idx, 1)[0];
+      parcels[r][c].grazeTurns = Math.max(0, parcels[r][c].grazeTurns - 1);
+      stolen += 150;
+    }
+    gold = Math.max(0, gold - stolen);
+    roundLog.push({ text: 'Rustler gang: -$' + stolen + ' (' + hits + ' raid' + (hits !== 1 ? 's' : '') + ')', color: hits > 0 ? '#CC2020' : '#666' });
+    if (stolen > 0) playDanger();
+  } else if (threat.id === 'wildfire') {
+    const col = Math.floor(Math.random() * COLS);
+    let hit = 0;
+    for (let r = 0; r < ROWS; r++) {
+      const p = parcels[r][col];
+      if (p.owned && !p.damaged && p.grazeTurns >= 1 && !p.defended && Math.random() < 0.6) {
+        p.damaged = true; p.grazeTurns = 0; hit++;
+      }
+    }
+    roundLog.push({ text: 'Wildfire col ' + (col + 1) + ': ' + (hit > 0 ? hit + ' burned' : 'missed'), color: hit > 0 ? '#FF4500' : '#666' });
+    if (hit > 0) playDanger();
+  } else if (threat.id === 'flash_flood') {
+    let hit = 0;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = ROWS - 2; r < ROWS; r++) {
+        const p = parcels[r][c];
+        if (p.owned && !p.damaged && !p.defended && Math.random() < 0.20) {
+          p.damaged = true; p.grazeTurns = 0; hit++;
+        }
+      }
+    }
+    roundLog.push({ text: 'Flash flood: ' + (hit > 0 ? hit + ' flooded' : 'no damage'), color: hit > 0 ? '#2060EE' : '#666' });
+    if (hit > 0) playDanger();
+  } else if (threat.id === 'good_grazing') {
+    let bonus = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const p = parcels[r][c];
+      if (p.owned && !p.damaged && p.grazeTurns >= 1) bonus += 50;
+    }
+    gold += bonus;
+    roundLog.push({ text: 'Good grazing: +$' + bonus + ' bonus', color: '#66CC44' });
+    if (bonus > 0) playCoins();
+  } else if (threat.id === 'peaceful') {
+    roundLog.push({ text: 'Clear skies - no threats', color: '#666' });
+  }
+}
+
+// ── End turn ─────────────────────────────────────────────────────────────────
+function endTurn() {
+  if (state !== 'playing') return;
+  roundLog = [];
+
+  for (const threat of threats) resolveThreat(threat);
+
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+    parcels[r][c].defended = false;
+
+  const income = calcIncome();
+  gold += income;
+  if (income > 0) {
+    roundLog.push({ text: 'Income: +$' + income, color: '#44CC44' });
+    playCoins();
+  }
+
+  gold = Math.max(0, gold);
+  round++;
+  actionsLeft = ACTIONS_PER_ROUND;
+  mode = null;
+
+  if (round > NUM_ROUNDS) {
+    finishGame();
+  } else {
+    drawThreats();
+  }
+}
+
+function finishGame() {
+  let owned = 0, grazed = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (parcels[r][c].owned) {
+      owned++;
+      if (parcels[r][c].grazeTurns > 0 && !parcels[r][c].damaged) grazed++;
+    }
+  }
+  score = gold + owned * 50 + grazed * 100;
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('cattle_baron_best', String(bestScore));
+  }
+  playWin();
+  state = 'win';
+}
+
+// ── Drawing helpers ──────────────────────────────────────────────────────────
+function rrect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1.5; ctx.stroke(); }
+}
+
+function isValidForMode(r, c) {
+  if (!mode) return false;
+  const p = parcels[r][c];
+  if (mode === 'buy')    return !p.owned && isAdjacent(r, c) && gold >= p.price;
+  if (mode === 'graze')  return p.owned && !p.damaged && p.grazeTurns < 3;
+  if (mode === 'defend') return p.owned && !p.defended && gold >= DEFEND_COST;
+  if (mode === 'repair') return p.owned && p.damaged && gold >= REPAIR_COST;
+  return false;
+}
+
+// ── Action button layout ─────────────────────────────────────────────────────
+const BTN_Y = GY + GRID_H + 14;
+const BTN_H = 42;
+const BTN_W = 81;
+const BTN_GAP = 5;
+const BTN_START = Math.round((W - (4 * BTN_W + 3 * BTN_GAP)) / 2);
+
+const ACTION_BTNS = [
+  { id: 'graze',  label: 'GRAZE',  dim: '#1C4A1C', lit: '#2E7D2E' },
+  { id: 'buy',    label: 'BUY',    dim: '#5A4400', lit: '#8B6914' },
+  { id: 'defend', label: 'DEFEND', dim: '#0D3340', lit: '#1A5C73' },
+  { id: 'repair', label: 'REPAIR', dim: '#402000', lit: '#805000' },
+].map((b, i) => ({ ...b, x: BTN_START + i * (BTN_W + BTN_GAP), y: BTN_Y, w: BTN_W, h: BTN_H }));
+
+const END_Y = BTN_Y + BTN_H + 8;
+const END_H = 38;
+
+// ── Draw: title ──────────────────────────────────────────────────────────────
+function drawTitle() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208'); bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#fff';
+  [[50,80],[120,40],[200,65],[280,30],[320,90],[80,130],[170,100],[240,120],[310,50],[60,160],[300,155]].forEach(([sx,sy]) => {
+    ctx.beginPath(); ctx.arc(sx, sy, 1.2, 0, Math.PI*2); ctx.fill();
+  });
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 40px Georgia, serif';
+  ctx.fillText('CATTLE BARON', W/2, 165);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '16px Georgia, serif';
+  ctx.fillText('Turn-based ranch strategy', W/2, 200);
+
+  ctx.fillStyle = '#8a7050';
+  ctx.font = '13px sans-serif';
+  ['Buy land. Graze cattle. Defend your herd.',
+   'Threats strike each round  |  plan carefully.',
+   'Build your fortune across 10 rounds.'
+  ].forEach((l, i) => ctx.fillText(l, W/2, 250 + i * 22));
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillText('BEST: $' + bestScore.toLocaleString(), W/2, 330);
+  }
+
+  rrect(W/2 - 85, 360, 170, 52, 10, '#5a3800', '#FFD700', 2);
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText('PLAY', W/2, 394);
+
+  ctx.restore();
+}
+
+// ── Draw: grid ───────────────────────────────────────────────────────────────
+function drawGrid() {
+  ctx.save();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const p = parcels[r][c];
+      const x = cellX(c), y = cellY(r);
+      let bg, border;
+
+      if (p.damaged)       { bg = '#2a0808'; border = '#881111'; }
+      else if (!p.owned)   { bg = '#181008'; border = '#3a2a10'; }
+      else if (p.grazeTurns === 0) { bg = '#3a2010'; border = '#5a3820'; }
+      else if (p.grazeTurns === 1) { bg = '#4a3800'; border = '#8B6914'; }
+      else if (p.grazeTurns === 2) { bg = '#6B4E00'; border = '#C8880A'; }
+      else                 { bg = '#8B6400'; border = '#E8A820'; }
+
+      rrect(x, y, CELL, CELL, 5, bg, null);
+
+      const isValid = isValidForMode(r, c);
+      ctx.strokeStyle = isValid ? '#FFD700' : border;
+      ctx.lineWidth   = isValid ? 2.5 : 1.5;
+      ctx.beginPath(); ctx.roundRect(x, y, CELL, CELL, 5); ctx.stroke();
+
+      if (p.defended) {
+        ctx.strokeStyle = '#44AACC'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.roundRect(x + 2, y + 2, CELL - 4, CELL - 4, 4); ctx.stroke();
+      }
+
+      ctx.textAlign = 'center';
+      if (p.damaged) {
+        ctx.fillStyle = '#882222'; ctx.font = 'bold 18px sans-serif';
+        ctx.fillText('DMG', x + CELL/2, y + CELL/2 - 5);
+        ctx.font = '10px sans-serif';
+        ctx.fillText('$' + REPAIR_COST + ' repair', x + CELL/2, y + CELL/2 + 12);
+      } else if (!p.owned) {
+        ctx.fillStyle = isAdjacent(r, c) ? '#9a7040' : '#504030';
+        ctx.font = isAdjacent(r, c) ? 'bold 13px sans-serif' : '12px sans-serif';
+        ctx.fillText('$' + p.price, x + CELL/2, y + CELL/2 + 4);
+        if (isAdjacent(r, c)) {
+          ctx.fillStyle = '#6a5030'; ctx.font = '9px sans-serif';
+          ctx.fillText('AVAILABLE', x + CELL/2, y + CELL - 8);
+        }
+      } else {
+        if (p.grazeTurns > 0) {
+          ctx.fillStyle = '#FFE066'; ctx.font = 'bold 13px sans-serif';
+          const dots = ['', 'O', 'OO', 'OOO'][Math.min(p.grazeTurns, 3)];
+          ctx.fillText(dots, x + CELL/2, y + CELL/2 - 4);
+          ctx.fillStyle = p.grazeTurns >= 2 ? '#E8A820' : '#8B6914';
+          ctx.font = '10px sans-serif';
+          ctx.fillText('+$' + GRAZE_INCOME[Math.min(p.grazeTurns, 3)], x + CELL/2, y + CELL/2 + 12);
+          if (p.grazeTurns >= 2 && !p.defended) {
+            ctx.fillStyle = '#FF8C00'; ctx.font = 'bold 11px sans-serif';
+            ctx.fillText('!', x + CELL - 8, y + 12);
+          }
+        } else {
+          ctx.fillStyle = '#5a4020'; ctx.font = '10px sans-serif';
+          ctx.fillText('OWNED', x + CELL/2, y + CELL/2 + 4);
+        }
+      }
+    }
+  }
+  ctx.restore();
+}
+
+// ── Draw: popups ─────────────────────────────────────────────────────────────
+function drawPopups() {
+  const now = performance.now();
+  popups = popups.filter(p => (now - p.born) < 1200);
+  for (const p of popups) {
+    const t = (now - p.born) / 1200;
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillStyle = p.color;
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y - 32 * t);
+    ctx.restore();
+  }
+}
+
+// ── Draw: playing ────────────────────────────────────────────────────────────
+function drawPlaying() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#1a0d35'); bg.addColorStop(0.45, '#2a1500'); bg.addColorStop(1, '#0d0500');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Header row
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText('$' + gold.toLocaleString(), 10, 22);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('CATTLE BARON', W/2, 22);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('Round ' + round + '/' + NUM_ROUNDS, W - 10, 22);
+
+  // Actions indicator
+  ctx.textAlign = 'right';
+  ctx.fillStyle = actionsLeft > 0 ? '#44CC44' : '#666';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('Actions: ' + actionsLeft, W - 10, 38);
+
+  // Income preview
+  const income = calcIncome();
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#4a8a4a';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Income: +$' + income, 10, 38);
+
+  // Threat pills
+  const pillW = 163, pillH = 24, pillGap = 6;
+  const pillStart = Math.round((W - (pillW * 2 + pillGap)) / 2);
+  const pillY = 48;
+  ctx.font = 'bold 11px sans-serif';
+  for (let i = 0; i < 2; i++) {
+    const t = threats[i]; if (!t) continue;
+    const px = pillStart + i * (pillW + pillGap);
+    rrect(px, pillY, pillW, pillH, 5, t.color + '22', t.color, 1.5);
+    ctx.fillStyle = t.color; ctx.textAlign = 'center';
+    ctx.fillText(t.label.toUpperCase(), px + pillW/2, pillY + 16);
+  }
+
+  // Mode line
+  ctx.textAlign = 'center';
+  if (mode) {
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('MODE: ' + mode.toUpperCase() + '  -  tap a parcel', W/2, 86);
+  } else {
+    ctx.fillStyle = '#666'; ctx.font = '11px sans-serif';
+    ctx.fillText('Select an action, then tap a parcel', W/2, 86);
+  }
+
+  // Row labels
+  ctx.font = '9px sans-serif'; ctx.textAlign = 'right'; ctx.fillStyle = '#4a3820';
+  ['FAR', 'MID', 'NEAR', 'HOME'].forEach((lbl, r) => {
+    ctx.fillText(lbl, GX - 3, cellY(r) + CELL/2 + 3);
+  });
+
+  drawGrid();
+
+  // Action buttons
+  for (const btn of ACTION_BTNS) {
+    const active = mode === btn.id;
+    rrect(btn.x, btn.y, btn.w, btn.h, 7, active ? btn.lit : btn.dim, active ? '#FFD700' : '#444', active ? 2 : 1);
+    ctx.fillStyle = active ? '#FFD700' : '#aaa';
+    ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2 + 4);
+    // Sub-cost labels
+    ctx.fillStyle = active ? '#FFD700aa' : '#666';
+    ctx.font = '9px sans-serif';
+    if (btn.id === 'defend') ctx.fillText('-$' + DEFEND_COST, btn.x + btn.w/2, btn.y + btn.h - 5);
+    if (btn.id === 'repair') ctx.fillText('-$' + REPAIR_COST, btn.x + btn.w/2, btn.y + btn.h - 5);
+  }
+
+  // END TURN
+  const hasActions = actionsLeft > 0;
+  rrect(W/2 - 72, END_Y, 144, END_H, 8, hasActions ? '#2a2a2a' : '#4a3800', hasActions ? '#666' : '#FFD700', hasActions ? 1 : 2);
+  ctx.fillStyle = hasActions ? '#888' : '#FFD700';
+  ctx.font = 'bold 14px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('END TURN', W/2, END_Y + END_H/2 + 5);
+
+  // Round log
+  if (roundLog.length > 0) {
+    const logY = END_Y + END_H + 12;
+    const recent = roundLog.slice(-3);
+    ctx.font = '11px sans-serif';
+    recent.forEach((entry, i) => {
+      ctx.fillStyle = entry.color; ctx.textAlign = 'center';
+      ctx.fillText(entry.text, W/2, logY + i * 16);
+    });
+  }
+
+  drawPopups();
+  ctx.restore();
+}
+
+// ── Draw: win ─────────────────────────────────────────────────────────────────
+function drawWin() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208'); bg.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 32px Georgia, serif';
+  ctx.fillText('CATTLE BARON', W/2, 100);
+  ctx.fillStyle = '#44CC44'; ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('RANCH COMPLETE!', W/2, 138);
+
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 52px sans-serif';
+  ctx.fillText('$' + score.toLocaleString(), W/2, 215);
+
+  if (score >= bestScore) {
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 18px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W/2, 250);
+  } else {
+    ctx.fillStyle = '#888'; ctx.font = '14px sans-serif';
+    ctx.fillText('Best: $' + bestScore.toLocaleString(), W/2, 250);
+  }
+
+  let owned = 0, grazed = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (parcels[r][c].owned) { owned++; if (parcels[r][c].grazeTurns > 0 && !parcels[r][c].damaged) grazed++; }
+  }
+  ctx.fillStyle = '#C8A04A'; ctx.font = '13px sans-serif';
+  ctx.fillText('$' + gold.toLocaleString() + ' gold + ' + owned + ' parcels + ' + grazed + ' active', W/2, 280);
+
+  rrect(W/2 - 80, 310, 160, 50, 10, '#5a3800', '#FFD700', 2);
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W/2, 342);
+
+  rrect(W/2 - 60, 374, 120, 34, 8, '#222', '#555', 1);
+  ctx.fillStyle = '#888'; ctx.font = '13px sans-serif';
+  ctx.fillText('SHARE', W/2, 396);
+
+  drawPopups();
+  ctx.restore();
+}
+
+// ── Input ────────────────────────────────────────────────────────────────────
+function getXY(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  const src = evt.touches ? evt.touches[0] : evt;
+  return [(src.clientX - rect.left) * sx, (src.clientY - rect.top) * sy];
+}
+
+function onTap(x, y) {
+  if (state === 'title') { startGame(); return; }
+
+  if (state === 'win') {
+    if (y > 300 && y < 370) { startGame(); return; }
+    if (y > 365 && y < 415) {
+      if (navigator.share) navigator.share({ title: 'Cattle Baron', text: 'I scored $' + score.toLocaleString() + ' in Cattle Baron!', url: window.location.href }).catch(() => {});
+      return;
+    }
+    startGame();
+    return;
+  }
+
+  if (state !== 'playing') return;
+
+  // Action buttons
+  for (const btn of ACTION_BTNS) {
+    if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+      mode = mode === btn.id ? null : btn.id;
+      playTone(330, 0.05, 'sine', 0.06);
+      return;
+    }
+  }
+
+  // END TURN
+  if (x >= W/2 - 72 && x <= W/2 + 72 && y >= END_Y && y <= END_Y + END_H) {
+    endTurn(); return;
+  }
+
+  // Grid cells
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (x >= cellX(c) && x <= cellX(c) + CELL && y >= cellY(r) && y <= cellY(r) + CELL) {
+        if (!mode) {
+          const p = parcels[r][c];
+          if (!p.owned)       addPopup(cellCX(c), cellCY(r) - 20, '$' + p.price + ' to buy', '#888');
+          else if (p.damaged) addPopup(cellCX(c), cellCY(r) - 20, 'DAMAGED - repair $' + REPAIR_COST, '#CC6620');
+          else if (p.grazeTurns > 0) addPopup(cellCX(c), cellCY(r) - 20, '+$' + GRAZE_INCOME[Math.min(p.grazeTurns, 3)] + '/round', '#44CC44');
+          else addPopup(cellCX(c), cellCY(r) - 20, 'OWNED - graze or defend', '#888');
+          return;
+        }
+        const did = applyAction(r, c);
+        if (did && actionsLeft === 0) mode = null;
+        return;
+      }
+    }
+  }
+}
+
+canvas.addEventListener('click', e => { const [x,y] = getXY(e); onTap(x,y); });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const [x,y] = getXY(e); onTap(x,y); }, { passive:false });
+
+// ── Loop ─────────────────────────────────────────────────────────────────────
+function loop() {
+  try {
+    ctx.clearRect(0, 0, W, H);
+    if (state === 'title')   drawTitle();
+    else if (state === 'playing') drawPlaying();
+    else if (state === 'win')    drawWin();
+  } catch(e) { console.error('loop error:', e); }
+  requestAnimationFrame(loop);
+}
+
+// ── Feedback overlay ─────────────────────────────────────────────────────────
+(function() {
+  const btn = document.createElement('button');
+  btn.textContent = 'Feedback';
+  btn.style.cssText = 'position:fixed;bottom:8px;right:8px;background:#333;color:#ccc;border:1px solid #555;padding:4px 10px;font-size:12px;border-radius:4px;cursor:pointer;z-index:100;';
+  document.body.appendChild(btn);
+
+  const ov = document.createElement('div');
+  ov.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:200;justify-content:center;align-items:center;';
+  ov.innerHTML = `<div style="background:#1a1a1a;border:1px solid #444;border-radius:12px;padding:20px;width:300px;max-width:90vw;">
+    <h3 style="color:#FFD700;margin:0 0 12px;font-family:Georgia,serif;">Feedback</h3>
+    <label style="color:#aaa;font-size:13px;">Rating</label>
+    <select id="fb-rating" style="width:100%;background:#111;color:#fff;border:1px solid #444;padding:6px;border-radius:6px;margin:4px 0 10px;">
+      <option value="5">5 stars - Great!</option><option value="4">4 stars - Good</option>
+      <option value="3">3 stars - OK</option><option value="2">2 stars - Needs work</option>
+      <option value="1">1 star - Not for me</option>
+    </select>
+    <label style="color:#aaa;font-size:13px;">Game</label>
+    <select id="fb-target" style="width:100%;background:#111;color:#fff;border:1px solid #444;padding:6px;border-radius:6px;margin:4px 0 10px;">
+      <option value="general">General / next game</option>
+      <option value="Cattle Baron" selected>Cattle Baron (this game)</option>
+    </select>
+    <textarea id="fb-msg" placeholder="What did you think?" style="width:100%;height:70px;background:#111;color:#fff;border:1px solid #444;padding:8px;border-radius:6px;font-size:13px;resize:none;margin-bottom:10px;"></textarea>
+    <div style="display:flex;gap:8px;">
+      <button id="fb-send" style="flex:1;background:#8B6914;color:#FFD700;border:none;padding:10px;border-radius:6px;font-size:14px;cursor:pointer;">Send</button>
+      <button id="fb-close" style="flex:1;background:#333;color:#aaa;border:none;padding:10px;border-radius:6px;font-size:14px;cursor:pointer;">Cancel</button>
+    </div>
+    <p id="fb-status" style="color:#888;font-size:12px;margin:8px 0 0;text-align:center;"></p>
+  </div>`;
+  document.body.appendChild(ov);
+
+  btn.onclick = () => { ov.style.display = 'flex'; };
+  document.getElementById('fb-close').onclick = () => { ov.style.display = 'none'; };
+  document.getElementById('fb-send').onclick = () => {
+    const status = document.getElementById('fb-status');
+    status.textContent = 'Sending...';
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        game: document.getElementById('fb-target').value,
+        rating: parseInt(document.getElementById('fb-rating').value),
+        message: document.getElementById('fb-msg').value.trim()
+      }),
+      signal: AbortSignal.timeout(30000)
+    }).then(() => { status.textContent = 'Thanks!'; setTimeout(() => { ov.style.display = 'none'; }, 1000); })
+      .catch(() => { status.textContent = 'Send failed - try again.'; });
+  };
+})();
+
+// ── Test API ─────────────────────────────────────────────────────────────────
+window.__baron = {
+  get state() { return state; }, set state(v) { state = v; },
+  get round() { return round; }, set round(v) { round = v; },
+  get gold() { return gold; }, set gold(v) { gold = v; },
+  get score() { return score; }, set score(v) { score = v; },
+  get actionsLeft() { return actionsLeft; }, set actionsLeft(v) { actionsLeft = v; },
+  get mode() { return mode; }, set mode(v) { mode = v; },
+  get threats() { return threats; }, set threats(v) { threats = v; },
+  get parcels() { return parcels; },
+  get roundLog() { return roundLog; },
+  get popups() { return popups; },
+  get bestScore() { return bestScore; },
+  get NUM_ROUNDS() { return NUM_ROUNDS; },
+  get START_GOLD() { return START_GOLD; },
+  get ACTIONS_PER_ROUND() { return ACTIONS_PER_ROUND; },
+  get DEFEND_COST() { return DEFEND_COST; },
+  get REPAIR_COST() { return REPAIR_COST; },
+  get GRAZE_INCOME() { return GRAZE_INCOME; },
+  get THREAT_POOL() { return THREAT_POOL; },
+  get ROW_PRICES() { return ROW_PRICES; },
+  get COLS() { return COLS; },
+  get ROWS() { return ROWS; },
+  startGame, makeParcels, drawThreats, isAdjacent, calcIncome,
+  applyAction, endTurn, resolveThreat, finishGame, addPopup, onTap,
+};
+
+loop();
+</script>
+</body>
+</html>

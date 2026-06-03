@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>Director Status | Bob Davis</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg:              #0d0608;
+  --text:            #E8DCC8;
+  --text-sec:        #C8B89A;
+  --text-muted:      #b0a090;
+  --text-dim:        #a09070;
+  --accent:          #FFD700;
+  --success:         #5bc77a;
+  --warning:         #e0a030;
+  --error:           #e05030;
+  --border:          rgba(255,215,0,0.10);
+  --border-section:  rgba(255,215,0,0.08);
+  --border-hi:       rgba(255,215,0,0.30);
+  --border-hi-soft:  rgba(255,215,0,0.15);
+  --queue-active-bg: rgba(255,215,0,0.03);
+  --badge-planned-bg:    rgba(255,215,0,0.08);
+  --badge-planned-text:  #a09070;
+  --badge-prog-bg:       rgba(255,215,0,0.18);
+  --badge-done-bg:       rgba(91,199,122,0.12);
+  --error-bg:        rgba(224,80,48,0.05);
+  --error-border:    rgba(224,80,48,0.30);
+  --dot-idle:        #555;
+  --card-bg:         rgba(255,215,0,0.02);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:              #f8f5f0;
+    --text:            #1a1210;
+    --text-sec:        #3a2a1a;
+    --text-muted:      #6b5a4a;
+    --text-dim:        #7a6a5a;
+    --accent:          #8B6914;
+    --success:         #2d7a42;
+    --warning:         #8B5E00;
+    --error:           #c0321a;
+    --border:          rgba(0,0,0,0.12);
+    --border-section:  rgba(0,0,0,0.10);
+    --border-hi:       rgba(0,0,0,0.30);
+    --border-hi-soft:  rgba(0,0,0,0.18);
+    --queue-active-bg: rgba(0,0,0,0.03);
+    --badge-planned-bg:    rgba(0,0,0,0.06);
+    --badge-planned-text:  #7a6a5a;
+    --badge-prog-bg:       rgba(139,105,20,0.15);
+    --badge-done-bg:       rgba(45,122,66,0.12);
+    --error-bg:        rgba(192,50,26,0.06);
+    --error-border:    rgba(192,50,26,0.30);
+    --dot-idle:        #bbb;
+    --card-bg:         rgba(0,0,0,0.02);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; }
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', monospace;
+  min-height: 100vh;
+  padding: 40px 20px 60px;
+  max-width: 680px;
+  margin: 0 auto;
+  overflow-x: hidden;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.back {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  margin-bottom: 36px;
+}
+.back:hover { color: var(--text-dim); }
+
+h1 {
+  font-size: 13px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+  margin-bottom: 36px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 32px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot.ok      { background: #4aaa60; box-shadow: 0 0 6px #4aaa60; }
+.dot.err     { background: #e05030; box-shadow: 0 0 6px #e05030; }
+.dot.idle    { background: var(--dot-idle); }
+.dot.working { background: #FFD700; box-shadow: 0 0 6px #FFD700; animation: pulse 1s infinite; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.status-text { font-size: 13px; color: var(--text-sec); }
+.status-time { font-size: 11px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+
+.section-head {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-section);
+}
+
+.current-task {
+  padding: 14px 18px;
+  border: 1px solid var(--border-hi-soft);
+  border-radius: 8px;
+  margin-bottom: 32px;
+  font-size: 13px;
+  color: var(--text-sec);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.current-task.none { color: var(--text-muted); font-style: italic; }
+
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 32px;
+}
+
+.metric-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border-section);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+.metric-value { font-size: 22px; color: var(--accent); font-weight: bold; letter-spacing: -1px; line-height: 1; }
+.metric-label { font-size: 10px; color: var(--text-muted); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 4px; }
+
+.queue { margin-bottom: 32px; }
+
+.queue-item {
+  padding: 14px 18px;
+  border: 1px solid var(--border-section);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.queue-item.active {
+  border-color: var(--border-hi);
+  background: var(--queue-active-bg);
+}
+
+.queue-num     { font-size: 10px; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 3px; }
+.queue-title   { font-size: 15px; color: var(--accent); margin-bottom: 5px; overflow-wrap: break-word; word-break: break-word; }
+.queue-concept { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 5px; overflow-wrap: break-word; word-break: break-word; }
+.queue-bar     { font-size: 11px; color: var(--success); overflow-wrap: break-word; word-break: break-word; }
+.queue-blocked { font-size: 11px; color: var(--text-muted); overflow-wrap: break-word; word-break: break-word; }
+
+.queue-status {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+.queue-status.planned     { background: var(--badge-planned-bg); color: var(--badge-planned-text); }
+.queue-status.in_progress { background: var(--badge-prog-bg);    color: var(--accent); }
+.queue-status.done        { background: var(--badge-done-bg);    color: var(--success); }
+.queue-status.blocked     { background: var(--badge-planned-bg); color: var(--text-muted); opacity: 0.8; }
+
+.log-entry {
+  display: grid;
+  grid-template-columns: 160px 60px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-section);
+  font-size: 13px;
+}
+.log-entry:last-child { border-bottom: none; }
+.log-time              { color: var(--text-muted); font-size: 11px; padding-top: 1px; }
+.log-result.success    { color: var(--success); }
+.log-result.warning    { color: var(--warning); }
+.log-result.error      { color: var(--error); }
+.log-summary           { color: var(--text-sec); line-height: 1.5; overflow-wrap: break-word; word-break: break-word; }
+.log-cost              { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+.log-num               { display: inline-block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin-right: 6px; }
+.log-model             { display: inline-block; font-size: 10px; letter-spacing: 0.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-section); color: var(--text-muted); margin-right: 6px; vertical-align: 1px; }
+.log-model.opus        { color: var(--warning); border-color: var(--warning); }
+.log-model.sonnet      { color: var(--text-dim); }
+.log-model.escalated   { font-weight: 600; }
+
+.error-box {
+  padding: 16px 18px;
+  border: 1px solid var(--error-border);
+  border-radius: 8px;
+  background: var(--error-bg);
+  font-size: 13px;
+  color: var(--error);
+  margin-bottom: 24px;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.help-banner {
+  padding: 16px 18px;
+  border: 1px solid var(--error-border);
+  border-left: 3px solid var(--error);
+  border-radius: 8px;
+  background: var(--error-bg);
+  font-size: 13px;
+  color: var(--text-sec);
+  margin-bottom: 24px;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.help-banner strong { color: var(--error); letter-spacing: 1px; }
+
+.failed-item {
+  padding: 14px 18px;
+  border: 1px solid var(--error-border);
+  border-radius: 8px;
+  background: var(--error-bg);
+  margin-bottom: 8px;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.failed-num     { font-size: 10px; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
+.failed-summary { font-size: 13px; color: var(--text-sec); line-height: 1.5; margin-bottom: 4px; }
+.failed-when    { font-size: 11px; color: var(--text-dim); }
+
+.refresh-line {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-align: center;
+  margin-top: 40px;
+}
+
+.loading {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+  padding: 40px 0;
+}
+
+@media (max-width: 480px) {
+  .status-row { flex-wrap: wrap; row-gap: 6px; }
+  .status-time { margin-left: 0; }
+  .metrics-row { grid-template-columns: repeat(2, 1fr); }
+  .log-entry {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 6px 10px;
+  }
+  .log-time    { order: 1; }
+  .log-result  { order: 2; text-align: right; }
+  .log-summary { order: 3; grid-column: 1 / -1; margin-top: 2px; }
+  .queue-item  { padding: 12px 14px; }
+  .queue-title { font-size: 13px; }
+}
+
+#auth-widget {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border-hi-soft);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+}
+#auth-widget button, #auth-widget a {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+}
+#auth-widget button:hover, #auth-widget a:hover { text-decoration: underline; }
+#auth-email-input, #auth-password-input {
+  background: var(--bg);
+  border: 1px solid var(--border-hi-soft);
+  color: var(--text);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  width: 150px;
+}
+#auth-error { color: var(--error); font-size: 10px; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script></head>
+<body>
+
+<a class="back" href="index.html">← bobdavismusic.com</a>
+
+<h1>Director Status</h1>
+<p class="subtitle">Autonomous, refreshes every 30s</p>
+
+<div id="app"><p class="loading">Loading...</p></div>
+<div id="refresh-line" class="refresh-line"></div>
+
+<div id="auth-widget">
+  <span id="auth-status">Signed out</span>
+  <button id="auth-btn" onclick="toggleAuthUI()">Sign in</button>
+  <input id="auth-email-input" type="email" placeholder="Email" autocomplete="username" style="display:none" />
+  <input id="auth-password-input" type="password" placeholder="Password" autocomplete="current-password" style="display:none" />
+  <button id="auth-submit" style="display:none" onclick="submitLogin()">OK</button>
+  <span id="auth-error" style="display:none"></span>
+</div>
+
+<script>
+const API_BASE  = 'https://gigsync-xa69.onrender.com';
+const TOKEN_KEY = 'gigsync_jwt';
+
+let lastLoaded = null;
+let lastData   = null;
+
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+function renderAuthWidget() {
+  const token = getToken();
+  const statusEl = document.getElementById('auth-status');
+  const btnEl    = document.getElementById('auth-btn');
+  const emailEl  = document.getElementById('auth-email-input');
+  const pwEl     = document.getElementById('auth-password-input');
+  const submitEl = document.getElementById('auth-submit');
+  const errEl    = document.getElementById('auth-error');
+  if (!statusEl) return;
+
+  emailEl.style.display  = 'none';
+  pwEl.style.display     = 'none';
+  submitEl.style.display = 'none';
+  errEl.style.display    = 'none';
+
+  if (token) {
+    statusEl.textContent = 'Signed in';
+    statusEl.style.color = 'var(--success)';
+    btnEl.textContent    = 'Sign out';
+    btnEl.onclick        = signOut;
+  } else {
+    statusEl.textContent = 'Signed out';
+    statusEl.style.color = '';
+    btnEl.textContent    = 'Sign in';
+    btnEl.onclick        = toggleAuthUI;
+  }
+}
+
+function toggleAuthUI() {
+  const emailEl  = document.getElementById('auth-email-input');
+  const pwEl     = document.getElementById('auth-password-input');
+  const submitEl = document.getElementById('auth-submit');
+  const btnEl    = document.getElementById('auth-btn');
+  const errEl    = document.getElementById('auth-error');
+  const showing  = emailEl.style.display !== 'none';
+  if (showing) {
+    emailEl.style.display  = 'none';
+    pwEl.style.display     = 'none';
+    submitEl.style.display = 'none';
+    errEl.style.display    = 'none';
+    btnEl.textContent      = 'Sign in';
+  } else {
+    emailEl.style.display  = 'inline-block';
+    pwEl.style.display     = 'inline-block';
+    submitEl.style.display = 'inline-block';
+    errEl.style.display    = 'none';
+    emailEl.value          = '';
+    pwEl.value             = '';
+    emailEl.focus();
+    btnEl.textContent      = 'Cancel';
+    btnEl.onclick          = toggleAuthUI;
+  }
+}
+
+async function submitLogin() {
+  const emailEl = document.getElementById('auth-email-input');
+  const pwEl    = document.getElementById('auth-password-input');
+  const errEl   = document.getElementById('auth-error');
+  const email   = emailEl.value.trim();
+  const password = pwEl.value;
+  if (!email || !password) return;
+
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch(API_BASE + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    if (r.ok) {
+      const d = await r.json();
+      localStorage.setItem(TOKEN_KEY, d.token);
+      renderAuthWidget();
+      load();
+      return;
+    }
+    if (r.status === 401) {
+      errEl.textContent = 'Invalid email or password';
+      errEl.style.display = 'inline';
+      return;
+    }
+  } catch { /* network error */ }
+  errEl.textContent = 'Connection error';
+  errEl.style.display = 'inline';
+}
+
+function signOut() {
+  localStorage.removeItem(TOKEN_KEY);
+  renderAuthWidget();
+  load();
+}
+
+// Returns the status object, or null when signed out / unauthorized.
+async function fetchStatus() {
+  const token = getToken();
+  if (!token) return null;
+  const r = await fetch(API_BASE + '/auth/director-status', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (r.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    renderAuthWidget();
+    return null;
+  }
+  if (r.status === 404) return null;
+  if (r.ok) return r.json();
+  throw new Error('status ' + r.status);
+}
+
+function fmtLocal(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+    timeZoneName: 'short'
+  });
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ' + (m % 60) + 'm ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+function fmt$(n) {
+  if (n == null) return '-';
+  return '$' + n.toFixed(2);
+}
+
+function render(d) {
+  const dotClass    = d.currentTask ? 'working' : (d.lastRunResult === 'success' ? 'ok' : d.lastRunResult === 'error' ? 'err' : 'idle');
+  const statusLabel = d.currentTask ? 'Working' : 'Idle';
+  const currentHtml = d.currentTask
+    ? (d.currentTask.context || d.currentTask.name || 'Working...')
+    : 'Waiting for next scheduled run (3 AM nightly)';
+
+  const errors = (d.runLog || []).filter(r => r.result === 'error').slice(-1);
+
+  // Metrics
+  const logWithCost  = (d.runLog || []).filter(e => e.costUsd != null);
+  const totalCost    = d.costSummary ? d.costSummary.totalUsd
+                     : logWithCost.reduce((s, e) => s + e.costUsd, 0);
+  const lastCost     = logWithCost.length ? logWithCost[logWithCost.length - 1].costUsd : null;
+  const lastRunTotal = d.lastRunTotalUsd != null ? d.lastRunTotalUsd : null;
+  const completedCount = d.counter ? d.counter.value : 0;
+
+  const metricsHtml = `
+    <div class="metrics-row">
+      <div class="metric-card">
+        <div class="metric-value">${completedCount}</div>
+        <div class="metric-label">${d.counter ? d.counter.label : 'Tasks Complete'}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">${fmt$(totalCost || null)}</div>
+        <div class="metric-label">Total Spent</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">${fmt$(lastCost)}</div>
+        <div class="metric-label">Last Task Cost</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">${fmt$(lastRunTotal)}</div>
+        <div class="metric-label">Last Run Total${d.lastRunBudgetUsd ? ` / $${d.lastRunBudgetUsd} cap` : ''}</div>
+      </div>
+    </div>`;
+
+  const queueHtml = (d.taskQueue || []).map(t => `
+    <div class="queue-item${t.status === 'in_progress' ? ' active' : ''}">
+      <div class="queue-num">Task ${t.num}</div>
+      <div class="queue-title">${t.title}</div>
+      ${t.concept     ? `<div class="queue-concept">${t.concept}</div>` : ''}
+      ${t.description ? `<div class="queue-concept">${t.description}</div>` : ''}
+      ${t.raisesBarOn ? `<div class="queue-bar">→ ${t.raisesBarOn}</div>` : ''}
+      ${t.blockedBy ? `<div class="queue-blocked">blocked by ${t.blockedBy}</div>` : ''}
+      <span class="queue-status ${t.status || 'planned'}">${(t.status || 'planned').replace('_', ' ')}</span>
+    </div>`).join('');
+
+  const failed = d.failedTasks || [];
+  const failedPlural = failed.length !== 1;
+  const helpHtml = failed.length ? `
+    <div class="help-banner">
+      <strong>Help needed.</strong> ${failed.length} task${failedPlural ? 's are' : ' is'} stuck in the dead-letter queue and ${failedPlural ? 'need' : 'needs'} a human to resolve. See "Needs attention" below.
+    </div>` : '';
+  const failedHtml = failed.length ? `
+    <div class="section-head">Needs attention | ${failed.length} stuck task${failedPlural ? 's' : ''}</div>
+    <div class="queue">${[...failed].reverse().map(f => `
+      <div class="failed-item">
+        <div class="failed-num">Task ${f.num}${f.project ? ' · ' + f.project : ''}</div>
+        <div class="failed-summary">${f.summary || 'Failed with no summary recorded.'}</div>
+        <div class="failed-when">dead-lettered ${timeAgo(f.failedAt)}${f.failedAt ? ' · ' + fmtLocal(f.failedAt) : ''}</div>
+      </div>`).join('')}</div>` : '';
+
+  const modelTag = (m) => {
+    if (!m) return '';
+    const s = String(m).toLowerCase();
+    if (s.includes('opus'))   return 'Opus';
+    if (s.includes('sonnet')) return 'Sonnet';
+    if (s.includes('haiku'))  return 'Haiku';
+    return m;
+  };
+  const logHtml = [...(d.runLog || [])].reverse().slice(0, 20).map(e => {
+    const label = modelTag(e.model);
+    const numHtml   = e.num ? `<span class="log-num">Task ${e.num}</span>` : '';
+    const modelHtml = label ? `<span class="log-model ${label.toLowerCase()}${e.escalated ? ' escalated' : ''}">${label}</span>` : '';
+    return `
+    <div class="log-entry">
+      <span class="log-time">${fmtLocal(e.runAt || e.completedAt)}</span>
+      <span class="log-result ${e.result}">${e.result || ''}</span>
+      <div>
+        <div class="log-summary">${numHtml}${modelHtml}${e.summary || e.lastRunSummary || ''}</div>
+        ${e.costUsd != null ? `<div class="log-cost">${fmt$(e.costUsd)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('app').innerHTML = `
+    ${helpHtml}
+    ${errors.length ? `<div class="error-box">Recent error: ${errors[0].summary}</div>` : ''}
+    <div class="status-row">
+      <span class="dot ${dotClass}"></span>
+      <span class="status-text">${statusLabel}</span>
+      <span class="status-time">Last run: ${timeAgo(d.lastRunAt)}${d.lastRunAt ? ' · ' + fmtLocal(d.lastRunAt) : ''}</span>
+    </div>
+    ${metricsHtml}
+    ${failedHtml}
+    <div class="section-head">Current task</div>
+    <div class="current-task${d.currentTask ? '' : ' none'}">${currentHtml}</div>
+    <div class="section-head">Up next</div>
+    <div class="queue">${queueHtml || '<p style="color:var(--text-muted);font-size:13px;font-style:italic">Nothing queued.</p>'}</div>
+    <div class="section-head">Run log</div>
+    ${logHtml || '<p style="color:var(--text-muted);font-size:13px;font-style:italic">No runs recorded yet.</p>'}
+  `;
+}
+
+function updateRefreshLine() {
+  const el = document.getElementById('refresh-line');
+  if (!el) return;
+  if (!lastLoaded) { el.textContent = ''; return; }
+  const s = Math.floor((Date.now() - lastLoaded) / 1000);
+  el.textContent = s < 5 ? 'refreshed just now' : 'refreshed ' + s + 's ago · updates every 30s';
+}
+
+async function load() {
+  try {
+    const d = await fetchStatus();
+    if (!d) {
+      lastData   = null;
+      lastLoaded = null;
+      const msg = getToken()
+        ? 'No director status recorded yet. It will appear here once the director runs.'
+        : 'Sign in with your GigSync account to view director status.';
+      document.getElementById('app').innerHTML = '<p class="loading">' + msg + '</p>';
+      updateRefreshLine();
+      return;
+    }
+    lastData   = d;
+    lastLoaded = Date.now();
+    render(d);
+  } catch (e) {
+    if (!lastData) {
+      document.getElementById('app').innerHTML = '<p class="loading">Unable to load status data.</p>';
+    }
+  }
+  updateRefreshLine();
+}
+
+renderAuthWidget();
+load();
+setInterval(load, 30000);
+setInterval(updateRefreshLine, 5000);
+</script>
+
+</body>
+</html>

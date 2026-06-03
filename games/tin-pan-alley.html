@@ -1,0 +1,910 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Tin Pan Alley</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// ── Note frequencies (C4 octave) ─────────────────────────────────────────────
+const FREQ = { C:261.63, D:293.66, E:329.63, F:349.23, G:392.00, A:440.00, B:493.88 };
+
+// ── Round definitions ─────────────────────────────────────────────────────────
+// phrase: note sequence | blanks: indices player must fill | tempo: BPM | timeLimit: seconds per blank
+const ROUNDS = [
+  { phrase:['C','E','G','E'],             blanks:[3],     tempo:72,  timeLimit:4.0 },
+  { phrase:['G','E','D','C','G'],         blanks:[1,3],   tempo:80,  timeLimit:3.5 },
+  { phrase:['C','D','E','C','D','E'],     blanks:[1,4],   tempo:88,  timeLimit:3.0 },
+  { phrase:['E','D','C','B','C','D','E'], blanks:[0,3,5], tempo:96,  timeLimit:2.5 },
+  { phrase:['G','A','B','A','G','E','D','C'], blanks:[1,4,6], tempo:108, timeLimit:2.0 }
+];
+
+// ── Canvas setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width  = W; canvas.height = H;
+  canvas.style.width  = W * scale + 'px';
+  canvas.style.height = H * scale + 'px';
+  wrap.style.width  = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playPianoNote(freq, duration = 0.55) {
+  const ac  = getAudio();
+  const now = ac.currentTime;
+  const osc1 = ac.createOscillator(); osc1.type = 'triangle'; osc1.frequency.value = freq;
+  const osc2 = ac.createOscillator(); osc2.type = 'sine';     osc2.frequency.value = freq * 2;
+  const osc3 = ac.createOscillator(); osc3.type = 'sine';     osc3.frequency.value = freq * 3;
+  const g1 = ac.createGain(); g1.gain.value = 0.7;
+  const g2 = ac.createGain(); g2.gain.value = 0.2;
+  const g3 = ac.createGain(); g3.gain.value = 0.08;
+  const master = ac.createGain();
+  osc1.connect(g1); osc2.connect(g2); osc3.connect(g3);
+  g1.connect(master); g2.connect(master); g3.connect(master);
+  master.connect(ac.destination);
+  master.gain.setValueAtTime(0, now);
+  master.gain.linearRampToValueAtTime(0.32, now + 0.012);
+  master.gain.exponentialRampToValueAtTime(0.10, now + 0.18);
+  master.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  [osc1,osc2,osc3].forEach(o => { o.start(now); o.stop(now + duration + 0.05); });
+}
+
+function playWrong() {
+  const ac = getAudio(), now = ac.currentTime;
+  const osc = ac.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 140;
+  const g = ac.createGain();
+  osc.connect(g); g.connect(ac.destination);
+  g.gain.setValueAtTime(0.28, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+  osc.start(now); osc.stop(now + 0.4);
+}
+
+function playSuccess() {
+  const ac = getAudio(), now = ac.currentTime;
+  ['C','E','G'].forEach((n, i) => {
+    const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = FREQ[n] * (i === 2 ? 2 : 1);
+    const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    const t = now + i * 0.1;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    o.start(t); o.stop(t + 0.7);
+  });
+}
+
+function playComplete() {
+  const ac = getAudio(), now = ac.currentTime;
+  [261.63,329.63,392.00,523.25].forEach((f, i) => {
+    const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+    const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    const t = now + i * 0.08;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.2, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+    o.start(t); o.stop(t + 0.9);
+  });
+}
+
+// ── Game state ────────────────────────────────────────────────────────────────
+let state;           // 'title' | 'preview' | 'challenge' | 'phrase_done' | 'gameover'
+let roundNum;        // 0-4
+let score;
+let best;
+let popups;
+let hearts;          // per-round lives
+let roundScore;
+let phrase;          // current round note array
+let blanks;          // blank positions
+let blankAnswers;    // player's filled answers (correct/wrong/null)
+let noteIndex;       // current note being played/processed
+let noteTimer;       // seconds until next note advance
+let noteDuration;    // seconds per beat (60/tempo)
+let keyHighlight;    // { note, t } - which key is flashing
+let inputTimer;      // seconds remaining for current blank input
+let blankIndex;      // index into blanks[] (which blank we're on)
+let previewDone;     // flag for preview complete
+let phraseDoneTimer;
+let gameoverTimer;
+let listenBtn;       // { x,y,w,h }
+let feedbackFn;      // null or function to run when feedback timer expires
+
+function startGame() {
+  state       = 'title';
+  roundNum    = 0;
+  score       = 0;
+  best        = parseInt(localStorage.getItem('tin_pan_alley_best') || '0', 10);
+  popups      = [];
+  keyHighlight = null;
+  phrase = []; blanks = []; blankAnswers = [];
+  noteIndex = 0; noteTimer = 0; blankIndex = 0;
+  phraseDoneTimer = 0; gameoverTimer = 0;
+  listenBtn = { x: W/2 - 60, y: 380, w: 120, h: 38 };
+}
+
+function startRound() {
+  const r = ROUNDS[roundNum];
+  phrase  = r.phrase.slice();
+  blanks  = r.blanks.slice();
+  blankAnswers = new Array(blanks.length).fill(null);
+  hearts  = 3;
+  roundScore = 0;
+  noteDuration = 60 / r.tempo;
+  noteIndex = 0;
+  noteTimer = 0.5; // brief pause before playback starts
+  blankIndex = 0;
+  previewDone = false;
+  keyHighlight = null;
+  inputTimer = 0;
+  feedbackFn = null;
+  state = 'preview';
+}
+
+function endRound() {
+  score += roundScore;
+  if (roundNum < 4) {
+    roundNum++;
+    startRound();
+  } else {
+    if (score > best) {
+      best = score;
+      localStorage.setItem('tin_pan_alley_best', String(best));
+    }
+    playComplete();
+    state = 'gameover';
+    gameoverTimer = 0;
+  }
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, color, t: 0, dur: 0.9 });
+}
+
+// ── Piano key layout ──────────────────────────────────────────────────────────
+const WHITE_NOTES = ['C','D','E','F','G','A','B'];
+const BLACK_NOTES = ['C#','D#',null,'F#','G#','A#',null];
+const KEY_W = Math.floor(W / 7);   // ~51px per white key
+const KEY_H = 175;                 // white key height
+const KEY_Y = H - KEY_H - 10;     // top of keyboard
+const BK_W  = Math.round(KEY_W * 0.6);
+const BK_H  = Math.round(KEY_H * 0.6);
+
+function keyRect(noteName) {
+  const wi = WHITE_NOTES.indexOf(noteName);
+  if (wi >= 0) {
+    return { x: wi * KEY_W, y: KEY_Y, w: KEY_W, h: KEY_H, black: false };
+  }
+  const bi = BLACK_NOTES.indexOf(noteName);
+  if (bi >= 0) {
+    const bx = bi * KEY_W + KEY_W - Math.floor(BK_W / 2);
+    return { x: bx, y: KEY_Y, w: BK_W, h: BK_H, black: true };
+  }
+  return null;
+}
+
+function noteAtPoint(px, py) {
+  // Check black keys first (on top)
+  for (let i = 0; i < BLACK_NOTES.length; i++) {
+    const bn = BLACK_NOTES[i];
+    if (!bn) continue;
+    const r = keyRect(bn);
+    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return bn;
+  }
+  // Then white keys
+  for (let i = 0; i < WHITE_NOTES.length; i++) {
+    const wn = WHITE_NOTES[i];
+    const r = keyRect(wn);
+    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return wn;
+  }
+  return null;
+}
+
+// ── Input handling ────────────────────────────────────────────────────────────
+function getCanvasPos(e) {
+  const rect  = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const cx = (e.clientX ?? (e.touches && e.touches[0].clientX)) - rect.left;
+  const cy = (e.clientY ?? (e.touches && e.touches[0].clientY)) - rect.top;
+  return { x: cx * scaleX, y: cy * scaleY };
+}
+
+function handleTap(cx, cy) {
+  if (state === 'title') { startRound(); return; }
+
+  if (state === 'gameover') {
+    // Share
+    if (cx >= W/2 - 70 && cx <= W/2 + 70 && cy >= 440 && cy <= 480) {
+      if (navigator.share) navigator.share({ title:'Tin Pan Alley', text:`I scored ${score} in Tin Pan Alley!`, url: location.href });
+    }
+    // Play Again
+    if (cx >= W/2 - 70 && cx <= W/2 + 70 && cy >= 490 && cy <= 530) { startGame(); startRound(); }
+    return;
+  }
+
+  if (state === 'preview') {
+    // LISTEN button  |  replay preview
+    const lb = listenBtn;
+    if (cx >= lb.x && cx <= lb.x + lb.w && cy >= lb.y && cy <= lb.y + lb.h) {
+      noteIndex = 0;
+      noteTimer = 0.3;
+      keyHighlight = null;
+    }
+    return;
+  }
+
+  if (state === 'challenge') {
+    const tappedNote = noteAtPoint(cx, cy);
+    if (!tappedNote) return;
+    const targetNote = phrase[blanks[blankIndex]];
+    if (FREQ[tappedNote] !== undefined || tappedNote === targetNote) {
+      playPianoNote(FREQ[tappedNote] || FREQ[targetNote]);
+      keyHighlight = { note: tappedNote, t: 0 };
+    }
+    if (tappedNote === targetNote) {
+      const speedBonus = Math.round(50 * (inputTimer / ROUNDS[roundNum].timeLimit));
+      const pts = 100 + speedBonus;
+      roundScore += pts;
+      addPopup('+' + pts, W/2, 370, '#FFE066');
+      blankAnswers[blankIndex] = 'correct';
+      blankIndex++;
+      feedbackFn = null;
+      advanceChallenge();
+    } else {
+      hearts = Math.max(0, hearts - 1);
+      roundScore = Math.max(0, roundScore - 30);
+      addPopup('MISS', W/2, 370, '#E74C3C');
+      playWrong();
+      blankAnswers[blankIndex] = 'wrong';
+      blankIndex++;
+      feedbackFn = null;
+      advanceChallenge();
+    }
+    return;
+  }
+
+  if (state === 'phrase_done') {
+    if (phraseDoneTimer > 0.5) endRound();
+    return;
+  }
+}
+
+canvas.addEventListener('click',     e => { const p = getCanvasPos(e); handleTap(p.x, p.y); });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const p = getCanvasPos(e); handleTap(p.x, p.y); }, { passive: false });
+
+// ── Game logic ────────────────────────────────────────────────────────────────
+function advancePreview() {
+  if (noteIndex >= phrase.length) {
+    previewDone = true;
+    noteTimer = 1.2;
+    return;
+  }
+  const note = phrase[noteIndex];
+  playPianoNote(FREQ[note], noteDuration * 0.88);
+  keyHighlight = { note, t: 0 };
+  noteIndex++;
+  noteTimer = noteDuration;
+  if (noteIndex >= phrase.length) {
+    previewDone = true;
+    noteTimer = 1.2;
+  }
+}
+
+function startChallenge() {
+  state = 'challenge';
+  noteIndex = 0;
+  blankIndex = 0;
+  noteTimer = 0.5;
+  keyHighlight = null;
+}
+
+function advanceChallengeNote() {
+  if (noteIndex >= phrase.length) {
+    // Phrase complete
+    playSuccess();
+    state = 'phrase_done';
+    phraseDoneTimer = 0;
+    return;
+  }
+  if (blanks.includes(noteIndex)) {
+    // Stop and wait for input
+    inputTimer = ROUNDS[roundNum].timeLimit;
+    // Don't advance noteIndex yet
+    return;
+  }
+  // Play known note
+  const note = phrase[noteIndex];
+  playPianoNote(FREQ[note], noteDuration * 0.88);
+  keyHighlight = { note, t: 0 };
+  noteIndex++;
+  noteTimer = noteDuration;
+}
+
+function advanceChallenge() {
+  // Called after blank was answered  |  advance past the blank
+  noteIndex++;
+  noteTimer = noteDuration * 0.5;
+}
+
+// ── Game loop ─────────────────────────────────────────────────────────────────
+let lastT = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastT) / 1000, 0.08);
+    lastT = ts;
+
+    // Update key highlight
+    if (keyHighlight) {
+      keyHighlight.t += dt;
+      if (keyHighlight.t > 0.45) keyHighlight = null;
+    }
+
+    // Update popups
+    popups = popups.filter(p => {
+      p.t += dt;
+      p.y -= 30 * dt;
+      return p.t < p.dur;
+    });
+
+    if (state === 'preview') {
+      noteTimer -= dt;
+      if (previewDone && noteTimer <= 0) {
+        startChallenge();
+      } else if (!previewDone && noteTimer <= 0) {
+        advancePreview();
+      }
+    }
+
+    if (state === 'challenge') {
+      if (blanks.includes(noteIndex)) {
+        // Waiting for input
+        inputTimer -= dt;
+        if (inputTimer <= 0) {
+          // Timeout = wrong
+          hearts = Math.max(0, hearts - 1);
+          roundScore = Math.max(0, roundScore - 30);
+          addPopup('TIME', W/2, 370, '#E74C3C');
+          playWrong();
+          blankAnswers[blankIndex] = 'wrong';
+          blankIndex++;
+          advanceChallenge();
+        }
+      } else {
+        noteTimer -= dt;
+        if (noteTimer <= 0) {
+          advanceChallengeNote();
+        }
+      }
+    }
+
+    if (state === 'phrase_done') {
+      phraseDoneTimer += dt;
+      if (phraseDoneTimer > 2.0) endRound();
+    }
+
+    if (state === 'gameover') {
+      gameoverTimer += dt;
+    }
+
+    draw();
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+
+// ── Drawing ───────────────────────────────────────────────────────────────────
+
+function drawBg() {
+  ctx.save();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0d0005');
+  grad.addColorStop(1, '#1a0800');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawSaloonHeader() {
+  ctx.save();
+  // Curtain ropes
+  ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(40, 60, 80, 100, 120, 80); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W, 0); ctx.bezierCurveTo(W-40, 60, W-80, 100, W-120, 80); ctx.stroke();
+  // Curtain folds (left)
+  const curtainGrad = ctx.createLinearGradient(0, 0, 80, 0);
+  curtainGrad.addColorStop(0, '#5c0a0a');
+  curtainGrad.addColorStop(1, 'rgba(92,10,10,0)');
+  ctx.fillStyle = curtainGrad;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(90,0); ctx.lineTo(70,110); ctx.lineTo(0,80); ctx.fill();
+  // Curtain folds (right)
+  const curtainGrad2 = ctx.createLinearGradient(W, 0, W-80, 0);
+  curtainGrad2.addColorStop(0, '#5c0a0a');
+  curtainGrad2.addColorStop(1, 'rgba(92,10,10,0)');
+  ctx.fillStyle = curtainGrad2;
+  ctx.beginPath(); ctx.moveTo(W,0); ctx.lineTo(W-90,0); ctx.lineTo(W-70,110); ctx.lineTo(W,80); ctx.fill();
+  // Saloon sign
+  ctx.fillStyle = '#2a1500';
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  const sx = W/2 - 90, sy = 14, sw = 180, sh = 36;
+  roundRect(sx, sy, sw, sh, 6);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 17px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('TIN PAN ALLEY', W/2, sy + sh/2);
+  // Piano silhouette
+  drawPianoSilhouette(60, 60, 240, 80);
+  ctx.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+function drawPianoSilhouette(x, y, w, h) {
+  ctx.save();
+  // Piano body
+  ctx.fillStyle = '#1a0a00';
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y + h * 0.15);
+  ctx.lineTo(x + w * 0.12, y);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // Keys
+  const numKeys = 12;
+  const kw = w * 0.82 / numKeys;
+  const kx = x + w * 0.06;
+  const ky = y + h * 0.45;
+  const kh = h * 0.48;
+  for (let i = 0; i < numKeys; i++) {
+    ctx.fillStyle = i % 3 === 1 ? '#111' : '#E8D8B0';
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
+    ctx.fillRect(kx + i * kw, ky, kw - 1, kh);
+    ctx.strokeRect(kx + i * kw, ky, kw - 1, kh);
+  }
+  // Lid
+  ctx.fillStyle = '#0d0600';
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.12, y);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, y + h * 0.12);
+  ctx.lineTo(x + w * 0.55, y + h * 0.2);
+  ctx.lineTo(x + w * 0.12, y);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Note pitch → y position within phrase display area (higher pitch = higher on screen)
+function noteToY(note, top, height) {
+  const order = ['C','D','E','F','G','A','B'];
+  const i = order.indexOf(note);
+  // i=0 (C) is lowest → bottom; i=6 (B) is highest → top
+  return top + height - (i / 6) * height;
+}
+
+function drawPhraseDisplay() {
+  ctx.save();
+  const top = 155, areaH = 155, padX = 24;
+  const n = phrase.length;
+  const spacing = (W - padX * 2) / n;
+  const slotW = Math.min(spacing * 0.8, 36);
+  const slotH = 22;
+
+  // Staff lines
+  ctx.strokeStyle = 'rgba(200,160,74,0.18)'; ctx.lineWidth = 1;
+  for (let li = 0; li < 5; li++) {
+    const ly = top + (li / 4) * areaH;
+    ctx.beginPath(); ctx.moveTo(padX, ly); ctx.lineTo(W - padX, ly); ctx.stroke();
+  }
+
+  for (let i = 0; i < n; i++) {
+    const cx2 = padX + i * spacing + spacing / 2;
+    const isBlank = blanks.includes(i);
+    const blIdx  = blanks.indexOf(i);
+    const py = noteToY(phrase[i], top + slotH/2, areaH - slotH);
+
+    // Ledger line for C (below staff)
+    if (phrase[i] === 'C' || phrase[i] === 'D') {
+      ctx.strokeStyle = 'rgba(200,160,74,0.3)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx2 - slotW*0.7, py); ctx.lineTo(cx2 + slotW*0.7, py); ctx.stroke();
+    }
+
+    if (!isBlank) {
+      // Known note  |  gold filled oval
+      ctx.fillStyle = '#FFE066';
+      ctx.shadowColor = '#FFE066'; ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.ellipse(cx2, py, slotW/2, slotH/2, -0.25, 0, Math.PI*2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // Stem
+      ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx2 + slotW/2, py); ctx.lineTo(cx2 + slotW/2, py - 30); ctx.stroke();
+    } else {
+      // Blank slot
+      let color = '#555';
+      let label = '?';
+      if (blankAnswers[blIdx] === 'correct') { color = '#2ecc71'; label = phrase[i]; }
+      else if (blankAnswers[blIdx] === 'wrong')   { color = '#E74C3C'; label = phrase[i]; }
+      // Blinking when it's the active blank
+      const isActive = (state === 'challenge') && blanks[blankIndex] === i;
+      if (isActive) {
+        const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 200);
+        ctx.globalAlpha = pulse;
+        color = '#F4C842';
+      }
+      ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx2, py, slotW/2, slotH/2, -0.25, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.fillStyle = color; ctx.font = 'bold 13px Georgia, serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, cx2, py + 1);
+      ctx.globalAlpha = 1;
+      // Active blank timer arc
+      if (isActive) {
+        const frac = inputTimer / ROUNDS[roundNum].timeLimit;
+        ctx.strokeStyle = frac > 0.4 ? '#FFE066' : '#E74C3C';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(cx2, py, slotW/2 + 6, -Math.PI/2, -Math.PI/2 + frac * Math.PI*2);
+        ctx.stroke();
+      }
+    }
+
+    // Current playback cursor in preview/challenge
+    const isCurrent = (state === 'preview' && i === noteIndex - 1) ||
+                      (state === 'challenge' && !blanks.includes(noteIndex) && i === noteIndex - 1);
+    if (isCurrent) {
+      ctx.strokeStyle = 'rgba(255,224,102,0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx2, py, slotW/2 + 5, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawStatusBar() {
+  ctx.save();
+  // Round indicator
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(8, 8, 88, 26, 6); ctx.fill();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '12px Georgia, serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('ROUND ' + (roundNum+1) + '/5', 16, 21);
+
+  // Score
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(W/2 - 42, 8, 84, 26, 6); ctx.fill();
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 14px Arial, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(score + (roundScore > 0 ? ' +' + roundScore : ''), W/2, 21);
+
+  // Hearts
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(W - 70, 8, 62, 26, 6); ctx.fill();
+  ctx.font = '14px Arial';
+  ctx.textAlign = 'center';
+  let hearts3 = '';
+  for (let h=0; h<3; h++) hearts3 += (h < hearts ? '♥' : '♡');
+  ctx.fillStyle = hearts > 0 ? '#E74C3C' : '#555';
+  ctx.fillText(hearts3, W - 39, 21);
+  ctx.restore();
+}
+
+function drawPianoKeyboard() {
+  ctx.save();
+  // White keys
+  for (let i = 0; i < WHITE_NOTES.length; i++) {
+    const n = WHITE_NOTES[i];
+    const r = keyRect(n);
+    const isHighlit = keyHighlight && keyHighlight.note === n;
+    const fade = isHighlit ? Math.max(0, 1 - keyHighlight.t / 0.45) : 0;
+    ctx.fillStyle = isHighlit
+      ? `rgb(${Math.round(255*fade + 230*(1-fade))}, ${Math.round(224*fade + 215*(1-fade))}, ${Math.round(102*fade + 185*(1-fade))})`
+      : '#E8D8B0';
+    ctx.strokeStyle = '#2a1500'; ctx.lineWidth = 1.5;
+    ctx.fillRect(r.x, r.y, r.w - 1, r.h);
+    ctx.strokeRect(r.x, r.y, r.w - 1, r.h);
+    // Key label
+    ctx.fillStyle = isHighlit ? '#2a1500' : '#5a3810';
+    ctx.font = '10px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(n, r.x + r.w/2, r.y + r.h - 6);
+  }
+  // Black keys (on top)
+  for (let i = 0; i < BLACK_NOTES.length; i++) {
+    const n = BLACK_NOTES[i];
+    if (!n) continue;
+    const r = keyRect(n);
+    const isHighlit = keyHighlight && keyHighlight.note === n;
+    const fade = isHighlit ? Math.max(0, 1 - keyHighlight.t / 0.45) : 0;
+    ctx.fillStyle = isHighlit ? `rgba(255,224,102,${fade})` : '#1a0800';
+    ctx.strokeStyle = '#0a0000'; ctx.lineWidth = 1;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+  ctx.restore();
+}
+
+function drawListenBtn() {
+  ctx.save();
+  const lb = listenBtn;
+  ctx.fillStyle = previewDone && state === 'preview' ? '#C8A04A' : '#3a1f00';
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  roundRect(lb.x, lb.y, lb.w, lb.h, 8);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 15px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(previewDone ? 'REPLAY' : 'LISTEN', lb.x + lb.w/2, lb.y + lb.h/2);
+  ctx.restore();
+}
+
+function drawStateLabel() {
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (state === 'preview') {
+    ctx.fillStyle = 'rgba(200,160,74,0.9)';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText(previewDone ? 'Memorize the melody  |  then fill the gaps' : 'Listen to the melody...', W/2, 360);
+  } else if (state === 'challenge') {
+    ctx.fillStyle = 'rgba(255,224,102,0.85)';
+    ctx.font = '13px Georgia, serif';
+    const remaining = blanks.length - blankIndex;
+    ctx.fillText(remaining + ' note' + (remaining!==1?'s':'') + ' to fill', W/2, 360);
+  } else if (state === 'phrase_done') {
+    ctx.fillStyle = '#2ecc71';
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.fillText(roundNum < 4 ? 'Phrase Complete! +' + roundScore : 'All done!', W/2, 360);
+  }
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBg();
+  drawSaloonHeader();
+
+  // Title card
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  roundRect(20, 200, W-40, 200, 12); ctx.fill();
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 34px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Tin Pan Alley', W/2, 255);
+  ctx.fillStyle = '#C8A04A'; ctx.font = '14px Georgia, serif';
+  ctx.fillText('Fill in the missing notes', W/2, 290);
+  ctx.fillText('before the piano moves on', W/2, 310);
+
+  if (best > 0) {
+    ctx.fillStyle = '#888'; ctx.font = '12px Arial, sans-serif';
+    ctx.fillText('Best: ' + best, W/2, 340);
+  }
+
+  // Tap to play
+  const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 500);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText('TAP TO PLAY', W/2, 375);
+  ctx.globalAlpha = 1;
+
+  // Decorative keys hint
+  ctx.fillStyle = '#3a1f00';
+  for (let i = 0; i < 7; i++) {
+    const kx = 40 + i*42, ky = 420, kw = 38, kh = 90;
+    ctx.fillStyle = '#E8D8B0'; ctx.strokeStyle = '#5a3810'; ctx.lineWidth = 1;
+    ctx.fillRect(kx, ky, kw, kh); ctx.strokeRect(kx, ky, kw, kh);
+    ctx.fillStyle = '#5a3810'; ctx.font = '9px Georgia';
+    ctx.textAlign = 'center';
+    ctx.fillText(WHITE_NOTES[i], kx + kw/2, ky + kh - 8);
+  }
+
+  ctx.restore();
+}
+
+function drawGameover() {
+  ctx.save();
+  draw_playing_base();
+  // Dark overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  const isRecord = score > 0 && score >= best;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 32px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('FINAL SCORE', W/2, 220);
+  ctx.font = 'bold 52px Arial, sans-serif';
+  ctx.fillText(String(score), W/2, 288);
+
+  if (isRecord && gameoverTimer > 0.3) {
+    const pulse = 0.8 + 0.2 * Math.sin(Date.now() / 220);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 20px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W/2, 340);
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.fillStyle = '#888'; ctx.font = '14px Arial';
+    ctx.fillText('Best: ' + best, W/2, 340);
+  }
+
+  // Share button
+  ctx.fillStyle = '#3a1f00'; ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 2;
+  roundRect(W/2 - 70, 440, 140, 40, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 15px Georgia, serif';
+  ctx.fillText('SHARE', W/2, 460);
+
+  // Play Again
+  ctx.fillStyle = '#C8A04A'; ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 2;
+  roundRect(W/2 - 70, 490, 140, 40, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#1a0800'; ctx.font = 'bold 15px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W/2, 510);
+
+  ctx.restore();
+}
+
+function draw_playing_base() {
+  drawBg();
+  drawSaloonHeader();
+  drawPhraseDisplay();
+  drawStateLabel();
+  if (state === 'preview') drawListenBtn();
+  if (state !== 'gameover') drawStatusBar();
+  if (state !== 'title') drawPianoKeyboard();
+  // Popups
+  popups.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - p.t / p.dur);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 18px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (state === 'title') { drawTitle(); return; }
+  if (state === 'gameover') { drawGameover(); return; }
+  draw_playing_base();
+}
+
+// ── Feedback overlay (adapted from outlaw-run) ────────────────────────────────
+let fbOverlay = false;
+function showFeedback() {
+  if (fbOverlay) return;
+  fbOverlay = true;
+  const ov = document.createElement('div');
+  ov.style.cssText = `position:absolute;inset:0;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:10;padding:24px`;
+  ov.innerHTML = `
+    <div style="color:#FFE066;font:bold 20px Georgia,serif;text-align:center">How's Tin Pan Alley?</div>
+    <div id="fb-stars" style="font-size:32px;cursor:pointer">⭐⭐⭐⭐⭐</div>
+    <textarea id="fb-msg" placeholder="Tell Bob what you think..." style="width:100%;max-width:280px;height:70px;background:#1a0800;color:#FFE066;border:1px solid #C8A04A;border-radius:6px;padding:8px;font-size:13px;resize:none"></textarea>
+    <button id="fb-send" style="background:#C8A04A;color:#1a0800;border:none;padding:10px 28px;border-radius:6px;font:bold 14px Georgia,serif;cursor:pointer">Send Feedback</button>
+    <button id="fb-skip" style="background:transparent;color:#888;border:none;font:13px Arial;cursor:pointer">Skip</button>
+  `;
+  wrap.appendChild(ov);
+  let rating = 5;
+  ov.querySelector('#fb-stars').addEventListener('click', e => {
+    const r = ov.querySelector('#fb-stars');
+    const x = e.offsetX, tw = r.offsetWidth;
+    rating = Math.ceil((x / tw) * 5) || 1;
+    r.textContent = '⭐'.repeat(rating) + '☆'.repeat(5 - rating);
+  });
+  ov.querySelector('#fb-send').addEventListener('click', () => {
+    const msg = ov.querySelector('#fb-msg').value.trim();
+    fetch(FEEDBACK_ENDPOINT, { method:'POST', body: JSON.stringify({ game:'Tin Pan Alley', rating, message: msg }), headers:{'Content-Type':'application/json'} }).catch(()=>{});
+    ov.remove(); fbOverlay = false;
+  });
+  ov.querySelector('#fb-skip').addEventListener('click', () => { ov.remove(); fbOverlay = false; });
+}
+
+// Show feedback once at gameover after a delay
+const _origEndRound = endRound;
+// (handled by gameoverTimer reaching 3s)
+function checkFeedbackTrigger() {
+  if (state === 'gameover' && gameoverTimer > 3 && !fbOverlay) showFeedback();
+}
+
+// ── Test API ──────────────────────────────────────────────────────────────────
+window.__tpa = {
+  get state()       { return state; },
+  get roundNum()    { return roundNum; },
+  get score()       { return score; },
+  get roundScore()  { return roundScore; },
+  get phrase()      { return phrase; },
+  get blanks()      { return blanks; },
+  get blankAnswers(){ return blankAnswers; },
+  get hearts()      { return hearts; },
+  get noteIndex()   { return noteIndex; },
+  set noteIndex(v)  { noteIndex = v; },
+  get blankIndex()  { return blankIndex; },
+  set blankIndex(v) { blankIndex = v; },
+  set roundNum(v)   { roundNum = v; },
+  get inputTimer()  { return inputTimer; },
+  set inputTimer(v) { inputTimer = v; },
+  get noteTimer()   { return noteTimer; },
+  set noteTimer(v)  { noteTimer = v; },
+  get previewDone() { return previewDone; },
+  set previewDone(v){ previewDone = v; },
+  get keyHighlight(){ return keyHighlight; },
+  startGame,
+  startRound,
+  endRound,
+  advancePreview,
+  startChallenge,
+  advanceChallengeNote,
+  advanceChallenge,
+  handleTap,
+  playPianoNote,
+  ROUNDS,
+  FREQ,
+  WHITE_NOTES,
+  BLACK_NOTES,
+  keyRect,
+  noteAtPoint,
+  addPopup,
+  get popups() { return popups; },
+};
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+startGame();
+requestAnimationFrame(ts => { lastT = ts; requestAnimationFrame(loop); });
+
+// Feedback trigger (passive check each loop)
+setInterval(checkFeedbackTrigger, 1000);
+</script>
+</body>
+</html>

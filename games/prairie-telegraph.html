@@ -1,0 +1,881 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Prairie Telegraph  |  Bob Davis</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden}
+canvas{display:block;touch-action:none}
+#fb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);justify-content:center;align-items:center;z-index:100}
+#fb-overlay.show{display:flex}
+#fb-box{background:#1a0d2e;border:2px solid #FFE066;border-radius:12px;padding:24px;width:300px;font-family:Georgia,serif;color:#FFE066}
+#fb-box h3{margin-bottom:12px;font-size:18px}
+#fb-box select,#fb-box textarea{width:100%;margin-bottom:10px;padding:8px;border-radius:6px;background:#2a1040;color:#FFE066;border:1px solid #FFE066;font-family:Georgia,serif}
+#fb-box textarea{height:80px;resize:none}
+#fb-row{display:flex;gap:10px}
+#fb-row button{flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-family:Georgia,serif;font-size:14px;font-weight:bold}
+#fb-send{background:#FFE066;color:#1a0d2e}
+#fb-cancel{background:#2a1040;color:#FFE066}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <div id="fb-box">
+    <h3>Leave Feedback</h3>
+    <select id="fb-target">
+      <option value="general">General / next game</option>
+      <option value="Prairie Telegraph" selected>Prairie Telegraph</option>
+    </select>
+    <textarea id="fb-text" placeholder="What do you think?"></textarea>
+    <div id="fb-row">
+      <button id="fb-send">Send</button>
+      <button id="fb-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r){
+    r=Math.min(r,w/2,h/2);
+    this.beginPath();
+    this.moveTo(x+r,y);
+    this.lineTo(x+w-r,y);
+    this.quadraticCurveTo(x+w,y,x+w,y+r);
+    this.lineTo(x+w,y+h-r);
+    this.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    this.lineTo(x+r,y+h);
+    this.quadraticCurveTo(x,y+h,x,y+h-r);
+    this.lineTo(x,y+r);
+    this.quadraticCurveTo(x,y,x+r,y);
+    this.closePath();
+    return this;
+  };
+}
+
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+let scale = 1;
+function resize() {
+  scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = scale * W + 'px';
+  canvas.style.height = scale * H + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Semaphore alphabet ────────────────────────────────────────────────────────
+// 6 arm positions: 0°=up, 60°=upper-right, 120°=lower-right,
+//                 180°=down, 240°=lower-left, 300°=upper-left
+// Each letter = [leftArmAngle, rightArmAngle]
+const ALPHA = {
+  A:[0,60],   B:[0,120],  C:[0,180],  D:[0,240],  E:[0,300],
+  F:[60,0],   G:[60,120], H:[60,180], I:[60,240], J:[60,300],
+  K:[120,0],  L:[120,60], M:[120,180],N:[120,240],O:[120,300],
+  P:[180,0],  Q:[180,60], R:[180,120],S:[180,240],T:[180,300],
+  U:[240,0],  V:[240,60], W:[240,120],X:[240,300],
+  Y:[300,0],  Z:[300,60]
+};
+const ARM_POS = [0, 60, 120, 180, 240, 300];
+
+// ── Round definitions ─────────────────────────────────────────────────────────
+//  message: letters to relay each round
+//  time:    seconds allowed per letter
+//  gustEvery: seconds between gusts (0 = no gusts)
+const ROUNDS = [
+  { message: ['G','O'],         time: 13, gustEvery: 0 },
+  { message: ['R','U','N'],     time: 11, gustEvery: 8 },
+  { message: ['A','I','D'],     time:  9, gustEvery: 5 },
+  { message: ['R','I','D','E'], time:  8, gustEvery: 4 },
+  { message: ['H','E','L','P'], time:  7, gustEvery: 3 },
+];
+
+// Layout constants
+const FIG_Y   = 440;  // figure hip anchor y
+const FIG_SC  = 1.0;  // player scale
+const SIDE_SC = 0.78; // sender/receiver scale
+const SEND_X  = 75, PLAY_X = 180, RECV_X = 285;
+
+// Arm selector centers (bottom panel)
+const SEL_L_X = 90,  SEL_R_X = 270, SEL_Y = 560;
+const SEL_R   = 38;  // hex radius
+const ZONE_R  = 20;  // tap radius per zone
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let gs         = 'title';
+let round      = 0;
+let letterIdx  = 0;
+let lives      = 3;
+let score      = 0;
+let best       = parseInt(localStorage.getItem('pt_best') || '0');
+let targetL    = 0, targetR = 60;
+let playerL    = 120, playerR = 300;
+let senderL    = 0, senderR = 60;
+let letterTimer = 13;
+let gustTimer  = 9999;
+let gustActive = false;
+let gustRemain = 0;
+let popups     = [];
+let recvFlash  = 0;
+let wrongFlash = 0;
+let announceT  = 0;
+let windParts  = [];
+let lastT      = 0;
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function ac() { return audioCtx || (audioCtx = new (window.AudioContext || window.webkitAudioContext)()); }
+
+function playClick() {
+  try {
+    const a = ac(), o = a.createOscillator(), g = a.createGain();
+    o.connect(g); g.connect(a.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.12, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.07);
+    o.start(); o.stop(a.currentTime + 0.07);
+  } catch(e) {}
+}
+
+function playRelay() {
+  try {
+    const a = ac();
+    [523, 659, 784].forEach((f, i) => {
+      const o = a.createOscillator(), g = a.createGain();
+      o.connect(g); g.connect(a.destination);
+      o.frequency.value = f;
+      const t = a.currentTime + i * 0.09;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.22, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      o.start(t); o.stop(t + 0.28);
+    });
+  } catch(e) {}
+}
+
+function playError() {
+  try {
+    const a = ac(), o = a.createOscillator(), g = a.createGain();
+    o.type = 'sawtooth';
+    o.connect(g); g.connect(a.destination);
+    o.frequency.setValueAtTime(200, a.currentTime);
+    o.frequency.linearRampToValueAtTime(130, a.currentTime + 0.25);
+    g.gain.setValueAtTime(0.14, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.3);
+    o.start(); o.stop(a.currentTime + 0.3);
+  } catch(e) {}
+}
+
+function playGust() {
+  try {
+    const a = ac();
+    const buf = a.createBuffer(1, Math.floor(a.sampleRate * 0.55), a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * (1 - i/d.length) * 0.9;
+    const src = a.createBufferSource(), lpf = a.createBiquadFilter(), g = a.createGain();
+    src.buffer = buf;
+    lpf.type = 'lowpass'; lpf.frequency.value = 1400;
+    src.connect(lpf); lpf.connect(g); g.connect(a.destination);
+    g.gain.setValueAtTime(0.2, a.currentTime);
+    src.start(); src.stop(a.currentTime + 0.55);
+  } catch(e) {}
+}
+
+// ── Game logic ────────────────────────────────────────────────────────────────
+function startGame() {
+  round = 0; letterIdx = 0; lives = 3; score = 0;
+  popups = []; windParts = [];
+  gs = 'roundAnnounce'; announceT = 1.8;
+}
+
+function startLetter() {
+  const letter = ROUNDS[round].message[letterIdx];
+  [targetL, targetR] = ALPHA[letter];
+  // Set player to neutral (clearly wrong) positions
+  playerL = ARM_POS[(ARM_POS.indexOf(targetL) + 3) % 6];
+  playerR = ARM_POS[(ARM_POS.indexOf(targetR) + 2) % 6];
+  senderL = targetL; senderR = targetR;
+  letterTimer = ROUNDS[round].time;
+  gustTimer = ROUNDS[round].gustEvery > 0 ? ROUNDS[round].gustEvery : 99999;
+  gustActive = false;
+}
+
+function advanceLetter() {
+  letterIdx++;
+  if (letterIdx >= ROUNDS[round].message.length) {
+    gs = 'roundDone'; announceT = 1.8;
+  } else {
+    startLetter();
+  }
+}
+
+function doRelay() {
+  if (gs !== 'playing') return;
+  if (playerL === targetL && playerR === targetR) {
+    const bonus = letterTimer > ROUNDS[round].time / 2 ? 200 : 100;
+    score += bonus;
+    addPopup('RELAYED! +' + bonus, '#51CF66', PLAY_X, FIG_Y - 110);
+    recvFlash = 900;
+    playRelay();
+    advanceLetter();
+  } else {
+    lives--;
+    addPopup('WRONG!', '#E74C3C', PLAY_X, FIG_Y - 110);
+    wrongFlash = 600;
+    playError();
+    if (lives <= 0) {
+      gs = 'lose';
+      if (score > best) { best = score; localStorage.setItem('pt_best', best); }
+      return;
+    }
+    // Reset player arms and timer, retry same letter
+    playerL = ARM_POS[(ARM_POS.indexOf(targetL) + 3) % 6];
+    playerR = ARM_POS[(ARM_POS.indexOf(targetR) + 2) % 6];
+    letterTimer = ROUNDS[round].time;
+  }
+}
+
+function triggerGust() {
+  gustActive = true; gustRemain = 420;
+  let sl, sr;
+  do { sl = ARM_POS[Math.floor(Math.random()*6)]; } while (sl === targetL);
+  do { sr = ARM_POS[Math.floor(Math.random()*6)]; } while (sr === targetR || sr === sl);
+  senderL = sl; senderR = sr;
+  for (let i = 0; i < 25; i++) {
+    windParts.push({
+      x: -20, y: 140 + Math.random()*380,
+      vx: 230 + Math.random()*90, vy: (Math.random()-0.5)*50,
+      life: 0.6 + Math.random()*0.5, maxLife: 1.1,
+      sz: 1.5 + Math.random()*2.5
+    });
+  }
+  playGust();
+}
+
+function addPopup(text, color, x, y) {
+  popups.push({ text, color, x, y, life: 1.2 });
+}
+
+// ── Main loop ─────────────────────────────────────────────────────────────────
+function update(dt) {
+  if (gs === 'roundAnnounce' || gs === 'roundDone') {
+    announceT -= dt;
+    if (announceT <= 0) {
+      if (gs === 'roundAnnounce') { gs = 'playing'; startLetter(); }
+      else {
+        round++;
+        if (round >= ROUNDS.length) {
+          gs = 'win';
+          if (score > best) { best = score; localStorage.setItem('pt_best', best); }
+        } else { gs = 'roundAnnounce'; announceT = 1.8; }
+      }
+    }
+    return;
+  }
+  if (gs !== 'playing') return;
+
+  letterTimer -= dt;
+  if (letterTimer <= 0) {
+    lives--;
+    addPopup('TIME OUT!', '#E74C3C', PLAY_X, FIG_Y - 110);
+    wrongFlash = 600;
+    playError();
+    if (lives <= 0) {
+      gs = 'lose';
+      if (score > best) { best = score; localStorage.setItem('pt_best', best); }
+      return;
+    }
+    advanceLetter();
+    return;
+  }
+
+  if (ROUNDS[round].gustEvery > 0) {
+    gustTimer -= dt;
+    if (gustTimer <= 0) { triggerGust(); gustTimer = ROUNDS[round].gustEvery; }
+  }
+  if (gustActive) {
+    gustRemain -= dt * 1000;
+    if (gustRemain <= 0) { gustActive = false; senderL = targetL; senderR = targetR; }
+  }
+
+  for (const p of windParts) { p.x += p.vx*dt; p.y += p.vy*dt; p.life -= dt; }
+  windParts = windParts.filter(p => p.life > 0 && p.x < W+60);
+
+  for (const p of popups) { p.y -= 45*dt; p.life -= dt; }
+  popups = popups.filter(p => p.life > 0);
+  if (recvFlash > 0)  recvFlash  -= dt*1000;
+  if (wrongFlash > 0) wrongFlash -= dt*1000;
+}
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastT)/1000, 0.05);
+    lastT = ts;
+    update(dt);
+    draw(ts);
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+
+// ── Drawing helpers ───────────────────────────────────────────────────────────
+function pill(x, y, w, h, fill, stroke, text, tColor, font) {
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke || fill;
+  ctx.lineWidth = stroke ? 2 : 0;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, h/2);
+  ctx.fill();
+  if (stroke) ctx.stroke();
+  if (text) {
+    ctx.font = font || 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = tColor || '#fff';
+    ctx.fillText(text, x+w/2, y+h/2);
+  }
+  ctx.restore();
+}
+
+function drawFigure(cx, cy, sc, a1, a2, highlight) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(sc, sc);
+  const ARM = 60, fc = '#2a0f30';
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.ellipse(0, 28, 22, 7, 0, 0, Math.PI*2); ctx.fill();
+
+  // Highlight glow
+  if (highlight) {
+    ctx.fillStyle = highlight;
+    ctx.globalAlpha = 0.2;
+    ctx.beginPath(); ctx.ellipse(0, -30, 38, 58, 0, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Legs
+  ctx.strokeStyle = fc; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-5, 0); ctx.lineTo(-10, 28);
+  ctx.moveTo(5, 0);  ctx.lineTo(10, 28);
+  ctx.stroke();
+
+  // Torso
+  ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -40); ctx.stroke();
+
+  // Head
+  ctx.fillStyle = fc;
+  ctx.beginPath(); ctx.arc(0, -53, 13, 0, Math.PI*2); ctx.fill();
+
+  // Hat brim
+  ctx.fillStyle = fc;
+  ctx.beginPath(); ctx.ellipse(0, -66, 20, 5.5, 0, 0, Math.PI*2); ctx.fill();
+  // Hat crown
+  ctx.beginPath(); ctx.roundRect(-10, -88, 20, 24, 3); ctx.fill();
+
+  // Arms
+  const drawArm = (angle, flagColor, sx) => {
+    const rad = angle * Math.PI / 180;
+    const dx = Math.sin(rad)*ARM, dy = -Math.cos(rad)*ARM;
+    const ex = sx+dx, ey = -32+dy;
+    ctx.strokeStyle = fc; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, -32); ctx.lineTo(ex, ey); ctx.stroke();
+    // Flag circle
+    ctx.fillStyle = flagColor;
+    ctx.beginPath(); ctx.arc(ex, ey, 10, 0, Math.PI*2); ctx.fill();
+    // Shine
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.arc(ex-2.5, ey-2.5, 4, 0, Math.PI*2); ctx.fill();
+  };
+
+  drawArm(a1, '#FFE066', -14);
+  drawArm(a2, '#E74C3C',  14);
+  ctx.restore();
+}
+
+function drawBackground() {
+  const sky = ctx.createLinearGradient(0, 0, 0, 390);
+  sky.addColorStop(0, '#060210');
+  sky.addColorStop(0.6, '#1a0c32');
+  sky.addColorStop(1, '#7a2e0a');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, 390);
+
+  const gnd = ctx.createLinearGradient(0, 390, 0, H);
+  gnd.addColorStop(0, '#5a2508');
+  gnd.addColorStop(1, '#1a0800');
+  ctx.fillStyle = gnd; ctx.fillRect(0, 390, W, H-390);
+
+  // Horizon glow
+  const glow = ctx.createLinearGradient(0, 345, 0, 420);
+  glow.addColorStop(0, 'rgba(220,95,18,0)');
+  glow.addColorStop(0.45, 'rgba(220,95,18,0.38)');
+  glow.addColorStop(1, 'rgba(220,95,18,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 345, W, 75);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,242,210,0.8)';
+  for (let i = 0; i < 30; i++) {
+    ctx.beginPath();
+    ctx.arc((i*139.7+17)%W, (i*83.1+11)%290, 0.85, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Distant mesa silhouettes
+  ctx.fillStyle = 'rgba(40,15,60,0.5)';
+  ctx.beginPath();
+  ctx.moveTo(0, 370);
+  ctx.lineTo(0, 320); ctx.lineTo(35, 290); ctx.lineTo(55, 320);
+  ctx.lineTo(80, 300); ctx.lineTo(100, 315); ctx.lineTo(115, 295);
+  ctx.lineTo(140, 340); ctx.lineTo(W, 340); ctx.lineTo(W, 370);
+  ctx.fill();
+}
+
+function drawTelegraph() {
+  const WY = 348;
+  const xs = [SEND_X, PLAY_X, RECV_X];
+
+  // Wire
+  ctx.strokeStyle = '#6a4020'; ctx.lineWidth = 2;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(xs[0]-8, WY); ctx.lineTo(xs[2]+8, WY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Poles
+  xs.forEach(x => {
+    ctx.strokeStyle = '#3a2010'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, 390); ctx.lineTo(x, WY+8); ctx.stroke();
+    // Crossarm
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(x-16, WY+14); ctx.lineTo(x+16, WY+14); ctx.stroke();
+    // Insulators
+    ctx.fillStyle = '#8B5A2B';
+    ctx.beginPath(); ctx.arc(x-11, WY, 4.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x+11, WY, 4.5, 0, Math.PI*2); ctx.fill();
+  });
+}
+
+function drawHUD() {
+  // Score
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#FFE066';
+  ctx.fillText(score, W/2, 27);
+
+  // Lives (gold dots)
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < lives ? '#FFE066' : '#3a2010';
+    ctx.beginPath(); ctx.arc(18 + i*22, 22, 7, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Round label
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'right'; ctx.fillStyle = '#C8A04A';
+  ctx.fillText('ROUND '+(round+1)+'/5', W-8, 26);
+
+  // Timer bar
+  if (gs === 'playing') {
+    const pct = Math.max(0, letterTimer / ROUNDS[round].time);
+    const bx = 10, bw = W-20;
+    ctx.fillStyle = '#12082a'; ctx.fillRect(bx, 38, bw, 11);
+    const col = pct > 0.5 ? '#FFE066' : pct > 0.25 ? '#FF9F43' : '#E74C3C';
+    ctx.fillStyle = col; ctx.fillRect(bx, 38, bw*pct, 11);
+  }
+}
+
+function drawLetterProgress() {
+  if (gs !== 'playing' && gs !== 'roundDone') return;
+  const msg = ROUNDS[round].message;
+  const sw = 34, gap = 6;
+  const tot = msg.length*sw + (msg.length-1)*gap;
+  const sx = (W-tot)/2;
+  const y = 490;
+  msg.forEach((ch, i) => {
+    const lx = sx + i*(sw+gap);
+    const done   = i < letterIdx;
+    const active = i === letterIdx;
+    ctx.fillStyle = done ? '#1a4010' : active ? '#1a0d35' : '#0a0816';
+    ctx.strokeStyle = active ? '#FFE066' : '#3a2060';
+    ctx.lineWidth = active ? 2.5 : 1;
+    ctx.beginPath(); ctx.roundRect(lx, y, sw, 30, 5); ctx.fill(); ctx.stroke();
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = done ? '#51CF66' : active ? '#FFE066' : '#5a3870';
+    ctx.fillText(ch, lx+sw/2, y+15);
+  });
+}
+
+function drawArmSelector(cx, cy, curAngle, flagColor, label) {
+  // Background disk
+  ctx.fillStyle = 'rgba(14,7,28,0.85)';
+  ctx.beginPath(); ctx.arc(cx, cy, 50, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = flagColor; ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.25;
+  ctx.beginPath(); ctx.arc(cx, cy, 50, 0, Math.PI*2); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Direction indicator from center
+  const cr = curAngle * Math.PI / 180;
+  ctx.strokeStyle = flagColor; ctx.lineWidth = 2; ctx.globalAlpha = 0.4;
+  ctx.beginPath(); ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.sin(cr)*28, cy - Math.cos(cr)*28); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ARM_POS.forEach(angle => {
+    const rad = angle * Math.PI / 180;
+    const zx = cx + Math.sin(rad)*SEL_R;
+    const zy = cy - Math.cos(rad)*SEL_R;
+    const sel = angle === curAngle;
+
+    ctx.fillStyle = sel ? flagColor : 'rgba(50,25,90,0.8)';
+    ctx.strokeStyle = sel ? flagColor : 'rgba(100,50,170,0.5)';
+    ctx.lineWidth = sel ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.arc(zx, zy, sel ? 13 : 10, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+
+    if (sel) {
+      ctx.fillStyle = '#1a0d35';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(angle, zx, zy);
+    }
+  });
+
+  // Label
+  ctx.font = 'bold 11px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = flagColor;
+  ctx.fillText(label, cx, cy + 60);
+}
+
+function drawRelayButton() {
+  if (gs !== 'playing') return;
+  const match = playerL === targetL && playerR === targetR;
+  const bx = 120, by = 610, bw = 120, bh = 26;
+  ctx.fillStyle = match ? '#1a5a10' : '#2a1040';
+  ctx.strokeStyle = match ? '#51CF66' : '#C8A04A';
+  ctx.lineWidth = match ? 2.5 : 1.5;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 13); ctx.fill(); ctx.stroke();
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = match ? '#51CF66' : '#C8A04A';
+  ctx.fillText('RELAY', bx+bw/2, by+bh/2);
+}
+
+function drawWindParticles() {
+  ctx.save();
+  for (const p of windParts) {
+    ctx.fillStyle = `rgba(210,170,85,${Math.max(0,(p.life/p.maxLife)*0.65)})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGustLabel() {
+  if (!gustActive) return;
+  ctx.save();
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#E74C3C';
+  ctx.globalAlpha = 0.92;
+  ctx.fillText('WIND GUST!', W/2, 80);
+  ctx.restore();
+}
+
+function drawScene() {
+  drawTelegraph();
+
+  const sHl = gustActive ? 'rgba(255,60,20,0.55)' : null;
+  const pHl = wrongFlash > 0 ? 'rgba(255,50,50,0.45)' :
+              recvFlash  > 0 ? 'rgba(80,210,80,0.35)' : null;
+  const rHl = recvFlash > 0 ? 'rgba(80,210,80,0.5)' : null;
+  const ra1 = recvFlash > 0 ? 300 : 120;
+  const ra2 = recvFlash > 0 ? 60  : 300;
+
+  drawFigure(SEND_X, FIG_Y, SIDE_SC, senderL, senderR, sHl);
+  drawFigure(PLAY_X, FIG_Y, FIG_SC,  playerL, playerR, pHl);
+  drawFigure(RECV_X, FIG_Y, SIDE_SC, ra1, ra2, rHl);
+
+  ctx.font = 'bold 10px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#7a5030';
+  ctx.fillText('SENDER', SEND_X, FIG_Y+32);
+  ctx.fillText('YOU',    PLAY_X, FIG_Y+38);
+  ctx.fillText('RELAY',  RECV_X, FIG_Y+32);
+
+  drawWindParticles();
+}
+
+// ── Title screen ───────────────────────────────────────────────────────────────
+function drawTitle() {
+  drawBackground();
+
+  // Title block
+  ctx.save();
+  ctx.font = 'bold 36px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#FFE066';
+  ctx.shadowColor = 'rgba(255,200,50,0.55)'; ctx.shadowBlur = 20;
+  ctx.fillText('PRAIRIE', W/2, 125);
+  ctx.fillText('TELEGRAPH', W/2, 167);
+  ctx.shadowBlur = 0;
+  ctx.font = '14px Georgia, serif'; ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Decode the signal. Relay before the wind.', W/2, 195);
+  ctx.restore();
+
+  // Demo: two figures signaling
+  drawFigure(90, 310, 0.82, 60, 240, null);
+  drawFigure(270, 310, 0.82, 300, 120, null);
+
+  // Wire connecting them
+  ctx.strokeStyle = '#6a4020'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(110, 255); ctx.lineTo(250, 255); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Legend
+  ctx.save();
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath(); ctx.arc(W/2-55, 337, 8, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#E74C3C';
+  ctx.beginPath(); ctx.arc(W/2+55, 337, 8, 0, Math.PI*2); ctx.fill();
+  ctx.font = '12px Georgia, serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#9a7050';
+  ctx.fillText('Gold = left arm', W/2-55, 355);
+  ctx.fillText('Red = right arm', W/2+55, 355);
+  ctx.restore();
+
+  if (best > 0) {
+    ctx.font = '13px Georgia, serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#9a7050';
+    ctx.fillText('BEST: ' + best, W/2, 378);
+  }
+
+  pill(W/2-80, 398, 160, 52, '#FFE066', null, 'TAP TO PLAY', '#1a0d35', 'bold 18px Georgia, serif');
+
+  ctx.font = '11px Georgia, serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#5a4030';
+  ctx.fillText('5 rounds  |  16 letters  |  Wind gusts ahead', W/2, 466);
+}
+
+// ── Round overlay screens ──────────────────────────────────────────────────────
+function drawRoundAnnounce() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(30, 195, W-60, 150);
+  ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(30, 195, W-60, 150, 10); ctx.stroke();
+
+  ctx.font = 'bold 28px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#FFE066';
+  ctx.fillText('ROUND ' + (round+1), W/2, 248);
+
+  const msg = ROUNDS[round].message.join('');
+  ctx.font = '15px Georgia, serif'; ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Relay: "' + msg + '"', W/2, 278);
+
+  if (ROUNDS[round].gustEvery > 0) {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText('Wind gusts every ' + ROUNDS[round].gustEvery + 's', W/2, 308);
+  } else {
+    ctx.fillStyle = '#51CF66';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText('No wind  |  practice round', W/2, 308);
+  }
+  ctx.restore();
+}
+
+function drawRoundDone() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(50, 220, W-100, 90);
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#51CF66';
+  ctx.fillText('MESSAGE RELAYED!', W/2, 268);
+  ctx.font = '14px Georgia, serif'; ctx.fillStyle = '#C8A04A';
+  ctx.fillText('Score: ' + score, W/2, 295);
+  ctx.restore();
+}
+
+// ── End screens ────────────────────────────────────────────────────────────────
+function drawEndScreen(win) {
+  drawBackground();
+  ctx.fillStyle = 'rgba(0,0,0,0.78)'; ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = win ? '#FFE066' : '#E74C3C';
+  ctx.shadowColor = win ? 'rgba(255,220,80,0.5)' : 'rgba(255,80,50,0.4)';
+  ctx.shadowBlur = 14;
+  ctx.fillText(win ? 'CHAIN COMPLETE!' : 'SIGNAL LOST', W/2, 190);
+  ctx.shadowBlur = 0;
+
+  ctx.font = 'bold 52px Georgia, serif';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText(score, W/2, 270);
+
+  ctx.font = '16px Georgia, serif'; ctx.fillStyle = '#9a7050';
+  ctx.fillText('BEST: ' + best, W/2, 305);
+
+  if (win && score >= best && score > 0) {
+    ctx.font = 'bold 18px Georgia, serif'; ctx.fillStyle = '#FF9F43';
+    ctx.fillText('NEW RECORD!', W/2, 335);
+  }
+  ctx.restore();
+
+  pill(W/2-88, 365, 176, 52, '#FFE066', null, 'PLAY AGAIN', '#1a0d35', 'bold 18px Georgia, serif');
+  if (navigator.share) {
+    pill(W/2-88, 430, 176, 46, '#2a1040', '#FFE066', 'SHARE', '#FFE066', 'bold 15px Georgia, serif');
+  }
+}
+
+// ── Main draw ─────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  if (gs === 'title') { drawTitle(); return; }
+  if (gs === 'win')   { drawEndScreen(true);  return; }
+  if (gs === 'lose')  { drawEndScreen(false); return; }
+
+  drawBackground();
+  drawScene();
+  drawHUD();
+  drawLetterProgress();
+
+  // Arm selectors (bottom panel)
+  if (gs === 'playing' || gs === 'roundDone') {
+    // Panel background
+    ctx.fillStyle = 'rgba(6,3,16,0.9)';
+    ctx.fillRect(0, 485, W, H-485);
+
+    drawArmSelector(SEL_L_X, SEL_Y, playerL, '#FFE066', 'LEFT FLAG');
+    drawArmSelector(SEL_R_X, SEL_Y, playerR, '#E74C3C', 'RIGHT FLAG');
+    drawRelayButton();
+  }
+
+  drawGustLabel();
+
+  if (gs === 'roundAnnounce') drawRoundAnnounce();
+  if (gs === 'roundDone')     drawRoundDone();
+
+  // Popups
+  ctx.save();
+  for (const p of popups) {
+    const a = Math.min(1, p.life * 1.8);
+    ctx.globalAlpha = a;
+    ctx.font = 'bold 20px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 6;
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.restore();
+}
+
+// ── Input ─────────────────────────────────────────────────────────────────────
+function tappedSelector(tx, ty, cx, cy) {
+  for (const angle of ARM_POS) {
+    const rad = angle * Math.PI / 180;
+    const zx = cx + Math.sin(rad)*SEL_R;
+    const zy = cy - Math.cos(rad)*SEL_R;
+    if (Math.hypot(tx-zx, ty-zy) <= ZONE_R) return angle;
+  }
+  return null;
+}
+
+function handleTap(cx, cy) {
+  const x = cx / scale, y = cy / scale;
+
+  if (gs === 'title') {
+    if (y > 390 && y < 460) { startGame(); }
+    return;
+  }
+  if (gs === 'win' || gs === 'lose') {
+    if (y > 358 && y < 422) { startGame(); }
+    if (navigator.share && y > 423 && y < 482) {
+      navigator.share({ title: 'Prairie Telegraph', text: 'I scored '+score+' on Prairie Telegraph! bobdavismusic.com' });
+    }
+    return;
+  }
+  if (gs !== 'playing') return;
+
+  // Left arm selector
+  const newL = tappedSelector(x, y, SEL_L_X, SEL_Y);
+  if (newL !== null && newL !== playerL) { playerL = newL; playClick(); return; }
+
+  // Right arm selector
+  const newR = tappedSelector(x, y, SEL_R_X, SEL_Y);
+  if (newR !== null && newR !== playerR) { playerR = newR; playClick(); return; }
+
+  // Relay button
+  if (x >= 120 && x <= 240 && y >= 608 && y <= 638) { doRelay(); return; }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  handleTap(e.clientX - r.left, e.clientY - r.top);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'KeyA') { if (gs==='playing') { const i=ARM_POS.indexOf(playerL); playerL=ARM_POS[(i+1)%6]; playClick(); } }
+  if (e.code === 'KeyD') { if (gs==='playing') { const i=ARM_POS.indexOf(playerR); playerR=ARM_POS[(i+1)%6]; playClick(); } }
+  if (e.code === 'Space') { e.preventDefault(); if (gs==='playing') doRelay(); else if (gs==='title') startGame(); }
+});
+
+// ── Feedback overlay ──────────────────────────────────────────────────────────
+document.getElementById('fb-cancel').onclick = () => document.getElementById('fb-overlay').classList.remove('show');
+document.getElementById('fb-send').onclick = async () => {
+  const target  = document.getElementById('fb-target').value;
+  const message = document.getElementById('fb-text').value.trim();
+  if (!message) return;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ game: target, message, score }), mode:'no-cors'
+    });
+  } catch(e) {}
+  document.getElementById('fb-overlay').classList.remove('show');
+  document.getElementById('fb-text').value = '';
+};
+
+// ── Test helper ───────────────────────────────────────────────────────────────
+window._pt = {
+  getState:    () => gs,
+  getRound:    () => round,
+  getLetterIdx:() => letterIdx,
+  getLives:    () => lives,
+  getScore:    () => score,
+  getPlayerL:  () => playerL,
+  getPlayerR:  () => playerR,
+  getTargetL:  () => targetL,
+  getTargetR:  () => targetR,
+  getSenderL:  () => senderL,
+  getSenderR:  () => senderR,
+  isGustActive:() => gustActive,
+  getLetterTimer:() => letterTimer,
+  startGame,
+  doRelay,
+  setPlayer:   (l,r) => { playerL=l; playerR=r; },
+  triggerGust,
+  advanceLetter,
+  ALPHA,
+  ARM_POS,
+  ROUNDS,
+  FEEDBACK_ENDPOINT,
+};
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+requestAnimationFrame(ts => { lastT = ts; requestAnimationFrame(loop); });
+</script>
+</body>
+</html>

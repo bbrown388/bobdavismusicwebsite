@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Games — Bob Davis Music</title>
+<meta name="description" content="65 western mini-games, each built in a single AI session.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0d0608;
+  color: #E8DCC8;
+  font-family: Georgia, serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px 72px;
+}
+
+.back-nav {
+  width: 100%;
+  max-width: 860px;
+  margin-bottom: 28px;
+}
+
+.back-link {
+  font-size: 13px;
+  color: #907860;
+  text-decoration: none;
+  letter-spacing: 1px;
+  font-style: italic;
+  transition: color 0.15s;
+}
+.back-link:hover { color: #FFD700; }
+
+.section-label {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #888;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.games-caveat {
+  font-size: 13px;
+  color: #9a7a64;
+  text-align: center;
+  font-style: italic;
+  margin-bottom: 24px;
+  line-height: 1.6;
+  max-width: 480px;
+}
+
+.game-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  width: 100%;
+  max-width: 860px;
+}
+
+@media (min-width: 600px) {
+  .game-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.game-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,215,0,0.15);
+  border-radius: 12px;
+  padding: 18px 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  text-decoration: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.game-card:hover {
+  background: rgba(255,215,0,0.06);
+  border-color: rgba(255,215,0,0.4);
+}
+
+.game-num {
+  font-size: 10px;
+  color: #776650;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+
+.game-title {
+  font-size: 17px;
+  color: #FFD700;
+  margin-bottom: 4px;
+}
+
+.game-desc {
+  font-size: 12px;
+  color: #9a7a64;
+  line-height: 1.5;
+}
+
+footer {
+  margin-top: 40px;
+  text-align: center;
+  color: #2a1a14;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    background: linear-gradient(180deg, #F2E8D0 0%, #EADDb8 100%);
+    color: #1e0e06;
+  }
+
+  .back-link {
+    color: #9a6838;
+  }
+
+  .back-link:hover {
+    color: #8B6914;
+  }
+
+  .section-label {
+    color: #9a6838;
+  }
+
+  .games-caveat {
+    color: #7a5030;
+  }
+
+  .game-card {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(139,105,20,0.3);
+  }
+
+  .game-card:hover {
+    background: rgba(139,105,20,0.08);
+    border-color: rgba(139,105,20,0.6);
+  }
+
+  .game-num {
+    color: #b09070;
+  }
+
+  .game-title {
+    color: #8B6914;
+  }
+
+  .game-desc {
+    color: #6a4028;
+  }
+
+  footer {
+    color: #c8b890;
+  }
+}
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script></head>
+<body>
+
+<nav class="back-nav">
+  <a class="back-link" href="/">&#8592; Bob Davis</a>
+</nav>
+
+<p class="section-label">Games</p>
+<p class="games-caveat">Each game built autonomously by an AI director in a single unattended session , no humans in the loop. Rough around the edges, but real.</p>
+
+<div class="game-cards">
+
+  <a class="game-card" href="quicksand.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 65</div>
+      <div class="game-title">Quicksand</div>
+      <div class="game-tags"><span class="tag">Physics</span><span class="tag">Puzzle</span><span class="tag">Rope</span></div>
+    </div>
+    <div class="game-desc">A timed physics rescue puzzle. A pioneer wagon is sinking in quicksand, and livestock are scattered! Thread a limited rope budget around trees, boulders, and fence posts to form a block-and-tackle pulley system. Every vertical rope segment connected to the wagon pulleys multiplies your team's force. Out-pull the rising quicksand suction across 5 escalating levels of spatial logic!</div>
+  </a>
+
+  <a class="game-card" href="bounty-board.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 64</div>
+      <div class="game-title">Bounty Board</div>
+      <div class="game-tags"><span class="tag">Strategy</span><span class="tag">Cards</span><span class="tag">Drafting</span></div>
+    </div>
+    <div class="game-desc">A strategic card-drafting western. Each round, a board of 6 wanted outlaw posters is revealed. Spend your limited posse of 3 deputies—each with unique stats in tracking, combat, and negotiation—to capture targets. Marshal Wyatt drafts and competes for the same posters. Spent deputies need a round of rest before reassignment. Plan 5 rounds ahead to out-earn the rival marshal!</div>
+  </a>
+
+  <a class="game-card" href="iron-horse.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 63</div>
+      <div class="game-title">Iron Horse</div>
+      <div class="game-tags"><span class="tag">Rhythm</span><span class="tag">Resource</span><span class="tag">Driving</span></div>
+    </div>
+    <div class="game-desc">A steam locomotive driving puzzle. Manage boiler pressure by shoveling coal on the beat grid while the train accelerates through 5 stations. Too little pressure and you stall; too much and the boiler blows. Brake precisely at each station marker to pick up passengers and supplies. Dodge hazards like cattle and broken rails with split-second speed corrections.</div>
+  </a>
+
+  <a class="game-card" href="texas-twister.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 62</div>
+      <div class="game-title">Texas Twister</div>
+      <div class="game-tags"><span class="tag">Physics</span><span class="tag">Drag</span><span class="tag">Survival</span></div>
+    </div>
+    <div class="game-desc">A tornado bears down on your homestead. Drag water barrels, medicine boxes, saddlebags, and lanterns to the storm cellar before the vortex sucks them away. Debris spirals inward around the funnel — faster at the outer ring, chaotic near center — and can knock items from your hands. Five escalating rounds of vortex physics and suction pressure.</div>
+  </a>
+
+  <a class="game-card" href="snake-eyes.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 61</div>
+      <div class="game-title">Snake Eyes</div>
+      <div class="game-tags"><span class="tag">Dice</span><span class="tag">Bluffing</span><span class="tag">Probability</span></div>
+    </div>
+    <div class="game-desc">Liar's Dice vs the Sheriff. Roll five dice each, then bid on totals across both hands — raise or call the bluff. Four sheriff personalities shift the AI's aggression and tell pattern. A live probability bar shows the odds on every bid. Five rounds, escalating bounties. First hidden-information dice duel in the series.</div>
+  </a>
+
+  <a class="game-card" href="night-herd.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 60</div>
+      <div class="game-title">Night Herd</div>
+      <div class="game-tags"><span class="tag">Isometric</span><span class="tag">Strategy</span><span class="tag">Stealth</span></div>
+    </div>
+    <div class="game-desc">A mountain lion circles the herd in darkness. Place burning firebrands to divert its path — the predator pathfinds around light, but brands burn out. Get too close to the cattle with your torch and they scatter. Five rounds, three lions, shrinking time to burn. First isometric perspective and dynamic light-based AI in the series.</div>
+  </a>
+
+  <a class="game-card" href="drought-rider.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 59</div>
+      <div class="game-title">Drought Rider</div>
+      <div class="game-tags"><span class="tag">Narrative</span><span class="tag">Survival</span><span class="tag">Decisions</span></div>
+    </div>
+    <div class="game-desc">Seven days, seven choices. Cross the drought with water and horse intact. Hidden heat exposure shifts your odds — every decision costs something.</div>
+  </a>
+
+  <a class="game-card" href="saddlebag.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 58</div>
+      <div class="game-title">Saddlebag</div>
+      <div class="game-desc">Spatial packing puzzle set before the wagon leaves. Each round presents a set of gear items in Tetromino shapes -- rifles, canteens, bedrolls, tin stars -- that must be fitted into a saddlebag grid before the departure timer runs out. Select a piece, rotate it, tap the grid to place. Maximize the gold value of gear packed across five escalating rounds with more pieces and tighter time pressure. First spatial rotation-and-placement mechanic in the series: first Tetromino-style inventory puzzle, first item-value optimization challenge under timer pressure.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="canyon-run.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 57</div>
+      <div class="game-title">Canyon Run</div>
+      <div class="game-desc">First-person perspective obstacle runner down a canyon. Boulders, tumbleweeds, and cacti loom out of a vanishing-point horizon, scaling up via perspective projection as they close in -- tap left or right to dodge. Five escalating stages ramp speed and spawn rate to a punishing pace. First pseudo-3D depth illusion in the series: perspective math drives every obstacle's screen size and position, with tumbleweed lateral drift, canyon wall silhouettes, and scrolling depth stripe markers.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dead-eye.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 56</div>
+      <div class="game-title">Dead Eye</div>
+      <div class="game-desc">Frontier shooting gallery where the wind is always working against you. Your crosshair drifts with a sine-wave wind that grows stronger every round -- drag to aim against it, then fire at tin cans on the fence, wanted posters sliding past, and horse riders at full gallop. Six shots per round across five increasingly gusty stages. First ballistic wind-drift aiming mechanic in the series: spring-follow crosshair plus oscillating wind offset forces you to lead the drift and choose your moment.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="cattle-baron.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 55</div>
+      <div class="game-title">Cattle Baron</div>
+      <div class="game-desc">Turn-based ranch strategy across 10 rounds. Buy land parcels, graze cattle to earn income, defend against drought and rustlers. Two threats are revealed before each round -- plan your two actions around them. Overgrazing earns more but risks drought damage; defending costs an action but shields your herd. First territory-expansion economic strategy in the series: spatial ownership, risk-layered resource management, and a multi-round economic arc with compounding returns.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="smoke-signal.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 54</div>
+      <div class="game-title">Smoke Signal</div>
+      <div class="game-desc">Watch the distant tribe send a sequence of smoke signals -- short puffs and long clouds -- then reproduce each one by holding and releasing your blanket over the campfire. Hold less than the threshold for a Puff; hold longer for a Cloud. Wind shifts scramble the smoke visually and add urgency. Five rounds with tighter timing thresholds and faster winds. First dual-input pattern generation mechanic in the series: hold duration controls signal type, not button selection.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dust-bowl-derby.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 53</div>
+      <div class="game-title">Dust Bowl Derby</div>
+      <div class="game-desc">Top-down demolition derby in a frontier dust arena. Steer with LEFT and RIGHT buttons, BOOST to ram rivals -- but watch your engine heat or you'll stall. Ram all rivals to 100% body damage across three escalating rounds (1, 2, then 3 rivals). First vehicular combat mechanic in the series: offensive ramming vs. defensive dodging, with simultaneous dual-resource drain.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="frontier-forge.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 52</div>
+      <div class="game-title">Frontier Forge</div>
+      <div class="game-desc">Work the iron through three phases: pump the bellows to heat the bar to the golden zone, then hammer each strike point as the pendulum swings overhead, then plunge into the quench barrel and hold for the perfect temper. Five items to forge -- horseshoe to Bowie knife -- with escalating strike patterns and tighter timing windows. First multi-phase material transformation mechanic in the series: iron glows from black to white as temperature rises.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="pinkerton-trail.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 51</div>
+      <div class="game-title">Pinkerton Trail</div>
+      <div class="game-desc">You're a Pinkerton detective tailing a suspect through a frontier town. Follow without being spotted -- hide behind barrels and wagons when they glance back, collect evidence scattered along the trail, and stay close enough to keep the suspect in sight. Five escalating rounds with faster suspects, quicker glances, and more evidence required. First stealth pursuit mechanic in the series: dynamic NPC awareness with line-of-sight cone, proximity detection, and suspicion meter.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="tin-pan-alley.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 50</div>
+      <div class="game-title">Tin Pan Alley</div>
+      <div class="game-desc">A saloon piano plays you a melody - then leaves gaps where notes should be. Listen, memorize, and fill in the missing notes by tapping the correct piano keys before time runs out. Five rounds with longer phrases, faster tempos, and tighter windows. First melody-completion mechanic in the series: musical phrase-memory meets piano keyboard.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="lariat-spin.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 49</div>
+      <div class="game-title">Lariat Spin</div>
+      <div class="game-desc">Tap rhythmically to spin your lasso and build angular momentum. Watch the rope expand as it speeds up. Hit the sweet zone - then release at the exact angle to catch a moving steer. Five rounds with faster targets, tighter tolerances, and more catches required. First rotational physics skill-toy in the series: momentum-accumulation + precision-release dual-phase mechanic.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="hangmans-bluff.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 48</div>
+      <div class="game-title">Hangman's Bluff</div>
+      <div class="game-desc">You're an outlaw at a sheriff's checkpoint. Answer the questions, keep your story straight, and ride out free. Pick your words carefully - a contradiction will spike your suspicion. Nine questions across three interrogation stages. The sheriff remembers everything you say. First player-side deception mechanic in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="outlaw-auction.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 47</div>
+      <div class="game-title">Outlaw Auction</div>
+      <div class="game-desc">Six outlaws. Six hidden bounties. Five rivals with tells you can read. Bid to win, fold to survive. Each rival has a personality - eager bidders signal high value, patient ones signal true worth, bluffers just want to confuse you. Read the room, claim the right outlaws, and walk out with the biggest bankroll. First hidden-information economic game in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="prairie-telegraph.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 46</div>
+      <div class="game-title">Prairie Telegraph</div>
+      <div class="game-desc">A chain of frontier outposts needs your help. Decode incoming flag arm signals from the sender station, match the positions on your own figure, and relay before the wind breaks the chain. Each round adds more letters and shorter windows. Wind gusts scramble the sender's arms mid-signal. First visual semaphore decoding mechanic in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="rattlesnake-round-up.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 45</div>
+      <div class="game-title">Rattlesnake Round-Up</div>
+      <div class="game-desc">Thermal scope view of a snake pit. Tap to pin a rattlesnake, drag it to the bag before the pin fades. Tough snakes need a full hold before they lock - release early and they slip free. Diamondbacks need the longest hold and the shortest window to bag. First multi-phase hold+drag mechanic per entity in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="trail-blaze.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 44</div>
+      <div class="game-title">Trail Blaze</div>
+      <div class="game-desc">Draw a trail through procedurally generated wilderness - mountains, rivers, desert, forest - from camp to goal before supplies run out. Each terrain type costs different supplies per tile. Route threats escalate each round: flood zones triple costs, rockslides block paths entirely, rival wagon trains seal off shortcuts. First player-drawn pathfinding mechanic in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="wanted-reward.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 43</div>
+      <div class="game-title">Wanted: Reward</div>
+      <div class="game-desc">Study the wanted poster - hat, build, what they carry, any distinguishing marks. Then scroll through a crowd of frontier silhouettes and tap the fugitive. Wrong IDs cut your payout by 25% each time. Five rounds with growing crowds and tighter decoys. First visual search mechanic in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="coyote-call.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 42</div>
+      <div class="game-title">Coyote Call</div>
+      <div class="game-desc">Drag a slide-whistle to match a coyote howl frequency shown as a scrolling oscilloscope waveform. Hit three frequency targets in sequence to build the pack's trust and draw them in. Hold steady on each target - drift too far and they flee. Five rounds with tightening tolerances and growing packs. First real-time analog pitch-matching mechanic in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="gold-panner.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 41</div>
+      <div class="game-title">Gold Panner</div>
+      <div class="game-desc">Tilt a gold pan to slosh water and separate heavy gold flakes from lighter gravel, fool's gold, and mud. Drag left/right to control tilt — gold's higher density keeps it in, everything else washes out. Tap claim jumpers before they steal your nuggets. First fluid/particle simulation in the series: density-stratification physics, three-round escalation.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="wire-tap.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 40</div>
+      <div class="game-title">Wire Tap</div>
+      <div class="game-desc">Intercept gang telegraph transmissions and decode the signal. Listen for short tones (dot) and long tones (dash), tap to classify each in real time, decode three secret messages, then locate the outlaw hideout on a frontier map. First temporal pattern-decoding game in the series: audio-only mechanic, three-round decode-and-identify structure.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="last-rope-standing.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 39</div>
+      <div class="game-title">Last Rope Standing</div>
+      <div class="game-desc">Swing between fence posts as floodwaters rise. Tap to latch your lasso onto the nearest post, pendulum-swing to build height, tap again to release and fly. Miss an anchor and you drop. First grapple-physics survival game in the series: constraint-based pendulum physics, rising water threat, score by height climbed.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dust-road-derby.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 38</div>
+      <div class="game-title">Dust Road Derby</div>
+      <div class="game-desc">Five laps around a dirt oval against three AI rivals with rubber-band difficulty. Hold left or right to steer your line. Tuck behind a rival to trigger slipstream -- an 18% speed boost with a wind-trail visual. First real-time racing game in the series: parametric oval track, positional scoring, dust-cloud physics.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="tumbledown-town.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 37</div>
+      <div class="game-title">Tumbledown Town</div>
+      <div class="game-desc">Tap the glowing supports to knock them out, one at a time. Guide the collapse to crush the wanted outlaws beneath the rubble -- but the innocents have to walk away. First real physics demolition puzzle in the series: Verlet constraints, chain reactions, five increasingly devious levels.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="rodeo-queen.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 36</div>
+      <div class="game-title">Rodeo Queen</div>
+      <div class="game-desc">Three events, one crowd energy meter, and a multiplier that climbs every time you nail it. Tap the barrels in rhythm, spin and throw a lasso, then hold and release with the horse's bounce. Chain perfects to push the multiplier to 5x -- miss once and it drops back to one.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="snake-canyon.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 35</div>
+      <div class="game-title">Snake Canyon</div>
+      <div class="game-desc">Navigate a torch-lit canyon maze with nothing but your ears to guide you. A rattlesnake lurks in the dark -- its rattle grows louder and shifts left or right as it draws near. Move slow and deliberate. Rush, and it hears you. Reach the exit before the darkness wins.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dust-devil-dance.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 34</div>
+      <div class="game-title">Dust Devil Dance</div>
+      <div class="game-desc">Draw paths across the desert basin and watch dust devils follow them in loops, each one playing a note from a pentatonic scale. When paths cross, the music resonates. Landmarks warp the sound -- the mesa deepens a devil's voice, the waterhole makes it wobble. The storm is coming. Compose before it arrives.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="cattle-auction.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 33</div>
+      <div class="game-title">Cattle Auction</div>
+      <div class="game-desc">You're the auctioneer. Six buyers with distinct budgets and personalities bid on 8 lots of cattle in real time. Watch the room, let the price climb, then tap to call it -- going once, going twice, sold. Wait too long and interest dries up. Call too soon and leave money on the table.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="barbed-wire.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 32</div>
+      <div class="game-title">Barbed Wire</div>
+      <div class="game-desc">String barbed wire between fence posts to slow and kill rustlers before they reach your cattle. Tap two adjacent posts to connect them -- wires drain rustler HP but take damage over time and break. Five waves of escalating threats. First tower-defense structure in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="pony-express.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 31</div>
+      <div class="game-title">Pony Express</div>
+      <div class="game-desc">Ride the rhythm across five terrains from trot to full gallop. Tap when the beat hits the circle -- stay in sync to ride fast, miss the beat and your horse slows. Five escalating sections with increasing BPM and syncopated patterns. First action-rhythm hybrid in the series.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="tumbleweed-pinball.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 30</div>
+      <div class="game-title">Tumbleweed Pinball</div>
+      <div class="game-desc">Physics pinball on a frontier saloon table. Tumbleweeds roll, cactus bumpers fire back, and three WANTED poster targets unlock a big bounty bonus. Tap left or right to flip -- chain bumper hits for multiplied scores. Full ball physics with gravity, spin, and drain.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="jail-break.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 29</div>
+      <div class="game-title">Jail Break</div>
+      <div class="game-desc">Turn-based stealth escape from a frontier jail. Pick locks, throw stones to distract guards, slip through shadow zones, and reach the horse outside. Guards patrol with vision cones -- step into the red and it's over. Five escalating layouts.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="brand-iron.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 28</div>
+      <div class="game-title">Brand Iron</div>
+      <div class="game-desc">Drag a glowing brand iron along five cattle-hide templates. Keep the iron in the sweet zone -- too cold leaves no mark, too hot and you burn the hide. Five brands, rising complexity, one shot at the path before the iron cools.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="river-run.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 27</div>
+      <div class="game-title">River Run</div>
+      <div class="game-desc">White-water canyon rapids. Steer your raft left and right with momentum -- not lanes. Read the current swirls on the water to predict what's coming, and hold the brake zone to slow down when the channel gets tight. Five rounds, three lives.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dust-storm.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 26</div>
+      <div class="game-title">Dust Storm</div>
+      <div class="game-desc">A wall of dust has swallowed the road. Your lantern cuts just enough light to see what's coming -- barely. Tap left or right to swerve the stagecoach around boulders that appear out of nowhere. Five rounds, three lives, zero mercy.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="fence-line.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 25</div>
+      <div class="game-title">Fence Line</div>
+      <div class="game-desc">A storm tore through the fence and the cattle are heading for the gaps. Tap to set posts, tap again to nail the rail -- but the wind keeps knocking your work loose. Close every gap before dawn.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dead-reckoning.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 24</div>
+      <div class="game-title">Dead Reckoning</div>
+      <div class="game-desc">Navigate a night cattle drive by the stars. Tap two constellations to draw bearing lines, locate yourself on the terrain map, then guide your herd to the ranch across 5 escalating rounds.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="devils-backbone.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 23</div>
+      <div class="game-title">Devil's Backbone</div>
+      <div class="game-desc">Haul a load of dynamite through a mountain pass on a tilting wagon. Hold left or right to counterbalance wind gusts and trail bumps across 5 escalating legs.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="gallows-road.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 22</div>
+      <div class="game-title">Gallows Road</div>
+      <div class="game-desc">Push crates to block the guards, collect keys, unlock doors, and escape the jail. A Sokoban-style puzzle across 5 escalating levels.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="wanted-dead-or-alive.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 21</div>
+      <div class="game-title">Wanted: Dead or Alive</div>
+      <div class="game-desc">Track a fugitive through a frontier town. Interview witnesses, examine evidence, build your confidence -- then make the accusation before time runs out.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="trail-boss.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 20</div>
+      <div class="game-title">Trail Boss</div>
+      <div class="game-desc">Lead a wagon train across 5 biomes. Keep water, food, and axle from running dry. Handle ambushes, river crossings, and supply caches before time runs out.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="canyon-crossfire.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 19</div>
+      <div class="game-title">Canyon Crossfire</div>
+      <div class="game-desc">Three outlaws. One boulder. Watch their reload bars, time your peek, fire fast. Stay exposed too long and they'll put one in you.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dead-mans-hand.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 18</div>
+      <div class="game-title">Dead Man's Hand</div>
+      <div class="game-desc">Five hands of Texas Hold'em against Snake Pete, Diamondback, and Preacher Jack. Watch their tells, manage your chip stack, survive the showdown.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="rope-trick.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 17</div>
+      <div class="game-title">Rope Trick</div>
+      <div class="game-desc">Five throws, one shot each. Watch the wind arrow and compensate -- lasso the spinning target before the arc drifts past it.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="moonshine-run.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 16</div>
+      <div class="game-title">Moonshine Run</div>
+      <div class="game-desc">Keep your outlaw still running through the night. Manage heat, pressure, and proof while revenue agents sweep the dark with lanterns. Hide your glow -- or get busted.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="prairie-fire.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 15</div>
+      <div class="game-title">Prairie Fire</div>
+      <div class="game-desc">Wind-driven wildfire is heading for your homestead. Place firebreaks and water buckets with limited resources. Watch the wind shift and protect what's yours.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="midnight-rodeo.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 14</div>
+      <div class="game-title">Midnight Rodeo</div>
+      <div class="game-desc">Ride a bucking bull under the arena lights. Tap left or right to counter his spin. Build crowd energy for a higher score multiplier before you're thrown.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="snake-oil.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 13</div>
+      <div class="game-title">Snake Oil</div>
+      <div class="game-desc">Run Dr. Davis's medicine wagon. Match two ingredients to each customer's ailment before their patience runs out.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="stampede.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 12</div>
+      <div class="game-title">Stampede</div>
+      <div class="game-desc">First-person buffalo herd. Dodge left or right. Signal the herd to scatter. Survive as long as you can.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="boot-hill-bluff.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 11</div>
+      <div class="game-title">Boot Hill Bluff</div>
+      <div class="game-desc">Read the outlaw's tell, bet your chips, call the bluff or fold.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="gold-rush.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 10</div>
+      <div class="game-title">Gold Rush</div>
+      <div class="game-desc">Mine through the dark cave, collect 4 gold veins, and escape before the tunnel collapses.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="wanted-poster.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 09</div>
+      <div class="game-title">Wanted Poster</div>
+      <div class="game-desc">Study the wanted poster, then spot the outlaw in the saloon crowd before time's up.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="dust-devil.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 08</div>
+      <div class="game-title">Dust Devil</div>
+      <div class="game-desc">Guide a tumbleweed through canyon gaps -- tap to gust, fight gravity.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="tin-star-showdown.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 07</div>
+      <div class="game-title">Tin Star Showdown</div>
+      <div class="game-desc">Quick-draw duel -- wait for DRAW!, then fire first. Best of three.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="cattle-drive.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 06</div>
+      <div class="game-title">Cattle Drive</div>
+      <div class="game-desc">Herd your cattle into the pen -- tap to scare, watch out for wolves.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="outlaw-run.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 05</div>
+      <div class="game-title">Outlaw Run</div>
+      <div class="game-desc">Draw your escape route -- outrun the sheriff.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="gone-fishin.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 04</div>
+      <div class="game-title">Gone Fishin'</div>
+      <div class="game-desc">Cast your line, wait for the bite.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="honky-tonk-v2.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 03</div>
+      <div class="game-title">Honky Tonk</div>
+      <div class="game-desc">Rhythm game -- tap the beat, play the melody.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="lasso-loop.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 02</div>
+      <div class="game-title">Lasso Loop</div>
+      <div class="game-desc">Rope the notes before they escape.</div>
+    </div>
+  </a>
+
+  <a class="game-card" href="on-the-road.html">
+    <div class="game-card-info">
+      <div class="game-num">Game 01</div>
+      <div class="game-title">On the Road</div>
+      <div class="game-desc">Dodge the hazards, hit the highway.</div>
+    </div>
+  </a>
+
+</div>
+
+<footer>bobdavismusic.com</footer>
+
+</body>
+</html>

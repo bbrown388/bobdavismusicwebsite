@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Canyon Run &#x2014; Bob Davis</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center;
+       height:100vh; overflow:hidden; touch-action:none; }
+#wrap { position:relative; }
+canvas { display:block; }
+#fb-overlay {
+  display:none; position:absolute; inset:0;
+  background:rgba(0,0,0,0.88); z-index:10;
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  font-family:Georgia,serif; color:#FFE066;
+}
+#fb-overlay.open { display:flex; }
+#fb-overlay h2 { font-size:20px; margin-bottom:4px; }
+#fb-stars { display:flex; gap:8px; font-size:28px; cursor:pointer; }
+#fb-stars span { opacity:0.35; transition:opacity 0.15s; }
+#fb-stars span.on { opacity:1; }
+#fb-text { width:280px; height:70px; background:#1a0d35; border:1px solid #C8A04A;
+           color:#FFE066; font-size:14px; padding:8px; resize:none; border-radius:6px; }
+#fb-submit { background:#C8A04A; color:#000; border:none; padding:10px 32px;
+             font-size:15px; font-family:Georgia,serif; border-radius:6px; cursor:pointer; }
+#fb-close { position:absolute; top:12px; right:16px; font-size:22px; cursor:pointer;
+            color:#888; background:none; border:none; }
+#fb-select { background:#1a0d35; border:1px solid #C8A04A; color:#FFE066;
+             padding:6px 10px; font-size:13px; border-radius:6px; width:280px; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-overlay">
+    <button id="fb-close">&#x2715;</button>
+    <h2>How'd we do?</h2>
+    <div id="fb-stars">
+      <span data-s="1">&#9733;</span><span data-s="2">&#9733;</span>
+      <span data-s="3">&#9733;</span><span data-s="4">&#9733;</span><span data-s="5">&#9733;</span>
+    </div>
+    <select id="fb-select">
+      <option value="Canyon Run">Canyon Run (this game)</option>
+      <option value="general">General / next game</option>
+      <option value="Saddlebag">Upcoming: Saddlebag (Game 58)</option>
+      <option value="Drought Rider">Upcoming: Drought Rider (Game 59)</option>
+    </select>
+    <textarea id="fb-text" placeholder="Any thoughts? (optional)"></textarea>
+    <button id="fb-submit">Send Feedback</button>
+  </div>
+</div>
+<script>
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// === Canvas setup ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+const W = 360, H = 640;
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  wrap.style.width = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// === Perspective constants ===
+const VP_X = 180;      // vanishing point X (canvas center)
+const VP_Y = 200;      // vanishing point Y
+const FOCAL = 200;     // focal length controls perspective strength
+const GROUND_H = 380;  // VP_Y + GROUND_H = 580 = player ground-plane Y
+// Projection: t = FOCAL / (worldZ + FOCAL)
+//   screenX = VP_X + worldX * t
+//   screenY = VP_Y + GROUND_H * t
+//   At worldZ=0:    t=1.000, screenY=580
+//   At worldZ=200:  t=0.500, screenY=390
+//   At worldZ=2200: t=0.083, screenY=232 (just below VP)
+
+// === Lane system (world-X positions) ===
+const LANES = [-110, 0, 110];  // 3 lanes; spacing 110 world units
+const LANE_W = 68;             // collision half-width: player hits if |dx| < 68
+const SPAWN_Z = 2200;          // obstacles born this far out
+const COLLISION_Z = 60;        // hit-test fires at this depth
+
+// === Obstacle base radii (at full scale = 1, i.e., worldZ=0) ===
+const OBS_RADIUS = { rock: 52, tumbleweed: 40, cactus: 26 };
+
+// === Stage config ===
+const STAGES = [
+  { speed: 320, spawnRate: 0.50, duration: 16, label: 'STAGE 1' },
+  { speed: 415, spawnRate: 0.65, duration: 16, label: 'STAGE 2' },
+  { speed: 520, spawnRate: 0.82, duration: 16, label: 'STAGE 3' },
+  { speed: 640, spawnRate: 1.00, duration: 16, label: 'STAGE 4' },
+  { speed: 760, spawnRate: 1.22, duration: 16, label: 'STAGE 5' },
+];
+
+// === Game state ===
+let state = 'title';
+let stage, stageTimer, speed;
+let lives, score, best, resultWon;
+let playerLane, playerX;
+let obstacles, popups;
+let stripeZs;
+let invTimer;   // post-hit invincibility timer
+let transTimer; // stage-transition freeze timer
+let spawnTimer;
+let totalTime = 0;
+
+// === Perspective projection ===
+function project(worldX, worldZ) {
+  const t = FOCAL / (worldZ + FOCAL);
+  return { sx: VP_X + worldX * t, sy: VP_Y + GROUND_H * t, scale: t };
+}
+
+// === Audio ===
+let audioCtx = null;
+let windSrc = null;
+
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function noiseBuffer(ac, secs) {
+  const buf = ac.createBuffer(1, ac.sampleRate * secs, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+function playHit() {
+  try {
+    const ac = getAC();
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.7, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.28);
+    const osc = ac.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(130, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(42, ac.currentTime + 0.28);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.28);
+
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuffer(ac, 0.18);
+    const f = ac.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 320; f.Q.value = 0.5;
+    const ng = ac.createGain();
+    ng.gain.setValueAtTime(0.5, ac.currentTime);
+    ng.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
+    src.connect(f); f.connect(ng); ng.connect(ac.destination);
+    src.start();
+  } catch(e) {}
+}
+
+function playDodge() {
+  try {
+    const ac = getAC();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(520, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, ac.currentTime + 0.10);
+    g.gain.setValueAtTime(0.14, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.10);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.10);
+  } catch(e) {}
+}
+
+function playStageUp() {
+  try {
+    const ac = getAC();
+    [523, 659, 784, 1047].forEach((freq, i) => {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      osc.type = 'triangle'; osc.frequency.value = freq;
+      const t0 = ac.currentTime + i * 0.11;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.28, t0 + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.30);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t0); osc.stop(t0 + 0.32);
+    });
+  } catch(e) {}
+}
+
+function startWind() {
+  if (windSrc) return;
+  try {
+    const ac = getAC();
+    windSrc = ac.createBufferSource();
+    windSrc.buffer = noiseBuffer(ac, 3);
+    windSrc.loop = true;
+    const f = ac.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 240; f.Q.value = 0.4;
+    const g = ac.createGain(); g.gain.value = 0.055;
+    windSrc.connect(f); f.connect(g); g.connect(ac.destination);
+    windSrc.start();
+  } catch(e) {}
+}
+
+function stopWind() {
+  if (windSrc) { try { windSrc.stop(); } catch(e) {} windSrc = null; }
+}
+
+// === Obstacle helpers ===
+function spawnObstacle() {
+  const lane = Math.floor(Math.random() * 3);
+  const r = Math.random();
+  let type;
+  if (stage < 2) {
+    type = r < 0.62 ? 'rock' : 'tumbleweed';
+  } else if (stage < 4) {
+    type = r < 0.44 ? 'rock' : r < 0.76 ? 'tumbleweed' : 'cactus';
+  } else {
+    type = r < 0.35 ? 'rock' : r < 0.64 ? 'tumbleweed' : 'cactus';
+  }
+  const driftDir = (lane === 0) ? 1 : (lane === 2) ? -1 : (Math.random() < 0.5 ? 1 : -1);
+  return { type, lane, worldX: LANES[lane], worldZ: SPAWN_Z, driftDir, spin: 0, passed: false };
+}
+
+function addPopup(text, color, x, y) {
+  popups.push({ text, color, x, y, life: 0.85, maxLife: 0.85 });
+}
+
+// === Game init ===
+function startGame() {
+  lives = 3;
+  score = 0;
+  stage = 0;
+  resultWon = false;
+  obstacles = [];
+  popups = [];
+  // 5 stripes evenly spaced in Z depth, will scroll toward camera
+  stripeZs = [SPAWN_Z * 0.1, SPAWN_Z * 0.3, SPAWN_Z * 0.5, SPAWN_Z * 0.7, SPAWN_Z * 0.9];
+  playerLane = 1;
+  playerX = LANES[1];
+  invTimer = 0;
+  transTimer = 0;
+  spawnTimer = 1.0;
+  best = parseInt(localStorage.getItem('canyon_run_best') || '0');
+  applyStage();
+  state = 'playing';
+  startWind();
+}
+
+function applyStage() {
+  speed = STAGES[stage].speed;
+  stageTimer = STAGES[stage].duration;
+}
+
+// === Update ===
+function update(dt) {
+  if (state !== 'playing') return;
+
+  if (transTimer > 0) { transTimer -= dt; return; }
+
+  // Smooth player X toward lane target
+  playerX += (LANES[playerLane] - playerX) * Math.min(1, 10 * dt);
+
+  // Score ticks up with speed
+  score += Math.floor(STAGES[stage].speed * dt * 0.014);
+  stageTimer -= dt;
+
+  // Spawn
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    obstacles.push(spawnObstacle());
+    spawnTimer = 1 / STAGES[stage].spawnRate;
+  }
+
+  // Scroll stripe depth markers
+  for (let i = 0; i < stripeZs.length; i++) {
+    stripeZs[i] -= speed * dt;
+    if (stripeZs[i] < 0) stripeZs[i] += SPAWN_Z;
+  }
+
+  // Invincibility countdown
+  if (invTimer > 0) invTimer -= dt;
+
+  // Obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const obs = obstacles[i];
+    obs.worldZ -= speed * dt;
+
+    if (obs.type === 'tumbleweed') {
+      obs.worldX += obs.driftDir * 68 * dt;
+      obs.spin += 2.8 * dt;
+      if (obs.worldX > LANES[2] + 18) obs.driftDir = -1;
+      if (obs.worldX < LANES[0] - 18) obs.driftDir = 1;
+    }
+
+    if (!obs.passed && obs.worldZ < COLLISION_Z) {
+      obs.passed = true;
+      const dx = Math.abs(obs.worldX - playerX);
+      if (invTimer <= 0 && dx < LANE_W) {
+        // HIT
+        lives--;
+        playHit();
+        invTimer = 1.6;
+        addPopup('HIT!', '#E74C3C', VP_X, 370);
+        if (lives <= 0) { stopWind(); endGame(false); return; }
+      } else if (invTimer <= 0 && dx < LANE_W * 2.0) {
+        // Close dodge bonus
+        score += 50;
+        addPopup('+50', '#FF9F43', VP_X, 420);
+        playDodge();
+      }
+    }
+
+    if (obs.worldZ < -100) obstacles.splice(i, 1);
+  }
+
+  // Stage timer
+  if (stageTimer <= 0) {
+    if (stage >= STAGES.length - 1) {
+      stopWind(); endGame(true);
+    } else {
+      score += 300;
+      addPopup('+300 STAGE CLEAR!', '#FFD700', VP_X, 310);
+      playStageUp();
+      stage++;
+      transTimer = 1.8;
+      applyStage();
+    }
+  }
+
+  // Popups float up
+  for (let i = popups.length - 1; i >= 0; i--) {
+    popups[i].life -= dt;
+    popups[i].y -= 34 * dt;
+    if (popups[i].life <= 0) popups.splice(i, 1);
+  }
+}
+
+function endGame(won) {
+  resultWon = won;
+  if (score > best) {
+    best = score;
+    localStorage.setItem('canyon_run_best', best);
+  }
+  state = 'result';
+}
+
+// === Input ===
+function handleTap(ex) {
+  if (state === 'title')  { startGame(); return; }
+  if (state === 'result') { startGame(); return; }
+  if (state !== 'playing' || transTimer > 0) return;
+  if (ex < W / 2) { if (playerLane > 0) playerLane--; }
+  else            { if (playerLane < 2) playerLane++; }
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const rx = (e.clientX - rect.left) / parseFloat(canvas.style.width) * W;
+  const ry = (e.clientY - rect.top) / parseFloat(canvas.style.height) * H;
+  if (ry > H - 30 && rx > W - 100) { document.getElementById('fb-overlay').classList.add('open'); return; }
+  handleTap(rx);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const t = e.changedTouches[0];
+  const rx = (t.clientX - rect.left) / parseFloat(canvas.style.width) * W;
+  const ry = (t.clientY - rect.top) / parseFloat(canvas.style.height) * H;
+  if (ry > H - 30 && rx > W - 100) { document.getElementById('fb-overlay').classList.add('open'); return; }
+  handleTap(rx);
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') handleTap(0);
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') handleTap(W);
+  if ((e.key === ' ' || e.key === 'Enter') && state !== 'playing') startGame();
+});
+
+// === Drawing ===
+
+function drawBackground() {
+  ctx.save();
+
+  // Sky gradient
+  const sg = ctx.createLinearGradient(0, 0, 0, VP_Y + 55);
+  sg.addColorStop(0,    '#050208');
+  sg.addColorStop(0.55, '#1a0d35');
+  sg.addColorStop(1,    '#3d1502');
+  ctx.fillStyle = sg;
+  ctx.fillRect(0, 0, W, VP_Y + 55);
+
+  // Stars (fixed positions, twinkle over time)
+  const STARS = [[28,18],[75,40],[148,12],[215,32],[285,8],[338,47],[52,68],[198,76],
+                 [308,60],[9,88],[125,52],[258,28],[168,72],[320,30],[42,22]];
+  ctx.fillStyle = '#FFE066';
+  for (const [sx, sy] of STARS) {
+    ctx.globalAlpha = 0.38 + 0.28 * Math.sin(totalTime * 2.4 + sx);
+    ctx.beginPath(); ctx.arc(sx, sy, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Ground / road triangle: VP to bottom-left and bottom-right
+  const gg = ctx.createLinearGradient(0, VP_Y, 0, H);
+  gg.addColorStop(0,   '#4a2208');
+  gg.addColorStop(0.5, '#5c2b0a');
+  gg.addColorStop(1,   '#2a1200');
+  ctx.fillStyle = gg;
+  ctx.beginPath();
+  ctx.moveTo(VP_X, VP_Y);
+  ctx.lineTo(0, H);
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Canyon wall silhouettes (dark triangles outside the road)
+  drawCanyonWall(false);
+  drawCanyonWall(true);
+
+  // Road markings
+  drawRoadMarkings();
+
+  ctx.restore();
+}
+
+function drawCanyonWall(isRight) {
+  const layers = [
+    { zFrac: 0.88, elevation: 165, color: '#1e0c03' },
+    { zFrac: 0.55, elevation: 108, color: '#281204' },
+    { zFrac: 0.28, elevation: 75,  color: '#321806' },
+  ];
+  for (const { zFrac, elevation, color } of layers) {
+    const worldZ = zFrac * SPAWN_Z;
+    const t = FOCAL / (worldZ + FOCAL);
+    const groundY = VP_Y + GROUND_H * t;
+    // road edge X at this depth
+    const roadEdgeX = VP_X + (isRight ? 1 : -1) * 180 * t;
+    const topY = groundY - elevation * t;
+    const screenEdge = isRight ? W : 0;
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(VP_X, VP_Y);
+    ctx.lineTo(roadEdgeX, groundY);
+
+    if (isRight) {
+      // jagged rock profile from roadEdgeX to right edge
+      const steps = 7;
+      for (let i = 0; i <= steps; i++) {
+        const fx = i / steps;
+        const x = roadEdgeX + (W - roadEdgeX) * fx;
+        const jag = (i % 2 === 0) ? 0 : -(elevation * t) * (0.4 + 0.55 * Math.abs(Math.sin(i * 2.71)));
+        ctx.lineTo(x, topY + jag);
+      }
+      ctx.lineTo(W, VP_Y);
+    } else {
+      const steps = 7;
+      for (let i = steps; i >= 0; i--) {
+        const fx = i / steps;
+        const x = roadEdgeX * fx;
+        const jag = (i % 2 === 0) ? 0 : -(elevation * t) * (0.4 + 0.55 * Math.abs(Math.sin(i * 3.14)));
+        ctx.lineTo(x, topY + jag);
+      }
+      ctx.lineTo(0, VP_Y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawRoadMarkings() {
+  // Road edge lines (VP -> corners)
+  ctx.strokeStyle = '#7a4416';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(VP_X, VP_Y); ctx.lineTo(0, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(VP_X, VP_Y); ctx.lineTo(W, H); ctx.stroke();
+
+  // Lane dividers (dashed lines from VP toward screen bottom)
+  ctx.strokeStyle = '#5a3010';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([7, 11]);
+  [-55, 55].forEach(wx => {
+    const bx = VP_X + wx; // at Z=0 (t=1)
+    ctx.beginPath(); ctx.moveTo(VP_X, VP_Y); ctx.lineTo(bx, H); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // Perspective road stripes (scrolling dashes, depth-sorted)
+  ctx.fillStyle = '#6a3a12';
+  const sorted = [...stripeZs].sort((a, b) => b - a);
+  for (const sz of sorted) {
+    if (sz < 30) continue;
+    const t0 = FOCAL / (sz + FOCAL);
+    const t1 = FOCAL / (sz * 0.82 + FOCAL);
+    const hw0 = 5 * t0, hw1 = 5 * t1;
+    const sy0 = VP_Y + GROUND_H * t0;
+    const sy1 = VP_Y + GROUND_H * t1;
+    ctx.beginPath();
+    ctx.moveTo(VP_X - hw0, sy0);
+    ctx.lineTo(VP_X + hw0, sy0);
+    ctx.lineTo(VP_X + hw1, sy1);
+    ctx.lineTo(VP_X - hw1, sy1);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawObstacles() {
+  // Back-to-front: highest Z first
+  const sorted = [...obstacles].sort((a, b) => b.worldZ - a.worldZ);
+  for (const obs of sorted) {
+    if (obs.worldZ < 0) continue;
+    const { sx, sy, scale } = project(obs.worldX, obs.worldZ);
+    if (sy < VP_Y - 10 || sy > H + 40) continue;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+
+    // Ground shadow
+    ctx.globalAlpha = 0.30;
+    ctx.fillStyle = '#000';
+    const sr = OBS_RADIUS[obs.type] * scale;
+    ctx.beginPath(); ctx.ellipse(0, 0, sr * 1.1, sr * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    if (obs.type === 'rock')        drawRock(scale);
+    else if (obs.type === 'tumbleweed') drawTumbleweed(scale, obs.spin);
+    else                            drawCactus(scale);
+
+    // Danger flash when approaching (within ~300 world units)
+    if (obs.worldZ < 320 && obs.worldZ > COLLISION_Z + 5) {
+      const fl = 0.48 + 0.48 * Math.sin(totalTime * 16);
+      ctx.globalAlpha = fl * 0.22;
+      ctx.fillStyle = '#FF2200';
+      const fr = OBS_RADIUS[obs.type] * scale * 0.7;
+      ctx.beginPath(); ctx.arc(0, -fr * 0.7, fr, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+}
+
+function drawRock(scale) {
+  const r = OBS_RADIUS.rock * scale;
+  const cy = -r * 0.82; // center lifted above ground shadow
+
+  const rg = ctx.createRadialGradient(-r * 0.22, cy - r * 0.28, r * 0.08, 0, cy, r);
+  rg.addColorStop(0,   '#9a7048');
+  rg.addColorStop(0.4, '#6e4828');
+  rg.addColorStop(1,   '#281400');
+  ctx.fillStyle = rg;
+  ctx.beginPath();
+  ctx.ellipse(0, cy, r * 1.04, r * 0.94, 0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Specular highlight
+  ctx.fillStyle = 'rgba(255,225,170,0.14)';
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.22, cy - r * 0.26, r * 0.32, r * 0.2, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawTumbleweed(scale, spin) {
+  const r = OBS_RADIUS.tumbleweed * scale;
+  const cy = -r * 0.88;
+
+  ctx.save();
+  ctx.translate(0, cy);
+  ctx.rotate(spin);
+
+  ctx.strokeStyle = '#B89038';
+  ctx.lineWidth = Math.max(1, 2.5 * scale);
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.strokeStyle = '#907028';
+  ctx.lineWidth = Math.max(0.8, 1.8 * scale);
+  const branches = 6;
+  for (let i = 0; i < branches; i++) {
+    const ang = (i / branches) * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(-r * Math.cos(ang), -r * Math.sin(ang));
+    ctx.lineTo( r * Math.cos(ang),  r * Math.sin(ang));
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#C8A050';
+  ctx.lineWidth = Math.max(0.6, 1.4 * scale);
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.48, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawCactus(scale) {
+  const h  = 88 * scale;  // trunk height
+  const tw = 14 * scale;  // trunk width
+  const ah = 36 * scale;  // arm height
+
+  ctx.fillStyle = '#2e5e1a';
+
+  // Trunk
+  ctx.beginPath();
+  ctx.roundRect(-tw * 0.5, -h, tw, h, [tw * 0.38, tw * 0.38, 0, 0]);
+  ctx.fill();
+
+  // Left arm (horizontal then up)
+  ctx.beginPath();
+  ctx.roundRect(-tw * 1.85, -h * 0.66, tw * 1.38, tw * 0.84, tw * 0.28);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(-tw * 2.1, -h * 0.66 - ah * 0.72, tw * 0.84, ah * 0.72, tw * 0.28);
+  ctx.fill();
+
+  // Right arm (horizontal then up)
+  ctx.beginPath();
+  ctx.roundRect(tw * 0.48, -h * 0.48, tw * 1.38, tw * 0.84, tw * 0.28);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(tw * 1.22, -h * 0.48 - ah * 0.56, tw * 0.84, ah * 0.56, tw * 0.28);
+  ctx.fill();
+
+  // Highlight streak
+  ctx.fillStyle = 'rgba(110,210,80,0.16)';
+  ctx.beginPath();
+  ctx.roundRect(-tw * 0.44, -h, tw * 0.32, h * 0.8, tw * 0.18);
+  ctx.fill();
+}
+
+function drawPlayer() {
+  // Running boots silhouette at bottom of screen in current lane
+  const bx = VP_X + playerX;  // at Z=0, t=1, screenX = VP_X + worldX
+  const by = H - 26;
+  const bob = Math.sin(totalTime * 7.5) * 5;
+
+  ctx.save();
+  ctx.fillStyle = '#1a0520';
+
+  // Left boot
+  ctx.beginPath();
+  ctx.ellipse(bx - 19, by + bob * 0.5,  15, 10, -0.12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Right boot
+  ctx.beginPath();
+  ctx.ellipse(bx + 19, by - bob * 0.5, 15, 10,  0.12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Toe highlights
+  ctx.fillStyle = '#2a1040';
+  ctx.beginPath();
+  ctx.ellipse(bx - 19, by + bob * 0.5 - 2,  6, 3, -0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(bx + 19, by - bob * 0.5 - 2,  6, 3,  0.12, 0, Math.PI * 2); ctx.fill();
+
+  // Lane indicator dots at very bottom
+  for (let i = 0; i < 3; i++) {
+    const lx = VP_X + LANES[i];
+    ctx.fillStyle = (i === playerLane) ? '#FFD700' : '#3a1a06';
+    ctx.beginPath(); ctx.arc(lx, H - 8, 5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  // Score pill (top center)
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.roundRect(W/2 - 58, 8, 116, 32, 8); ctx.fill();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 21px Georgia, serif';
+  ctx.fillText(score, W/2, 30);
+
+  // Lives (top left)
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.roundRect(8, 8, 74, 28, 8); ctx.fill();
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('LIVES', 14, 26);
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = (i < lives) ? '#E74C3C' : '#333';
+    ctx.beginPath(); ctx.arc(51 + i * 13, 22, 5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Stage label (top right)
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.roundRect(W - 86, 8, 78, 28, 8); ctx.fill();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 13px Georgia, serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(STAGES[Math.min(stage, 4)].label, W - 12, 27);
+
+  // Stage progress bar
+  const prog = Math.max(0, Math.min(1, 1 - stageTimer / STAGES[stage].duration));
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath(); ctx.roundRect((W - 170) / 2, 44, 170, 5, 2); ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath(); ctx.roundRect((W - 170) / 2, 44, 170 * prog, 5, 2); ctx.fill();
+
+  // Invincibility screen flash
+  if (invTimer > 0 && Math.floor(totalTime * 9) % 2 === 0) {
+    ctx.globalAlpha = 0.10;
+    ctx.fillStyle = '#FF2200';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // Feedback link (bottom right)
+  ctx.fillStyle = 'rgba(200,160,74,0.7)';
+  ctx.font = '13px Georgia, serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('Feedback', W - 10, H - 10);
+
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  ctx.textAlign = 'center';
+  for (const p of popups) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 17px Georgia, serif';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTransition() {
+  if (transTimer <= 0) return;
+  const a = Math.min(1, transTimer * 1.5);
+  ctx.save();
+  ctx.globalAlpha = a * 0.72;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = a;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 34px Georgia, serif';
+  ctx.fillText(STAGES[Math.min(stage, 4)].label, W/2, H/2 - 20);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '18px Georgia, serif';
+  ctx.fillText('Pick up the pace!', W/2, H/2 + 18);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0,   '#050208');
+  bg.addColorStop(0.4, '#1a0d35');
+  bg.addColorStop(1,   '#2a1000');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  const STARS = [[28,18],[75,40],[148,12],[215,32],[285,8],[338,47],[52,68],[198,76],[308,60]];
+  ctx.fillStyle = '#FFE066';
+  for (const [sx, sy] of STARS) {
+    ctx.globalAlpha = 0.4 + 0.25 * Math.sin(totalTime * 2 + sx);
+    ctx.beginPath(); ctx.arc(sx, sy, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 54px Georgia, serif';
+  ctx.fillText('CANYON', W/2, 196);
+  ctx.fillText('RUN',    W/2, 258);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '18px Georgia, serif';
+  ctx.fillText('Bob Davis', W/2, 296);
+
+  ctx.strokeStyle = '#C8A04A'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(80, 314); ctx.lineTo(280, 314); ctx.stroke();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Sprint the canyon.', W/2, 344);
+  ctx.fillText('Tap LEFT or RIGHT to dodge.', W/2, 368);
+  ctx.fillText('3 lives  •  5 stages', W/2, 392);
+
+  if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('Best: ' + best, W/2, 424);
+  }
+
+  const pulse = 0.7 + 0.3 * Math.sin(totalTime * 2.8);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia, serif';
+  ctx.fillText('Tap to Run', W/2, 496);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function drawResult() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.9)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+
+  if (resultWon) {
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 36px Georgia, serif';
+    ctx.fillText('CANYON CLEAR!', W/2, 196);
+  } else {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 36px Georgia, serif';
+    ctx.fillText('WIPED OUT', W/2, 196);
+  }
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.fillText(score, W/2, 278);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('Score', W/2, 302);
+
+  if (score > 0 && score >= best) {
+    const p = 0.7 + 0.3 * Math.sin(totalTime * 4);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W/2, 338);
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctx.fillStyle = '#666';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText('Best: ' + best, W/2, 338);
+  }
+
+  // Play Again button
+  ctx.fillStyle = '#C8A04A';
+  ctx.beginPath(); ctx.roundRect(W/2 - 82, 386, 164, 50, 10); ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('Run Again', W/2, 418);
+
+  ctx.restore();
+}
+
+// === Draw dispatcher ===
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if      (state === 'title')   drawTitle();
+  else if (state === 'result')  drawResult();
+  else {
+    drawBackground();
+    drawObstacles();
+    drawPlayer();
+    drawHUD();
+    drawTransition();
+    drawPopups();
+  }
+}
+
+// === Game loop ===
+let lastTime = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
+    totalTime += dt;
+    if (state === 'playing') update(dt);
+    draw();
+  } catch(e) { console.error(e); }
+  requestAnimationFrame(loop);
+}
+
+// === Test API ===
+window.__run = {
+  get state()      { return state; },
+  get stage()      { return stage; },
+  get lives()      { return lives; },
+  get score()      { return score; },
+  get best()       { return best; },
+  get playerLane() { return playerLane; },
+  get playerX()    { return playerX; },
+  get obstacles()  { return obstacles; },
+  get stripeZs()   { return stripeZs; },
+  get stageTimer() { return stageTimer; },
+  get speed()      { return speed; },
+  get invTimer()   { return invTimer; },
+  get transTimer() { return transTimer; },
+  get spawnTimer() { return spawnTimer; },
+  get resultWon()  { return resultWon; },
+
+  set state(v)      { state = v; },
+  set stage(v)      { stage = v; },
+  set lives(v)      { lives = v; },
+  set score(v)      { score = v; },
+  set playerLane(v) { playerLane = v; },
+  set playerX(v)    { playerX = v; },
+  set invTimer(v)   { invTimer = v; },
+  set stageTimer(v) { stageTimer = v; },
+  set transTimer(v) { transTimer = v; },
+  set spawnTimer(v) { spawnTimer = v; },
+
+  STAGES, LANES, FOCAL, VP_X, VP_Y, GROUND_H,
+  SPAWN_Z, COLLISION_Z, LANE_W, OBS_RADIUS,
+
+  startGame,
+  update,
+  applyStage,
+  handleTap,
+  spawnObstacle,
+  addPopup,
+  project,
+  endGame,
+};
+
+// === Feedback overlay ===
+const fbOverlay = document.getElementById('fb-overlay');
+const fbStars   = document.querySelectorAll('#fb-stars span');
+const fbText    = document.getElementById('fb-text');
+const fbSubmit  = document.getElementById('fb-submit');
+let fbRating = 0;
+
+fbStars.forEach(s => s.addEventListener('click', () => {
+  fbRating = +s.dataset.s;
+  fbStars.forEach((x, i) => x.classList.toggle('on', i < fbRating));
+}));
+document.getElementById('fb-close').addEventListener('click', () => fbOverlay.classList.remove('open'));
+fbSubmit.addEventListener('click', async () => {
+  const game    = document.getElementById('fb-select').value;
+  const message = fbText.value.trim();
+  if (!fbRating && !message) return;
+  fbSubmit.textContent = 'Sending...';
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game, rating: fbRating, message }),
+    });
+    fbSubmit.textContent = 'Sent!';
+    setTimeout(() => fbOverlay.classList.remove('open'), 800);
+  } catch(e) { fbSubmit.textContent = 'Error - try again'; }
+});
+
+// === Boot ===
+best = parseInt(localStorage.getItem('canyon_run_best') || '0');
+state = 'title';
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,1622 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Frontier Forge</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; }
+#wrap { position: relative; }
+canvas { display: block; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+// Items (rounds) - each item has a name, strike pattern (0=left..4=right), heat zone, quench window
+const ITEMS = [
+  { name: 'Horseshoe',   strikes: [2, 0, 4, 2],         heatLo: 550, heatHi: 800, maxTemp: 950,  riseRate: 90, fallRate: 10, quenchLo: 0.9, quenchHi: 1.8, pendSpeed: 1.8 },
+  { name: 'Knife Blade', strikes: [2, 1, 3, 0, 4],       heatLo: 640, heatHi: 840, maxTemp: 1000, riseRate: 85, fallRate: 9,  quenchLo: 0.7, quenchHi: 1.4, pendSpeed: 2.1 },
+  { name: 'Axe Head',    strikes: [1, 3, 2, 0, 4, 2],    heatLo: 700, heatHi: 860, maxTemp: 1050, riseRate: 80, fallRate: 8,  quenchLo: 0.6, quenchHi: 1.2, pendSpeed: 2.4 },
+  { name: 'Boot Spur',   strikes: [2, 2, 1, 3, 2, 2],    heatLo: 720, heatHi: 860, maxTemp: 1080, riseRate: 78, fallRate: 8,  quenchLo: 0.55, quenchHi: 1.0, pendSpeed: 2.7 },
+  { name: 'Bowie Knife', strikes: [0, 4, 1, 3, 2, 1, 3], heatLo: 740, heatHi: 870, maxTemp: 1100, riseRate: 75, fallRate: 7,  quenchLo: 0.5, quenchHi: 0.9, pendSpeed: 3.0 },
+];
+
+const MAX_QUENCH = 2.4; // seconds - full quench bar duration
+const PEND_MAX_ANGLE = Math.PI * 0.42;
+const BAR_ZONE_HALF = 28; // px half-width of a hammer zone on bar
+const TEMP_DISPLAY_MAX = 1200;
+
+// Canvas setup
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = canvas.style.width;
+  wrap.style.height   = canvas.style.height;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Audio
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+function resume() { if (AC.state === 'suspended') AC.resume(); }
+
+function playBellows(intensity) {
+  // Short noise burst - bandpass, low freq
+  const buf = AC.createBuffer(1, AC.sampleRate * 0.12, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = AC.createBufferSource();
+  src.buffer = buf;
+  const bp = AC.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 200 + intensity * 100; bp.Q.value = 2;
+  const gain = AC.createGain();
+  gain.gain.value = 0.25;
+  src.connect(bp); bp.connect(gain); gain.connect(AC.destination);
+  src.start();
+}
+
+function playHammer(quality) {
+  // Metallic ping - exponential decay
+  const t = AC.currentTime;
+  const osc = AC.createOscillator();
+  const gain = AC.createGain();
+  const freq = quality === 'perfect' ? 880 : quality === 'good' ? 660 : 440;
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(freq * 2.5, t);
+  osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 0.3);
+  gain.gain.setValueAtTime(0.5, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  osc.connect(gain); gain.connect(AC.destination);
+  osc.start(t); osc.stop(t + 0.31);
+  // Second harmonic
+  const osc2 = AC.createOscillator();
+  const g2 = AC.createGain();
+  osc2.type = 'sawtooth';
+  osc2.frequency.setValueAtTime(freq * 1.2, t);
+  osc2.frequency.exponentialRampToValueAtTime(freq * 0.3, t + 0.25);
+  g2.gain.setValueAtTime(0.15, t);
+  g2.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+  osc2.connect(g2); g2.connect(AC.destination);
+  osc2.start(t); osc2.stop(t + 0.26);
+}
+
+function playMiss() {
+  const t = AC.currentTime;
+  const osc = AC.createOscillator();
+  const gain = AC.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(180, t);
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  osc.connect(gain); gain.connect(AC.destination);
+  osc.start(t); osc.stop(t + 0.21);
+}
+
+function playQuench() {
+  // Sizzle: high-pass noise
+  const buf = AC.createBuffer(1, AC.sampleRate * 1.5, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1);
+  const src = AC.createBufferSource();
+  src.buffer = buf;
+  const hp = AC.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 4000;
+  const gain = AC.createGain();
+  gain.gain.setValueAtTime(0.35, AC.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 1.4);
+  src.connect(hp); hp.connect(gain); gain.connect(AC.destination);
+  src.start();
+}
+
+function playWin() {
+  const t = AC.currentTime;
+  [523, 659, 784, 1047].forEach((f, i) => {
+    const osc = AC.createOscillator();
+    const g = AC.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = f;
+    g.gain.setValueAtTime(0, t + i * 0.12);
+    g.gain.linearRampToValueAtTime(0.3, t + i * 0.12 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.4);
+    osc.connect(g); g.connect(AC.destination);
+    osc.start(t + i * 0.12); osc.stop(t + i * 0.12 + 0.41);
+  });
+}
+
+function playFail() {
+  const t = AC.currentTime;
+  [330, 277, 220].forEach((f, i) => {
+    const osc = AC.createOscillator();
+    const g = AC.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = f;
+    g.gain.setValueAtTime(0.25, t + i * 0.15);
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.15 + 0.3);
+    osc.connect(g); g.connect(AC.destination);
+    osc.start(t + i * 0.15); osc.stop(t + i * 0.15 + 0.31);
+  });
+}
+
+function playPhaseChime() {
+  const t = AC.currentTime;
+  const osc = AC.createOscillator();
+  const g = AC.createGain();
+  osc.type = 'sine'; osc.frequency.value = 1047;
+  g.gain.setValueAtTime(0.2, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  osc.connect(g); g.connect(AC.destination);
+  osc.start(t); osc.stop(t + 0.36);
+}
+
+// Temperature to iron glow color
+function ironColor(temp) {
+  const stops = [
+    [0,    [18,  6,  2]],
+    [200,  [50,  12, 5]],
+    [400,  [100, 25, 8]],
+    [550,  [160, 50, 15]],
+    [700,  [210, 100, 20]],
+    [850,  [235, 150, 40]],
+    [1000, [248, 200, 80]],
+    [1200, [255, 230, 150]],
+  ];
+  let lo = stops[0], hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (temp >= stops[i][0] && temp <= stops[i+1][0]) {
+      lo = stops[i]; hi = stops[i+1]; break;
+    }
+  }
+  const t = Math.max(0, Math.min(1, (temp - lo[0]) / (hi[0] - lo[0])));
+  const r = Math.round(lo[1][0] + (hi[1][0] - lo[1][0]) * t);
+  const g = Math.round(lo[1][1] + (hi[1][1] - lo[1][1]) * t);
+  const b = Math.round(lo[1][2] + (hi[1][2] - lo[1][2]) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function ironGlowColor(temp) {
+  if (temp < 400) return null;
+  const alpha = Math.min(1, (temp - 400) / 600);
+  const stops = [
+    [400, [140, 30, 0]],
+    [700, [200, 80, 0]],
+    [900, [230, 140, 20]],
+    [1200, [255, 210, 100]],
+  ];
+  let lo = stops[0], hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (temp >= stops[i][0] && temp <= stops[i+1][0]) {
+      lo = stops[i]; hi = stops[i+1]; break;
+    }
+  }
+  const frac = Math.max(0, Math.min(1, (temp - lo[0]) / (hi[0] - lo[0])));
+  const r = Math.round(lo[1][0] + (hi[1][0] - lo[1][0]) * frac);
+  const g = Math.round(lo[1][1] + (hi[1][1] - lo[1][1]) * frac);
+  const b = Math.round(lo[1][2] + (hi[1][2] - lo[1][2]) * frac);
+  return `rgba(${r},${g},${b},${alpha * 0.6})`;
+}
+
+// State
+let state = 'title'; // 'title' | 'playing' | 'gameover'
+let roundIdx = 0;
+let score = 0;
+let best = parseInt(localStorage.getItem('frontier-forge_best') || '0', 10);
+
+// Phase state
+let phase = 'heat'; // 'heat' | 'strike' | 'quench' | 'item_done'
+let temp = 20;
+let heating = false;
+let heatResult = null; // 'perfect' | 'good' | null
+let overheated = false;
+let overheatFlash = 0;
+
+// Strike state
+let strikeIdx = 0;
+let pendAngle = -PEND_MAX_ANGLE;
+let pendDir = 1;
+let strikeResults = []; // array of 'perfect'|'good'|'miss'
+let strikeFlash = 0; // cooldown after strike
+let strikeFlashColor = '#FFE066';
+let strikeCoolTemp = 380; // minimum temp to strike; if below, must reheat
+
+// Quench state
+let quenchHeld = false;
+let quenchTime = 0;
+let quenchResult = null; // 'perfect' | 'good' | 'soft' | 'brittle'
+let quenchComplete = false;
+
+// Item done state
+let itemDoneTimer = 0;
+let itemScore = 0;
+let itemQuality = '';
+
+// Transitions
+let phaseTransTimer = 0; // brief flash between phases
+let phaseTransMsg = '';
+let phaseTransColor = '#FFE066';
+
+// Popups
+let popups = [];
+
+// Particles
+let particles = [];
+
+// Bellows animation
+let bellowsPuff = 0; // 0-1 animation state
+
+// Feedback overlay
+let showFeedback = false;
+let fbRating = 0;
+let fbText = '';
+let fbStatus = '';
+
+function addPopup(x, y, text, color) {
+  popups.push({ x, y, text, color, life: 1.2, maxLife: 1.2 });
+}
+
+function addParticles(x, y, count, vxRange, vyRange, color, life, ay) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * vxRange,
+      vy: -Math.random() * vyRange - 10,
+      color,
+      life: life * (0.7 + Math.random() * 0.6),
+      maxLife: life,
+      ay: ay || -20,
+      r: 2 + Math.random() * 3,
+    });
+  }
+}
+
+function addSteamParticles(x, y) {
+  for (let i = 0; i < 20; i++) {
+    particles.push({
+      x: x + (Math.random() - 0.5) * 60,
+      y: y + (Math.random() - 0.5) * 10,
+      vx: (Math.random() - 0.5) * 40,
+      vy: -Math.random() * 60 - 30,
+      color: `rgba(180,200,220,${0.3 + Math.random() * 0.5})`,
+      life: 1.0 + Math.random() * 0.5,
+      maxLife: 1.5,
+      ay: -15,
+      r: 4 + Math.random() * 8,
+    });
+  }
+}
+
+function addEmberParticles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 80,
+      vy: -Math.random() * 60 - 20,
+      color: ['#FF6600', '#FF9933', '#FFB300', '#FF4400'][Math.floor(Math.random() * 4)],
+      life: 0.6 + Math.random() * 0.4,
+      maxLife: 1.0,
+      ay: 40,
+      r: 1.5 + Math.random() * 2,
+    });
+  }
+}
+
+function startGame() {
+  state = 'playing';
+  roundIdx = 0;
+  score = 0;
+  startRound();
+}
+
+function startRound() {
+  const item = ITEMS[roundIdx];
+  phase = 'heat';
+  temp = 20;
+  heating = false;
+  heatResult = null;
+  overheated = false;
+  overheatFlash = 0;
+  strikeIdx = 0;
+  pendAngle = -PEND_MAX_ANGLE;
+  pendDir = 1;
+  strikeResults = [];
+  strikeFlash = 0;
+  quenchHeld = false;
+  quenchTime = 0;
+  quenchResult = null;
+  quenchComplete = false;
+  itemDoneTimer = 0;
+  itemScore = 0;
+  phaseTransTimer = 0;
+  bellowsPuff = 0;
+  popups = [];
+  particles = [];
+}
+
+function endGame() {
+  if (score > best) {
+    best = score;
+    localStorage.setItem('frontier-forge_best', String(best));
+  }
+  state = 'gameover';
+}
+
+// Convert pendulum angle to screen X position over bar
+// Bar zone 0-4: barX maps position index to screen X
+function barZoneX(pos) {
+  // Bar spans from barLeft to barRight over 5 zones (0-4)
+  const barLeft = W / 2 - 100;
+  const barRight = W / 2 + 100;
+  return barLeft + (pos / 4) * (barRight - barLeft);
+}
+
+// Convert pendulum angle to bar position (0-4 as float)
+function pendAngleToBarPos(angle) {
+  // angle ranges from -PEND_MAX_ANGLE to +PEND_MAX_ANGLE
+  return ((angle + PEND_MAX_ANGLE) / (2 * PEND_MAX_ANGLE)) * 4;
+}
+
+// Bar position (0-4) to pendulum angle
+function barPosToPendAngle(pos) {
+  return -PEND_MAX_ANGLE + (pos / 4) * (2 * PEND_MAX_ANGLE);
+}
+
+function onStrikeTap() {
+  if (strikeFlash > 0) return;
+  if (strikeIdx >= ITEMS[roundIdx].strikes.length) return;
+
+  // Check if temp is still hot enough to strike
+  if (temp < strikeCoolTemp) {
+    addPopup(W / 2, 340, 'TOO COLD  |  REHEAT!', '#E74C3C');
+    playFail();
+    phase = 'heat';
+    overheatFlash = 0;
+    return;
+  }
+
+  const targetPos = ITEMS[roundIdx].strikes[strikeIdx];
+  const currentPos = pendAngleToBarPos(pendAngle);
+  const diff = Math.abs(currentPos - targetPos);
+
+  let quality;
+  if (diff < 0.45) quality = 'perfect';
+  else if (diff < 0.9) quality = 'good';
+  else quality = 'miss';
+
+  strikeResults.push(quality);
+  playHammer(quality);
+
+  const zx = barZoneX(targetPos);
+  if (quality === 'perfect') {
+    addPopup(zx, 330, 'PERFECT!', '#FFE066');
+    addEmberParticles(zx, 370, 6);
+    strikeIdx++;
+  } else if (quality === 'good') {
+    addPopup(zx, 330, 'GOOD', '#FF9F43');
+    addEmberParticles(zx, 370, 3);
+    strikeIdx++;
+  } else {
+    addPopup(zx, 330, 'MISS', '#E74C3C');
+    playMiss();
+  }
+
+  strikeFlash = 0.35;
+  strikeFlashColor = quality === 'perfect' ? '#FFE066' : quality === 'good' ? '#FF9F43' : '#E74C3C';
+
+  // After all strikes: advance to quench
+  if (strikeIdx >= ITEMS[roundIdx].strikes.length) {
+    strikeFlash = 0.5;
+    setTimeout(() => {
+      if (phase === 'strike') {
+        phase = 'quench';
+        playPhaseChime();
+      }
+    }, 550);
+  }
+}
+
+function onHeatTap() {
+  if (overheated) return;
+  const item = ITEMS[roundIdx];
+  if (temp >= item.heatLo && temp <= item.heatHi) {
+    // Pull iron from forge
+    const center = (item.heatLo + item.heatHi) / 2;
+    const dist = Math.abs(temp - center) / ((item.heatHi - item.heatLo) / 2);
+    heatResult = dist < 0.35 ? 'perfect' : 'good';
+    const pts = heatResult === 'perfect' ? 150 : 80;
+    score += pts;
+    addPopup(W / 2, 260, heatResult === 'perfect' ? 'PERFECT HEAT! +' + pts : 'GOOD HEAT +' + pts,
+             heatResult === 'perfect' ? '#FFE066' : '#FF9F43');
+    addEmberParticles(W / 2, 290, 8);
+    playPhaseChime();
+    // Brief pause then strike phase
+    phaseTransTimer = 0.6;
+    phaseTransMsg = 'STRIKE!';
+    phaseTransColor = '#FFE066';
+    setTimeout(() => { if (phase === 'heat') phase = 'strike'; }, 650);
+  }
+}
+
+function onQuenchTap(down) {
+  if (quenchComplete) return;
+  if (down) {
+    quenchHeld = true;
+    if (quenchTime === 0) playQuench();
+  } else {
+    quenchHeld = false;
+    if (quenchTime > 0) finishQuench();
+  }
+}
+
+function finishQuench() {
+  quenchComplete = true;
+  const item = ITEMS[roundIdx];
+  let quality;
+  if (quenchTime >= item.quenchLo && quenchTime <= item.quenchHi) {
+    const center = (item.quenchLo + item.quenchHi) / 2;
+    const dist = Math.abs(quenchTime - center) / ((item.quenchHi - item.quenchLo) / 2);
+    quality = dist < 0.4 ? 'perfect' : 'good';
+  } else if (quenchTime < item.quenchLo) {
+    quality = 'soft';
+  } else {
+    quality = 'brittle';
+  }
+  quenchResult = quality;
+
+  addSteamParticles(W / 2, 360);
+
+  let pts = 0;
+  if (quality === 'perfect') { pts = 150; addPopup(W / 2, 300, 'PERFECTLY TEMPERED +150', '#FFE066'); playWin(); }
+  else if (quality === 'good') { pts = 80; addPopup(W / 2, 300, 'WELL TEMPERED +80', '#FF9F43'); playPhaseChime(); }
+  else if (quality === 'soft') { pts = 20; addPopup(W / 2, 300, 'TOO SOFT +20', '#aaa'); }
+  else { pts = 20; addPopup(W / 2, 300, 'TOO BRITTLE +20', '#aaa'); }
+
+  // Strike score
+  let strikeScore = 0;
+  strikeResults.forEach(r => { strikeScore += r === 'perfect' ? 80 : r === 'good' ? 40 : 0; });
+  score += pts + strikeScore;
+  itemScore = pts + strikeScore;
+
+  // Quality label
+  const perfectStrikes = strikeResults.filter(r => r === 'perfect').length;
+  const goodStrikes = strikeResults.filter(r => r === 'good').length;
+  const total = strikeResults.length;
+  const ratio = (perfectStrikes + goodStrikes * 0.5) / total;
+  if (heatResult === 'perfect' && quality === 'perfect' && ratio >= 0.9) itemQuality = 'MASTERWORK';
+  else if ((heatResult !== null) && (quality === 'perfect' || quality === 'good') && ratio >= 0.7) itemQuality = 'QUALITY';
+  else if (ratio >= 0.5) itemQuality = 'DECENT';
+  else itemQuality = 'FLAWED';
+
+  phase = 'item_done';
+  itemDoneTimer = 2.2;
+}
+
+// Main update
+let lastT = 0;
+function update(ts) {
+  try {
+    const dt = Math.min((ts - lastT) / 1000, 0.05);
+    lastT = ts;
+
+    if (state !== 'playing') { requestAnimationFrame(update); draw(); return; }
+
+    const item = ITEMS[roundIdx];
+
+    if (phase === 'heat') {
+      if (heating && !overheated) {
+        temp = Math.min(TEMP_DISPLAY_MAX, temp + item.riseRate * dt);
+        bellowsPuff = Math.min(1, bellowsPuff + dt * 4);
+        // Embers from forge while heating
+        if (Math.random() < dt * 8) addEmberParticles(W / 2, 310, 1);
+        if (temp >= item.maxTemp) {
+          overheated = true;
+          overheatFlash = 1.5;
+          temp = item.maxTemp;
+          heating = false;
+          score = Math.max(0, score - 30);
+          addPopup(W / 2, 240, 'OVERHEATED! -30', '#E74C3C');
+          playFail();
+        }
+      } else {
+        temp = Math.max(20, temp - item.fallRate * dt);
+        bellowsPuff = Math.max(0, bellowsPuff - dt * 3);
+      }
+      if (overheated) {
+        overheatFlash = Math.max(0, overheatFlash - dt);
+        if (overheatFlash <= 0) { overheated = false; }
+      }
+    } else if (phase === 'strike') {
+      // Pendulum swings back and forth
+      const item2 = ITEMS[roundIdx];
+      pendAngle += pendDir * item2.pendSpeed * dt;
+      if (pendAngle >= PEND_MAX_ANGLE) { pendAngle = PEND_MAX_ANGLE; pendDir = -1; }
+      if (pendAngle <= -PEND_MAX_ANGLE) { pendAngle = -PEND_MAX_ANGLE; pendDir = 1; }
+
+      // Iron cools during striking
+      temp = Math.max(20, temp - 28 * dt);
+
+      if (strikeFlash > 0) strikeFlash -= dt;
+    } else if (phase === 'quench') {
+      if (quenchHeld && !quenchComplete) {
+        quenchTime = Math.min(MAX_QUENCH, quenchTime + dt);
+        // Visual: iron dims and steam rises
+        temp = Math.max(20, temp - 200 * dt);
+      }
+    } else if (phase === 'item_done') {
+      itemDoneTimer -= dt;
+      if (itemDoneTimer <= 0) {
+        if (roundIdx >= ITEMS.length - 1) {
+          endGame();
+        } else {
+          roundIdx++;
+          startRound();
+        }
+      }
+    }
+
+    if (phaseTransTimer > 0) phaseTransTimer -= dt;
+
+    // Update particles
+    particles = particles.filter(p => p.life > 0);
+    particles.forEach(p => {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += p.ay * dt;
+      p.life -= dt;
+    });
+
+    // Update popups
+    popups = popups.filter(p => p.life > 0);
+    popups.forEach(p => { p.y -= 38 * dt; p.life -= dt; });
+
+    draw();
+    requestAnimationFrame(update);
+  } catch(e) {
+    console.error('update error', e);
+    requestAnimationFrame(update);
+  }
+}
+
+// ---- DRAWING ----
+
+function pill(x, y, w, h, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  const r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBg() {
+  // Stone floor + brick background
+  ctx.save();
+  // Wall
+  const wallGrad = ctx.createLinearGradient(0, 0, 0, H);
+  wallGrad.addColorStop(0, '#1a0d05');
+  wallGrad.addColorStop(0.5, '#2a1408');
+  wallGrad.addColorStop(1, '#150a03');
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Brick pattern (subtle)
+  ctx.strokeStyle = 'rgba(80,40,10,0.25)';
+  ctx.lineWidth = 1;
+  const brickH = 20, brickW = 40;
+  for (let row = 0; row < Math.ceil(H / brickH); row++) {
+    const offsetX = (row % 2) * (brickW / 2);
+    for (let col = -1; col < Math.ceil(W / brickW) + 1; col++) {
+      ctx.strokeRect(col * brickW + offsetX, row * brickH, brickW, brickH);
+    }
+  }
+
+  // Stone floor
+  const floorY = 530;
+  ctx.fillStyle = '#1f1008';
+  ctx.fillRect(0, floorY, W, H - floorY);
+  ctx.fillStyle = 'rgba(40,20,5,0.5)';
+  for (let x = 0; x < W; x += 60) {
+    ctx.fillRect(x, floorY, 58, H - floorY - 2);
+  }
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Score pill
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  pill(W / 2 - 60, 8, 120, 26, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(score.toLocaleString(), W / 2, 21);
+
+  // Round indicator
+  pill(8, 8, 70, 26, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 11px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ITEMS[roundIdx].name.toUpperCase(), 14, 21);
+
+  // Phase label
+  const phaseNames = { heat: 'HEAT', strike: 'STRIKE', quench: 'QUENCH', item_done: 'DONE' };
+  pill(W - 78, 8, 70, 26, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = phase === 'heat' ? '#FF6622' : phase === 'strike' ? '#FFE066' : phase === 'quench' ? '#66AAFF' : '#22EE66';
+  ctx.font = 'bold 12px Georgia, serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(phaseNames[phase] || '', W - 14, 21);
+
+  ctx.restore();
+}
+
+function drawForge() {
+  ctx.save();
+  const cx = W / 2, cy = 310;
+
+  // Forge body (stone trough)
+  ctx.fillStyle = '#3a2010';
+  ctx.beginPath();
+  ctx.roundRect(cx - 75, cy - 25, 150, 65, 8);
+  ctx.fill();
+
+  ctx.fillStyle = '#2a1608';
+  ctx.beginPath();
+  ctx.roundRect(cx - 62, cy - 15, 124, 50, 5);
+  ctx.fill();
+
+  // Coals glow
+  const glowColor = ironColor(temp * 0.85 + 400);
+  const coalGrad = ctx.createRadialGradient(cx, cy + 15, 5, cx, cy + 15, 60);
+  coalGrad.addColorStop(0, glowColor.replace('rgb', 'rgba').replace(')', ',0.9)'));
+  coalGrad.addColorStop(0.5, glowColor.replace('rgb', 'rgba').replace(')', ',0.4)'));
+  coalGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = coalGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 15, 55, 25, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Coal chunks
+  ctx.fillStyle = '#1a0a04';
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.ellipse(cx + i * 22, cy + 20, 9, 5, i * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Iron bar in forge
+  const barW = 110, barH = 18;
+  const barX = cx - barW / 2, barY = cy - 8;
+  const col = ironColor(temp);
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 4);
+  ctx.fill();
+
+  // Glow around bar
+  const glowC = ironGlowColor(temp);
+  if (glowC) {
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 4);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Bellows
+  const bx = cx + 85, by = cy + 10;
+  const bPuff = bellowsPuff;
+  ctx.fillStyle = '#5a3010';
+  // Bellows body
+  ctx.beginPath();
+  ctx.moveTo(bx, by - 18 - bPuff * 6);
+  ctx.lineTo(bx + 28, by - 8 - bPuff * 3);
+  ctx.lineTo(bx + 28, by + 8 + bPuff * 3);
+  ctx.lineTo(bx, by + 18 + bPuff * 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#8a5020';
+  ctx.beginPath();
+  ctx.moveTo(bx, by - 18 - bPuff * 6);
+  ctx.lineTo(bx - 12, by);
+  ctx.lineTo(bx, by + 18 + bPuff * 6);
+  ctx.closePath();
+  ctx.fill();
+  // Bellows nozzle
+  ctx.fillStyle = '#4a2808';
+  ctx.fillRect(bx - 22, by - 4, 12, 8);
+
+  ctx.restore();
+}
+
+function drawTempBar() {
+  ctx.save();
+  const item = ITEMS[roundIdx];
+  const bx = W - 34, by = 60, bh = 300, bw = 18;
+
+  // Bar background
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 4);
+  ctx.fill();
+
+  // Temp gradient fill
+  const fillH = (temp / TEMP_DISPLAY_MAX) * bh;
+  const grad = ctx.createLinearGradient(0, by + bh, 0, by);
+  grad.addColorStop(0, '#1a0a04');
+  grad.addColorStop(0.3, '#8B1500');
+  grad.addColorStop(0.55, '#CC3300');
+  grad.addColorStop(0.75, '#FF6600');
+  grad.addColorStop(0.9, '#FFB300');
+  grad.addColorStop(1, '#FFEE80');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(bx, by + bh - fillH, bw, fillH, 4);
+  ctx.fill();
+
+  // Sweet zone overlay
+  const zLo = by + bh - (item.heatLo / TEMP_DISPLAY_MAX) * bh;
+  const zHi = by + bh - (item.heatHi / TEMP_DISPLAY_MAX) * bh;
+  ctx.fillStyle = 'rgba(255,224,102,0.22)';
+  ctx.beginPath();
+  ctx.roundRect(bx - 2, zHi, bw + 4, zLo - zHi, 3);
+  ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(bx - 2, zHi, bw + 4, zLo - zHi, 3);
+  ctx.stroke();
+
+  // Overheat marker
+  const ovY = by + bh - (item.maxTemp / TEMP_DISPLAY_MAX) * bh;
+  ctx.strokeStyle = '#E74C3C';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(bx - 4, ovY); ctx.lineTo(bx + bw + 4, ovY);
+  ctx.stroke();
+
+  // Bar border
+  ctx.strokeStyle = 'rgba(80,50,20,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 4);
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '9px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('HEAT', bx + bw / 2, by - 14);
+
+  // Temp reading
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(temp) + '°', bx + bw / 2, by + bh + 2);
+
+  // Pull button (visible when in zone)
+  if (temp >= item.heatLo && temp <= item.heatHi && !overheated) {
+    ctx.save();
+    const pulse = 0.75 + Math.sin(Date.now() * 0.005) * 0.25;
+    ctx.globalAlpha = pulse;
+    pill(W / 2 - 55, 430, 110, 38, '#CC5500');
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('PULL IT OUT!', W / 2, 449);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawBellowsInstructions() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(180,120,60,0.7)';
+  ctx.font = '12px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('HOLD to pump bellows  |  release in the golden zone', W / 2, H - 20);
+  ctx.restore();
+}
+
+function drawAnvil() {
+  ctx.save();
+  const cx = W / 2, ay = 410;
+
+  // Anvil base
+  ctx.fillStyle = '#3a3028';
+  ctx.beginPath();
+  ctx.roundRect(cx - 70, ay + 30, 140, 22, 3);
+  ctx.fill();
+  ctx.fillStyle = '#2a2018';
+  ctx.beginPath();
+  ctx.roundRect(cx - 50, ay + 18, 100, 15, 2);
+  ctx.fill();
+
+  // Anvil top (horn left, flat right)
+  ctx.fillStyle = '#4a4030';
+  ctx.beginPath();
+  ctx.moveTo(cx - 70, ay);
+  ctx.lineTo(cx - 90, ay + 10);
+  ctx.lineTo(cx - 90, ay + 18);
+  ctx.lineTo(cx + 70, ay + 18);
+  ctx.lineTo(cx + 70, ay);
+  ctx.closePath();
+  ctx.fill();
+
+  // Highlight on top
+  ctx.fillStyle = 'rgba(200,180,100,0.12)';
+  ctx.fillRect(cx - 65, ay, 130, 5);
+
+  ctx.restore();
+}
+
+function drawIronOnAnvil() {
+  ctx.save();
+  const cx = W / 2;
+  const barY = 390;
+  const barW = 200, barH = 20;
+
+  const col = ironColor(temp);
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.roundRect(cx - barW / 2, barY, barW, barH, 4);
+  ctx.fill();
+
+  const glowC = ironGlowColor(temp);
+  if (glowC) {
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 15 + (temp / TEMP_DISPLAY_MAX) * 20;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.roundRect(cx - barW / 2, barY, barW, barH, 4);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
+}
+
+function drawStrikeZones() {
+  ctx.save();
+  const item = ITEMS[roundIdx];
+  const barY = 415;
+  const zoneY = barY + 8;
+
+  // Show all zones as tick marks
+  for (let i = 0; i <= 4; i++) {
+    const zx = barZoneX(i);
+    const isTarget = (i === item.strikes[strikeIdx]);
+    const isDone = strikeIdx > 0 && item.strikes.slice(0, strikeIdx).includes(i);
+
+    ctx.fillStyle = isTarget ? '#FFE066' : 'rgba(180,150,80,0.35)';
+    ctx.beginPath();
+    ctx.arc(zx, zoneY + 12, isTarget ? 5 : 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Current target label
+  if (strikeIdx < item.strikes.length) {
+    const tx = barZoneX(item.strikes[strikeIdx]);
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 10px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('▼', tx, zoneY + 20);
+  }
+
+  // Progress: X of N
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`STRIKE ${strikeIdx + 1} OF ${item.strikes.length}`, W / 2, 470);
+
+  ctx.restore();
+}
+
+function drawHammer() {
+  ctx.save();
+  const cx = W / 2;
+  const pivotX = cx;
+  const pivotY = 220;
+  const ropeLen = 140;
+
+  // Hammer position
+  const hx = pivotX + Math.sin(pendAngle) * ropeLen;
+  const hy = pivotY + Math.cos(pendAngle) * ropeLen;
+
+  // Rope
+  ctx.strokeStyle = '#8a6030';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY);
+  ctx.lineTo(hx, hy);
+  ctx.stroke();
+
+  // Pivot
+  ctx.fillStyle = '#5a3810';
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hammer head (rotated)
+  ctx.save();
+  ctx.translate(hx, hy);
+  ctx.rotate(pendAngle + Math.PI * 0.05);
+
+  // Handle
+  ctx.fillStyle = '#7a4a18';
+  ctx.fillRect(-3, 0, 6, 22);
+
+  // Head
+  ctx.fillStyle = '#6a6050';
+  ctx.beginPath();
+  ctx.roundRect(-12, -14, 24, 18, 2);
+  ctx.fill();
+
+  // Highlight
+  ctx.fillStyle = 'rgba(200,190,160,0.3)';
+  ctx.fillRect(-11, -13, 22, 5);
+
+  ctx.restore();
+
+  // Flash ring at hammer when strike occurs
+  if (strikeFlash > 0) {
+    const alpha = strikeFlash / 0.35;
+    ctx.strokeStyle = strikeFlashColor.replace(')', `,${alpha * 0.8})`).replace('#', 'rgba(').replace('rgba(', '');
+    // Just do a simple approach:
+    ctx.globalAlpha = strikeFlash / 0.35 * 0.8;
+    ctx.strokeStyle = strikeFlashColor;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawTempBarSmall() {
+  // Small temp strip during strike phase
+  ctx.save();
+  const bx = 10, by = 60, bw = 14, bh = 200;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 3); ctx.fill();
+  const fillH = (temp / TEMP_DISPLAY_MAX) * bh;
+  const grad = ctx.createLinearGradient(0, by + bh, 0, by);
+  grad.addColorStop(0, '#1a0a04');
+  grad.addColorStop(0.5, '#CC3300');
+  grad.addColorStop(0.85, '#FF6600');
+  grad.addColorStop(1, '#FFB300');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.roundRect(bx, by + bh - fillH, bw, fillH, 3); ctx.fill();
+
+  // Min strike line
+  const minY = by + bh - (strikeCoolTemp / TEMP_DISPLAY_MAX) * bh;
+  ctx.strokeStyle = '#E74C3C';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 2]);
+  ctx.beginPath(); ctx.moveTo(bx, minY); ctx.lineTo(bx + bw, minY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '8px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('TEMP', bx + bw / 2, by - 2);
+  ctx.restore();
+}
+
+function drawWaterBarrel() {
+  ctx.save();
+  const cx = W / 2, by = 370;
+
+  // Barrel body
+  ctx.fillStyle = '#5a3810';
+  ctx.beginPath();
+  ctx.roundRect(cx - 45, by, 90, 70, 5);
+  ctx.fill();
+
+  // Hoops
+  ctx.strokeStyle = '#8a5820';
+  ctx.lineWidth = 3;
+  [by + 12, by + 34, by + 56].forEach(y => {
+    ctx.beginPath();
+    ctx.roundRect(cx - 45, y, 90, 4, 2);
+    ctx.stroke();
+  });
+
+  // Water fill (quench amount)
+  const waterH = 55 * Math.min(1, quenchTime / MAX_QUENCH * 3);
+  const waterY = by + 70 - 5 - waterH;
+  ctx.fillStyle = 'rgba(80,130,200,0.5)';
+  ctx.beginPath();
+  ctx.roundRect(cx - 40, waterY, 80, waterH, 3);
+  ctx.fill();
+
+  // Water surface ripple
+  ctx.strokeStyle = 'rgba(150,200,255,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 35, waterY + 3);
+  ctx.bezierCurveTo(cx - 20, waterY, cx + 20, waterY + 6, cx + 35, waterY + 3);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawIronAboveBarrel() {
+  ctx.save();
+  const cx = W / 2;
+  // Iron bar above barrel, or plunged in
+  const barY = quenchHeld ? 385 : 340;
+  const barW = 160, barH = 18;
+  const col = ironColor(temp);
+
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.roundRect(cx - barW / 2, barY, barW, barH, 4);
+  ctx.fill();
+
+  const glowC = ironGlowColor(temp);
+  if (glowC && temp > 200) {
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.roundRect(cx - barW / 2, barY, barW, barH, 4);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
+}
+
+function drawQuenchBar() {
+  ctx.save();
+  const item = ITEMS[roundIdx];
+  const bx = W / 2 - 110, by = 480, bw = 220, bh = 20;
+
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.fill();
+
+  // Fill
+  const fillW = (quenchTime / MAX_QUENCH) * bw;
+  const fillGrad = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+  fillGrad.addColorStop(0, '#2244AA');
+  fillGrad.addColorStop(0.5, '#4488DD');
+  fillGrad.addColorStop(1, '#88CCFF');
+  ctx.fillStyle = fillGrad;
+  ctx.beginPath(); ctx.roundRect(bx, by, fillW, bh, 4); ctx.fill();
+
+  // Sweet zone
+  const zLo = bx + (item.quenchLo / MAX_QUENCH) * bw;
+  const zHi = bx + (item.quenchHi / MAX_QUENCH) * bw;
+  ctx.fillStyle = 'rgba(255,224,102,0.3)';
+  ctx.beginPath(); ctx.roundRect(zLo, by - 2, zHi - zLo, bh + 4, 3); ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(zLo, by - 2, zHi - zLo, bh + 4, 3); ctx.stroke();
+
+  // Border
+  ctx.strokeStyle = 'rgba(80,60,20,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 4); ctx.stroke();
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('HOLD  |  RELEASE IN GOLDEN ZONE', W / 2, by - 3);
+
+  ctx.restore();
+}
+
+function drawQuenchInstructions() {
+  ctx.save();
+  if (!quenchComplete) {
+    const pulse = 0.7 + Math.sin(Date.now() * 0.005) * 0.3;
+    ctx.globalAlpha = pulse;
+    pill(W / 2 - 70, 515, 140, 36, '#1A3A88');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#88CCFF';
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('HOLD TO QUENCH', W / 2, 533);
+  }
+  ctx.restore();
+}
+
+function drawItemDoneOverlay() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  const t = 1 - itemDoneTimer / 2.2;
+  const alpha = Math.min(1, t * 3);
+  ctx.globalAlpha = alpha;
+
+  // Quality badge
+  const qColors = { MASTERWORK: '#FFE066', QUALITY: '#FF9F43', DECENT: '#C8A04A', FLAWED: '#888' };
+  const qColor = qColors[itemQuality] || '#FFE066';
+
+  ctx.fillStyle = qColor;
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(itemQuality, W / 2, H / 2 - 50);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px Georgia, serif';
+  ctx.fillText(ITEMS[roundIdx].name, W / 2, H / 2 - 10);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText('+' + itemScore + ' pts', W / 2, H / 2 + 30);
+
+  if (roundIdx < ITEMS.length - 1) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '12px Georgia, serif';
+    ctx.fillText('Next: ' + ITEMS[roundIdx + 1].name, W / 2, H / 2 + 65);
+  } else {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText('Final item  |  calculating score...', W / 2, H / 2 + 65);
+  }
+
+  ctx.restore();
+}
+
+function drawPhaseFlash() {
+  if (phaseTransTimer <= 0) return;
+  ctx.save();
+  const alpha = phaseTransTimer * 1.8;
+  ctx.globalAlpha = Math.min(1, alpha) * 0.7;
+  ctx.fillStyle = phaseTransColor;
+  ctx.font = 'bold 32px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(phaseTransMsg, W / 2, H / 2 - 20);
+  ctx.restore();
+}
+
+function drawParticles() {
+  ctx.save();
+  particles.forEach(p => {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save();
+  popups.forEach(p => {
+    const alpha = Math.min(1, p.life / (p.maxLife * 0.4));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitleScreen() {
+  ctx.save();
+  // Bg
+  ctx.fillStyle = '#0a0603';
+  ctx.fillRect(0, 0, W, H);
+
+  // Anvil silhouette
+  ctx.fillStyle = '#1f1508';
+  ctx.beginPath();
+  ctx.moveTo(W/2 - 80, 320);
+  ctx.lineTo(W/2 - 100, 340);
+  ctx.lineTo(W/2 - 100, 360);
+  ctx.lineTo(W/2 + 100, 360);
+  ctx.lineTo(W/2 + 100, 340);
+  ctx.lineTo(W/2 + 80, 320);
+  ctx.closePath();
+  ctx.fill();
+
+  // Glowing iron bar on title anvil
+  const tc = ironColor(800);
+  ctx.shadowColor = tc;
+  ctx.shadowBlur = 25;
+  ctx.fillStyle = tc;
+  ctx.beginPath();
+  ctx.roundRect(W/2 - 60, 307, 120, 14, 4);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Spark particles (decorative - just draw static)
+  ctx.fillStyle = '#FF9933';
+  [[W/2 - 20, 290], [W/2 + 30, 280], [W/2 - 40, 275], [W/2 + 10, 265]].forEach(([x, y]) => {
+    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // Title
+  ctx.shadowColor = '#FF6600';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 44px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('FRONTIER', W / 2, 140);
+  ctx.fillText('FORGE', W / 2, 190);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia, serif';
+  ctx.fillText('Master the iron. Master the flame.', W / 2, 230);
+
+  // Instructions
+  ctx.fillStyle = 'rgba(180,140,70,0.8)';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('HEAT  |  STRIKE  |  QUENCH', W / 2, 265);
+  ctx.fillText('5 items to forge', W / 2, 285);
+
+  if (best > 0) {
+    ctx.fillStyle = '#888';
+    ctx.font = '11px Georgia, serif';
+    ctx.fillText('BEST: ' + best.toLocaleString(), W / 2, 425);
+  }
+
+  // Tap to start
+  const pulse = 0.7 + Math.sin(Date.now() * 0.003) * 0.3;
+  ctx.globalAlpha = pulse;
+  pill(W/2 - 70, 450, 140, 42, '#8a4010');
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 17px Georgia, serif';
+  ctx.fillText('TAP TO FORGE', W / 2, 471);
+
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = '#0a0603';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 34px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('FORGE COMPLETE', W / 2, 160);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia, serif';
+  ctx.fillText('5 items crafted', W / 2, 205);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 46px Georgia, serif';
+  ctx.fillText(score.toLocaleString(), W / 2, 280);
+
+  ctx.fillStyle = '#888';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('BEST: ' + best.toLocaleString(), W / 2, 325);
+
+  if (score >= best && score > 0) {
+    const pulse = 0.8 + Math.sin(Date.now() * 0.006) * 0.2;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 17px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 360);
+    ctx.globalAlpha = 1;
+  }
+
+  // Play again
+  const pulse = 0.7 + Math.sin(Date.now() * 0.003) * 0.3;
+  ctx.globalAlpha = pulse;
+  pill(W/2 - 70, 420, 140, 42, '#8a4010');
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 17px Georgia, serif';
+  ctx.fillText('FORGE AGAIN', W / 2, 441);
+
+  // Share button
+  if (navigator.share) {
+    pill(W/2 - 50, 475, 100, 34, '#3a2010');
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText('SHARE', W / 2, 492);
+  }
+
+  // Feedback button
+  pill(W/2 - 50, 518, 100, 28, '#2a1808');
+  ctx.fillStyle = '#888';
+  ctx.font = '11px Georgia, serif';
+  ctx.fillText('FEEDBACK', W / 2, 532);
+
+  ctx.restore();
+}
+
+function drawFeedbackOverlay() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.88)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('HOW\'D WE DO?', W / 2, 140);
+
+  // Stars
+  for (let i = 1; i <= 5; i++) {
+    const sx = W/2 - 70 + (i - 1) * 35;
+    ctx.fillStyle = i <= fbRating ? '#FFE066' : '#3a2a10';
+    ctx.font = '28px serif';
+    ctx.fillText('★', sx, 200);
+  }
+
+  // Text input placeholder
+  pill(W/2 - 120, 235, 240, 70, '#1a1008');
+  ctx.fillStyle = fbText ? '#FFE066' : '#555';
+  ctx.font = '12px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(fbText || 'Tap to add a comment...', W / 2, 250);
+
+  if (fbStatus) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '12px Georgia, serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(fbStatus, W / 2, 330);
+  }
+
+  // Submit
+  pill(W/2 - 55, 355, 110, 38, '#8a4010');
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SUBMIT', W / 2, 374);
+
+  // Close
+  pill(W/2 - 40, 405, 80, 30, '#2a1808');
+  ctx.fillStyle = '#888';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('CLOSE', W / 2, 420);
+
+  ctx.restore();
+}
+
+function draw() {
+  try {
+    if (state === 'title') { drawTitleScreen(); return; }
+    if (state === 'gameover') { drawGameOver(); return; }
+
+    drawBg();
+
+    if (phase === 'heat') {
+      drawForge();
+      drawTempBar();
+      drawBellowsInstructions();
+    } else if (phase === 'strike') {
+      drawAnvil();
+      drawIronOnAnvil();
+      drawStrikeZones();
+      drawHammer();
+      drawTempBarSmall();
+      // Instruction
+      ctx.save();
+      ctx.fillStyle = 'rgba(180,120,60,0.7)';
+      ctx.font = '11px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('TAP when hammer is over the target zone', W / 2, H - 20);
+      ctx.restore();
+    } else if (phase === 'quench') {
+      drawWaterBarrel();
+      drawIronAboveBarrel();
+      drawQuenchBar();
+      drawQuenchInstructions();
+    } else if (phase === 'item_done') {
+      // Draw anvil as backdrop
+      drawAnvil();
+      drawIronOnAnvil();
+      drawItemDoneOverlay();
+    }
+
+    drawParticles();
+    drawPopups();
+    drawHUD();
+    drawPhaseFlash();
+
+    if (showFeedback) drawFeedbackOverlay();
+  } catch(e) {
+    console.error('draw error', e);
+  }
+}
+
+// Input handling
+canvas.addEventListener('pointerdown', onDown);
+canvas.addEventListener('pointerup', onUp);
+
+function onDown(e) {
+  resume();
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+
+  if (showFeedback) { handleFeedbackTap(x, y); return; }
+
+  if (state === 'title') { startGame(); return; }
+  if (state === 'gameover') { handleGameoverTap(x, y); return; }
+
+  if (state === 'playing') {
+    if (phase === 'heat') {
+      const item = ITEMS[roundIdx];
+      // Check PULL button tap
+      if (temp >= item.heatLo && temp <= item.heatHi && y >= 430 && y <= 468) {
+        onHeatTap();
+      } else {
+        heating = true;
+      }
+    } else if (phase === 'strike') {
+      onStrikeTap();
+    } else if (phase === 'quench') {
+      onQuenchTap(true);
+    }
+  }
+}
+
+function onUp(e) {
+  e.preventDefault();
+  if (state === 'playing') {
+    if (phase === 'heat') {
+      heating = false;
+    } else if (phase === 'quench') {
+      onQuenchTap(false);
+    }
+  }
+}
+
+function handleGameoverTap(x, y) {
+  if (y >= 420 && y <= 462) { startGame(); return; }
+  if (navigator.share && y >= 475 && y <= 509) {
+    navigator.share({ title: 'Frontier Forge', text: `I scored ${score} in Frontier Forge!` }).catch(() => {});
+    return;
+  }
+  if (y >= 518 && y <= 546) { showFeedback = true; fbRating = 0; fbText = ''; fbStatus = ''; return; }
+  // Default: tap anywhere = restart
+  if (y < 420) startGame();
+}
+
+function handleFeedbackTap(x, y) {
+  // Stars
+  if (y >= 182 && y <= 220) {
+    for (let i = 1; i <= 5; i++) {
+      const sx = W/2 - 70 + (i - 1) * 35;
+      if (Math.abs(x - sx) < 17) { fbRating = i; return; }
+    }
+  }
+  // Submit
+  if (y >= 355 && y <= 393) {
+    if (!fbRating) { fbStatus = 'Please tap a star rating'; return; }
+    fbStatus = 'Sending...';
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: 'Frontier Forge', rating: fbRating, message: fbText, score }),
+    }).then(() => { fbStatus = 'Thanks!'; setTimeout(() => { showFeedback = false; }, 1500); })
+      .catch(() => { fbStatus = 'Sent!'; setTimeout(() => { showFeedback = false; }, 1500); });
+    return;
+  }
+  // Close
+  if (y >= 405 && y <= 435) { showFeedback = false; return; }
+}
+
+// Expose test API
+window.__ff = {
+  get state() { return state; },
+  get phase() { return phase; },
+  get roundIdx() { return roundIdx; },
+  get score() { return score; },
+  get temp() { return temp; },
+  get heating() { return heating; },
+  get strikeIdx() { return strikeIdx; },
+  get pendAngle() { return pendAngle; },
+  get strikeResults() { return strikeResults; },
+  get strikeFlash() { return strikeFlash; },
+  get heatResult() { return heatResult; },
+  get quenchTime() { return quenchTime; },
+  get quenchHeld() { return quenchHeld; },
+  get quenchResult() { return quenchResult; },
+  get itemQuality() { return itemQuality; },
+  get overheated() { return overheated; },
+  get popups() { return popups; },
+  get particles() { return particles; },
+  get ITEMS() { return ITEMS; },
+  set state(v) { state = v; },
+  set phase(v) { phase = v; },
+  set roundIdx(v) { roundIdx = v; },
+  set score(v) { score = v; },
+  set temp(v) { temp = v; },
+  set heating(v) { heating = v; },
+  set strikeIdx(v) { strikeIdx = v; },
+  set pendAngle(v) { pendAngle = v; },
+  set strikeResults(v) { strikeResults = v; },
+  set strikeFlash(v) { strikeFlash = v; },
+  set heatResult(v) { heatResult = v; },
+  set quenchTime(v) { quenchTime = v; },
+  set quenchHeld(v) { quenchHeld = v; },
+  set overheated(v) { overheated = v; },
+  startGame,
+  startRound,
+  endGame,
+  onHeatTap,
+  onStrikeTap,
+  onQuenchTap,
+  finishQuench,
+  ironColor,
+  ironGlowColor,
+  pendAngleToBarPos,
+  barPosToPendAngle,
+  barZoneX,
+  addPopup,
+  PEND_MAX_ANGLE,
+  MAX_QUENCH,
+  strikeCoolTemp,
+};
+
+// Start loop
+requestAnimationFrame(ts => { lastT = ts; update(ts); });
+
+// Music (slot)
+if (MUSIC_SRC) {
+  const audio = new Audio(MUSIC_SRC);
+  audio.loop = true; audio.volume = 0.35;
+  document.addEventListener('pointerdown', () => audio.play().catch(() => {}), { once: true });
+}
+</script>
+</body>
+</html>

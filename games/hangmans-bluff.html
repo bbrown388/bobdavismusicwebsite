@@ -1,0 +1,1275 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Hangman's Bluff</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+    #fb-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.88); z-index: 10; justify-content: center;
+      align-items: center; flex-direction: column;
+    }
+    #fb-overlay.active { display: flex; }
+    #fb-overlay select, #fb-overlay button, #fb-overlay textarea {
+      margin-top: 8px; width: 280px; background: #1a0520; color: #FFE066;
+      border: 1px solid #FFE066; font-size: 14px; border-radius: 4px;
+    }
+    #fb-overlay select, #fb-overlay button { padding: 8px; cursor: pointer; }
+    #fb-overlay textarea { padding: 8px; height: 80px; resize: none; }
+    #fb-overlay label { color: #FFE066; font-family: Georgia, serif; font-size: 13px; margin-top: 8px; }
+    #fb-close { background: #2a0f30 !important; margin-top: 16px; }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-X1W0TNHM51');
+  </script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <label>How was Hangman's Bluff?</label>
+  <select id="fb-rating">
+    <option value="5">5 stars - loved it</option>
+    <option value="4">4 stars - really good</option>
+    <option value="3">3 stars - it's alright</option>
+    <option value="2">2 stars - needs work</option>
+    <option value="1">1 star - not for me</option>
+  </select>
+  <label>Feedback (optional):</label>
+  <textarea id="fb-text" placeholder="What did you think?"></textarea>
+  <button id="fb-submit">Submit</button>
+  <button id="fb-close">Close</button>
+</div>
+<script>
+'use strict';
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+
+// === CONFIG ===
+const MAX_SUSPICION      = 100;
+const INSTANT_ARREST_SUS = 80;   // arrested mid-game if suspicion hits this
+const PASS_THRESHOLD     = 60;   // must be below this to clear
+const REACTION_DURATION  = 1800; // ms for sheriff reaction animation
+const STAGE_INTRO_DUR    = 1600; // ms for stage intro display
+const CONTRADICTION_BONUS = 25;  // extra suspicion for caught contradiction
+
+// Trade labels for Q6 dynamic text
+const TRADE_LABELS = {
+  ranchhand:   'ranch hand',
+  horsetrader: 'horse trader',
+  merchant:    'dry goods merchant',
+  drifter:     'a drifter',
+};
+
+// Q6: which answer index is consistent with each trade
+// 0=Lazy R Ranch, 1=Harrison Brothers, 2=Nobody regular, 3=Prefer not to say
+const TRADE_ANSWER_IDX = {
+  ranchhand:   0,
+  horsetrader: 1,
+  merchant:    1,
+  drifter:     2,
+};
+
+// portrait states: 'neutral'|'curious'|'suspicious'|'angry'|'pleased'
+const QUESTIONS = [
+  // ---- STAGE 1: Initial Screening ----
+  {
+    stage: 1,
+    portrait: 'neutral',
+    stageLabel: 'INITIAL SCREENING',
+    text: "Where you headed, stranger?",
+    answers: [
+      { text: "Just passin' through to Amarillo", delta: 0,  tag: {dest: 'amarillo'},   portrait: 'neutral'    },
+      { text: "Looking for work down the valley", delta: 0,  tag: {dest: 'valley'},     portrait: 'neutral'    },
+      { text: "Fort Worth  |  got a delivery",      delta: 5,  tag: {dest: 'fortworth'},  portrait: 'neutral'    },
+      { text: "Ain't your concern",               delta: 22, tag: null,                 portrait: 'suspicious' },
+    ]
+  },
+  {
+    stage: 1,
+    portrait: 'neutral',
+    stageLabel: 'INITIAL SCREENING',
+    text: "What's your trade, friend?",
+    answers: [
+      { text: "Ranch hand  |  looking for work",   delta: 0,  tag: {trade: 'ranchhand'},   portrait: 'neutral'    },
+      { text: "Horse trader, moving stock east",  delta: 5,  tag: {trade: 'horsetrader'}, portrait: 'neutral'    },
+      { text: "Dry goods merchant",              delta: 5,  tag: {trade: 'merchant'},    portrait: 'neutral'    },
+      { text: "Between jobs, driftin'",          delta: 12, tag: {trade: 'drifter'},     portrait: 'curious'    },
+    ]
+  },
+  {
+    stage: 1,
+    portrait: 'neutral',
+    stageLabel: 'INITIAL SCREENING',
+    text: "Riding alone today?",
+    answers: [
+      { text: "Yes sir, just me and my horse",          delta: 0,  tag: {companion: 'alone'},   portrait: 'neutral' },
+      { text: "Partner's meeting me up ahead in town",  delta: 5,  tag: {companion: 'partner'}, portrait: 'neutral' },
+      { text: "What's that got to do with anything?",   delta: 18, tag: null,                   portrait: 'suspicious' },
+    ]
+  },
+  // ---- STAGE 2: Probing Questions ----
+  {
+    stage: 2,
+    portrait: 'curious',
+    stageLabel: 'CLOSER INSPECTION',
+    text: "Fine horse you got there. Where'd you come by her?",
+    answers: [
+      { text: "Bought her off a rancher near Waco",     delta: 0,  tag: {horse: 'bought'},  portrait: 'neutral'    },
+      { text: "Traded some labor for her up north",     delta: 0,  tag: {horse: 'traded'},  portrait: 'neutral'    },
+      { text: "Raised her myself from a foal",          delta: 0,  tag: {horse: 'raised'},  portrait: 'neutral'    },
+      { text: "Found her loose on the trail",           delta: 22, tag: {horse: 'found'},   portrait: 'suspicious' },
+    ]
+  },
+  {
+    stage: 2,
+    portrait: 'curious',
+    stageLabel: 'CLOSER INSPECTION',
+    text: "Robbery at Redrock Station three days back. You pass through there?",
+    answers: [
+      { text: "No sir. Came through Sagebrush, west of here",     delta: 0,  tag: {alibi: 'sagebrush'}, portrait: 'neutral'    },
+      { text: "Heard about it at the last crossroads",             delta: 0,  tag: {alibi: 'heard'},     portrait: 'neutral'    },
+      { text: "I don't follow local news much, Sheriff",           delta: 12, tag: null,                 portrait: 'curious'    },
+      { text: "Redrock's a day east. I came from the north",       delta: 5,  tag: {alibi: 'north'},     portrait: 'neutral'    },
+    ]
+  },
+  {
+    stage: 2,
+    portrait: 'curious',
+    stageLabel: 'CLOSER INSPECTION',
+    // Dynamic: "You mentioned you're a [trade]" - filled at render time from storyMemory.trade
+    text: "You mentioned you're a [trade]. Working for any outfit I'd know?",
+    dynamic: true,
+    // answer[3] = "Prefer not to say" skips consistency check
+    answers: [
+      { text: "Lazy R Ranch, south of Red Mesa",         delta: 0,  tag: {outfit: 'lazyr'},     portrait: 'neutral',   matchesTrade: ['ranchhand']               },
+      { text: "Harrison Brothers Trading Company",       delta: 0,  tag: {outfit: 'harrison'},  portrait: 'neutral',   matchesTrade: ['horsetrader', 'merchant'] },
+      { text: "Nobody regular  |  work where I find it",   delta: 5,  tag: {outfit: 'freelance'}, portrait: 'neutral',   matchesTrade: ['drifter']                 },
+      { text: "Prefer not to say",                       delta: 20, tag: null,                  portrait: 'suspicious', matchesTrade: null                        },
+    ]
+  },
+  // ---- STAGE 3: Direct Confrontation ----
+  {
+    stage: 3,
+    portrait: 'suspicious',
+    stageLabel: 'DIRECT QUESTIONING',
+    text: "Got a wanted poster. Man matching your description robbed Redrock. What do you say?",
+    answers: [
+      { text: "Check my papers. I'll wait right here",         delta: 0,  portrait: 'neutral'    },
+      { text: "Posters ain't always accurate, Sheriff",        delta: 8,  portrait: 'curious'    },
+      { text: "Lots of men look alike out here",               delta: 12, portrait: 'curious'    },
+      { text: "I don't have to answer to that",                delta: 28, portrait: 'suspicious' },
+    ]
+  },
+  {
+    stage: 3,
+    portrait: 'suspicious',
+    stageLabel: 'DIRECT QUESTIONING',
+    text: "Where were you three days ago? I want specifics.",
+    answers: [
+      { text: "Miller's boarding house, Sagebrush Junction",  delta: 0,  tag: {location3: 'sagebrush'}, portrait: 'neutral'    },
+      { text: "On the trail, camped alone  |  no witnesses",    delta: 15, tag: {location3: 'trail'},     portrait: 'suspicious' },
+      { text: "Miner's Creek area  |  maybe four days back",    delta: 10, tag: {location3: 'vague'},     portrait: 'curious'    },
+      { text: "I don't recall exact dates",                   delta: 22, tag: {location3: 'unknown'},   portrait: 'suspicious' },
+    ]
+  },
+  {
+    stage: 3,
+    portrait: 'suspicious',
+    stageLabel: 'DIRECT QUESTIONING',
+    text: "You seem nervous. Anything you want to come clean about?",
+    answers: [
+      { text: "Just in a hurry to be on my way, Sheriff",   delta: 5,  portrait: 'neutral'    },
+      { text: "Always nervous around the law  |  no offense", delta: 0,  portrait: 'neutral'    },
+      { text: "Nothing at all. Can I go now?",              delta: 10, portrait: 'curious'    },
+      { text: "...",                                         delta: 18, portrait: 'suspicious' },
+    ]
+  },
+];
+
+// Reaction messages keyed by portrait state
+const REACTIONS = {
+  neutral:    ["*nods*", "Mm-hmm.", "Fair enough.", "Alright.", "I see."],
+  curious:    ["*squints*", "That so?", "Hmm.", "Go on.", "*strokes chin*"],
+  suspicious: ["Now hold on...", "*narrows eyes*", "That right?", "I'm watching you.", "*hand on holster*"],
+  angry:      ["You sure about that?", "Don't push me.", "I got my eye on you.", "*leans forward*"],
+  pleased:    ["Good enough.", "Alright then.", "Appreciate the cooperation.", "Move along."],
+};
+
+const CONTRADICTION_MESSAGES = [
+  "Hold on now  |  you said {before}, but that don't match up.",
+  "That ain't what you told me earlier about {before}.",
+  "Wait a minute. Earlier you said {before}...",
+];
+
+// === CANVAS ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = s * W + 'px';
+  canvas.style.height = s * H + 'px';
+}
+window.addEventListener('resize', resize);
+window.addEventListener('load', resize);
+resize();
+
+// === AUDIO ===
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, duration, type = 'sine', gainVal = 0.18) {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ac.currentTime);
+    gain.gain.setValueAtTime(gainVal, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + duration);
+    osc.start(ac.currentTime);
+    osc.stop(ac.currentTime + duration);
+  } catch(e) {}
+}
+
+function playChord(freqs, duration) {
+  freqs.forEach((f, i) => {
+    try {
+      const ac = getAudio();
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.frequency.value = f;
+      gain.gain.setValueAtTime(0.10, ac.currentTime + i * 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + duration);
+      osc.start(ac.currentTime + i * 0.04);
+      osc.stop(ac.currentTime + duration);
+    } catch(e) {}
+  });
+}
+
+function playNeutralAnswer() { playTone(330, 0.25, 'sine', 0.12); }
+function playSuspiciousAnswer() {
+  playTone(220, 0.15, 'sawtooth', 0.08);
+  setTimeout(() => playTone(196, 0.25, 'sawtooth', 0.06), 120);
+}
+function playContradiction() {
+  [180, 170, 155].forEach((f, i) => setTimeout(() => playTone(f, 0.3, 'square', 0.10), i * 100));
+}
+function playClearance() {
+  playChord([330, 415, 495, 660], 1.8);
+  setTimeout(() => playChord([440, 550, 660], 1.2), 400);
+}
+function playArrest() {
+  playTone(120, 0.4, 'sawtooth', 0.15);
+  setTimeout(() => playTone(80, 0.6, 'sawtooth', 0.12), 350);
+}
+function playStageIntro() { playTone(415, 0.4, 'triangle', 0.12); }
+function playButtonTap() { playTone(600, 0.08, 'sine', 0.08); }
+
+// Ambient low drone
+let ambientNode = null;
+function startAmbient() {
+  try {
+    const ac = getAudio();
+    if (ambientNode) { ambientNode.stop(); ambientNode = null; }
+    const buf = ac.createBuffer(1, ac.sampleRate * 4, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.4;
+    const src = ac.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    const filter = ac.createBiquadFilter();
+    filter.type = 'lowpass'; filter.frequency.value = 120;
+    const gain = ac.createGain(); gain.gain.value = 0.06;
+    src.connect(filter); filter.connect(gain); gain.connect(ac.destination);
+    src.start();
+    ambientNode = src;
+  } catch(e) {}
+}
+function stopAmbient() {
+  try { if (ambientNode) { ambientNode.stop(); ambientNode = null; } } catch(e) {}
+}
+
+// === GAME STATE ===
+let state = 'title'; // title|stage_intro|question|reaction|cleared|arrested
+let suspicion = 0;
+let questionIdx = 0;
+let storyMemory = {};
+let stageIntroTimer = 0;
+let reactionTimer = 0;
+let reactionText = '';
+let reactionExtra = '';     // contradiction message
+let sheriffPortrait = 'neutral';
+let hoveredAnswer = -1;
+let lastAnswerDelta = 0;
+let floatParticles = [];
+let titlePulse = 0;
+let best = parseInt(localStorage.getItem('hangmans_bluff_best') || '0');
+let lastScore = 0;
+
+// Popup float text
+let floatPopups = [];
+
+function addPopup(text, x, y, color) {
+  floatPopups.push({ text, x, y, vy: -1.2, alpha: 1.0, color });
+}
+
+function currentQuestion() {
+  return QUESTIONS[questionIdx];
+}
+
+function getQuestionText(q) {
+  if (!q.dynamic) return q.text;
+  const trade = storyMemory.trade || 'ranchhand';
+  return q.text.replace('[trade]', TRADE_LABELS[trade] || trade);
+}
+
+// Score = (PASS_THRESHOLD - suspicion) * 10, max 600
+function calcScore() {
+  return Math.max(0, Math.round((PASS_THRESHOLD - suspicion) * 10));
+}
+
+function startGame() {
+  suspicion = 0;
+  questionIdx = 0;
+  storyMemory = {};
+  floatPopups = [];
+  sheriffPortrait = 'neutral';
+  lastScore = 0;
+  startAmbient();
+  showStageIntro();
+}
+
+function showStageIntro() {
+  state = 'stage_intro';
+  stageIntroTimer = STAGE_INTRO_DUR;
+  playStageIntro();
+}
+
+function showQuestion() {
+  state = 'question';
+  hoveredAnswer = -1;
+  sheriffPortrait = currentQuestion().portrait;
+}
+
+function chooseAnswer(idx) {
+  if (state !== 'question') return;
+  const q = currentQuestion();
+  const a = q.answers[idx];
+  if (!a) return;
+  playButtonTap();
+
+  let delta = a.delta;
+  let contradiction = null;
+
+  // Store tag in storyMemory
+  if (a.tag) {
+    Object.assign(storyMemory, a.tag);
+  }
+
+  // Consistency check for Q6 (dynamic question, index 5)
+  if (questionIdx === 5 && a.matchesTrade !== null) {
+    const trade = storyMemory.trade;
+    if (trade && a.matchesTrade && !a.matchesTrade.includes(trade)) {
+      delta += CONTRADICTION_BONUS;
+      const tradeLabel = TRADE_LABELS[trade] || trade;
+      const msg = CONTRADICTION_MESSAGES[Math.floor(Math.random() * CONTRADICTION_MESSAGES.length)];
+      contradiction = msg.replace('{before}', 'you were a ' + tradeLabel);
+    }
+  }
+
+  lastAnswerDelta = delta;
+  suspicion = Math.min(MAX_SUSPICION, suspicion + delta);
+
+  // Choose reaction portrait
+  let rPortrait = a.portrait;
+  if (contradiction) rPortrait = 'suspicious';
+  if (delta === 0) rPortrait = suspicion < 30 ? 'pleased' : 'neutral';
+  sheriffPortrait = rPortrait;
+
+  // Build reaction text
+  const reacts = REACTIONS[rPortrait] || REACTIONS.neutral;
+  reactionText = reacts[Math.floor(Math.random() * reacts.length)];
+  reactionExtra = contradiction || '';
+
+  // Sound
+  if (contradiction) playContradiction();
+  else if (delta >= 15) playSuspiciousAnswer();
+  else playNeutralAnswer();
+
+  // Popup delta
+  if (delta > 0) {
+    addPopup(`+${delta} SUSPICION`, 180, 230, '#E74C3C');
+  } else {
+    addPopup('CLEAN', 180, 230, '#4CAF50');
+  }
+  if (contradiction) addPopup('CONTRADICTION!', 180, 200, '#FF9F43');
+
+  state = 'reaction';
+  reactionTimer = REACTION_DURATION;
+
+  // Check instant arrest
+  if (suspicion >= INSTANT_ARREST_SUS) {
+    reactionTimer = REACTION_DURATION + 600;
+  }
+}
+
+function advanceFromReaction() {
+  if (suspicion >= INSTANT_ARREST_SUS) {
+    endGame(false, 'caught');
+    return;
+  }
+  questionIdx++;
+  if (questionIdx >= QUESTIONS.length) {
+    endGame(suspicion < PASS_THRESHOLD, 'finished');
+    return;
+  }
+  // Check if we crossed a stage boundary
+  const prevStage = QUESTIONS[questionIdx - 1].stage;
+  const nextStage = QUESTIONS[questionIdx].stage;
+  if (nextStage !== prevStage) {
+    showStageIntro();
+  } else {
+    showQuestion();
+  }
+}
+
+function endGame(cleared, reason) {
+  stopAmbient();
+  lastScore = cleared ? calcScore() : 0;
+  if (cleared && lastScore > best) {
+    best = lastScore;
+    localStorage.setItem('hangmans_bluff_best', best);
+  }
+  state = cleared ? 'cleared' : 'arrested';
+  if (cleared) playClearance();
+  else playArrest();
+}
+
+// === DRAWING ===
+
+function drawBackground() {
+  ctx.save();
+  // Night sky gradient
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#050208');
+  bg.addColorStop(0.5, '#1a0d2e');
+  bg.addColorStop(1, '#2a1005');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle stars
+  ctx.fillStyle = 'rgba(255,230,102,0.3)';
+  const stars = [[40,30],[80,15],[150,22],[220,10],[290,40],[320,18],[350,28],[10,50],[60,70],[340,65]];
+  for (const [sx, sy] of stars) {
+    ctx.beginPath(); ctx.arc(sx, sy, 0.8, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Ground / torchlight warm glow at bottom
+  const grd = ctx.createRadialGradient(180, H + 50, 10, 180, H + 50, 300);
+  grd.addColorStop(0, 'rgba(200,120,20,0.18)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, H - 200, W, 200);
+  ctx.restore();
+}
+
+// Draw the sheriff portrait (silhouette with expression)
+function drawSheriff(expression, leanX) {
+  ctx.save();
+  const cx = 180 + (leanX || 0);
+  const cy = 118;
+
+  // Glow behind for angry/suspicious
+  if (expression === 'angry' || expression === 'suspicious') {
+    const intensity = expression === 'angry' ? 0.25 : 0.15;
+    const glow = ctx.createRadialGradient(cx, cy, 10, cx, cy, 90);
+    glow.addColorStop(0, `rgba(231,76,60,${intensity})`);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - 90, cy - 90, 180, 180);
+  }
+  if (expression === 'pleased') {
+    const glow = ctx.createRadialGradient(cx, cy, 10, cx, cy, 80);
+    glow.addColorStop(0, 'rgba(76,175,80,0.15)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - 80, cy - 80, 160, 160);
+  }
+
+  ctx.fillStyle = '#1a0520';
+
+  // Body / torso
+  ctx.beginPath();
+  ctx.moveTo(cx - 55, cy + 85);
+  ctx.quadraticCurveTo(cx - 60, cy + 40, cx - 38, cy + 8);
+  ctx.lineTo(cx - 22, cy - 5);
+  ctx.lineTo(cx + 22, cy - 5);
+  ctx.lineTo(cx + 38, cy + 8);
+  ctx.quadraticCurveTo(cx + 60, cy + 40, cx + 55, cy + 85);
+  ctx.closePath();
+  ctx.fill();
+
+  // Head
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 22, 26, 30, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hat brim
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 48, 45, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hat crown
+  ctx.beginPath();
+  ctx.moveTo(cx - 28, cy - 48);
+  ctx.quadraticCurveTo(cx - 30, cy - 95, cx, cy - 100);
+  ctx.quadraticCurveTo(cx + 30, cy - 95, cx + 28, cy - 48);
+  ctx.closePath();
+  ctx.fill();
+
+  // Arms - crossed
+  ctx.strokeStyle = '#1a0520';
+  ctx.lineWidth = 14;
+  ctx.lineCap = 'round';
+  // Left arm crossing right
+  ctx.beginPath();
+  ctx.moveTo(cx - 38, cy + 20);
+  ctx.quadraticCurveTo(cx - 10, cy + 35, cx + 30, cy + 28);
+  ctx.stroke();
+  // Right arm crossing left
+  ctx.beginPath();
+  ctx.moveTo(cx + 38, cy + 20);
+  ctx.quadraticCurveTo(cx + 10, cy + 42, cx - 30, cy + 35);
+  ctx.stroke();
+
+  // Badge (star shape)
+  ctx.save();
+  ctx.translate(cx + 18, cy + 15);
+  ctx.fillStyle = '#FFD700';
+  ctx.shadowColor = '#FFE066';
+  ctx.shadowBlur = (expression === 'angry') ? 12 : 5;
+  drawStar(ctx, 0, 0, 10, 5, 0.5);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  // Eyes (expression-based color)
+  const eyeColors = {
+    neutral:    '#FFE066',
+    curious:    '#FF9F43',
+    suspicious: '#E74C3C',
+    angry:      '#FF3020',
+    pleased:    '#88FF88',
+  };
+  const eyeColor = eyeColors[expression] || '#FFE066';
+  const eyeRadius = expression === 'curious' ? 4.5 : expression === 'suspicious' || expression === 'angry' ? 2.8 : 4;
+
+  ctx.fillStyle = eyeColor;
+  if (expression === 'angry' || expression === 'suspicious') {
+    ctx.shadowColor = eyeColor;
+    ctx.shadowBlur = 8;
+  }
+
+  // Squinting for suspicious: draw half-closed ellipse
+  if (expression === 'suspicious' || expression === 'angry') {
+    // Narrowed eyes
+    ctx.beginPath();
+    ctx.ellipse(cx - 10, cy - 22, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 10, cy - 22, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(cx - 10, cy - 22, eyeRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + 10, cy - 22, eyeRadius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // Eyebrow tilt for suspicious/angry
+  if (expression === 'suspicious' || expression === 'angry') {
+    ctx.strokeStyle = '#E74C3C';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    // Inner brows angled inward
+    ctx.beginPath();
+    ctx.moveTo(cx - 16, cy - 30);
+    ctx.lineTo(cx - 5, cy - 32);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 16, cy - 30);
+    ctx.lineTo(cx + 5, cy - 32);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawStar(ctx, x, y, outerR, innerR, points) {
+  const n = points || 5;
+  ctx.beginPath();
+  for (let i = 0; i < n * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = (i * Math.PI / n) - Math.PI / 2;
+    if (i === 0) ctx.moveTo(x + r * Math.cos(angle), y + r * Math.sin(angle));
+    else ctx.lineTo(x + r * Math.cos(angle), y + r * Math.sin(angle));
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Suspicion meter bar (horizontal, below sheriff, y=215)
+function drawSuspicionMeter() {
+  ctx.save();
+  const mx = 30, my = 220, mw = 300, mh = 18;
+
+  // Label
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('SUSPICION', mx, my - 4);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = suspicion >= 60 ? '#E74C3C' : '#C8A04A';
+  ctx.fillText(Math.round(suspicion) + '%', mx + mw, my - 4);
+
+  // Background track
+  ctx.fillStyle = '#1a0520';
+  roundRect(ctx, mx, my, mw, mh, 9);
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = '#3a1f05';
+  ctx.lineWidth = 1;
+  roundRect(ctx, mx, my, mw, mh, 9);
+  ctx.stroke();
+
+  // Fill
+  const pct = suspicion / MAX_SUSPICION;
+  const fillW = Math.max(0, pct * mw);
+  if (fillW > 0) {
+    // Color based on level: green->yellow->red
+    let fillColor;
+    if (suspicion < 40) fillColor = '#4CAF50';
+    else if (suspicion < 65) fillColor = '#FF9F43';
+    else fillColor = '#E74C3C';
+
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, mx, my, fillW, mh, 9);
+    ctx.clip();
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(mx, my, fillW, mh);
+    ctx.restore();
+  }
+
+  // Danger threshold mark at 80%
+  const dangerX = mx + (INSTANT_ARREST_SUS / MAX_SUSPICION) * mw;
+  ctx.strokeStyle = 'rgba(231,76,60,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 2]);
+  ctx.beginPath();
+  ctx.moveTo(dangerX, my - 1);
+  ctx.lineTo(dangerX, my + mh + 1);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Pass threshold mark at 60%
+  const passX = mx + (PASS_THRESHOLD / MAX_SUSPICION) * mw;
+  ctx.strokeStyle = 'rgba(255,230,102,0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath();
+  ctx.moveTo(passX, my);
+  ctx.lineTo(passX, my + mh);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.restore();
+}
+
+// Stage indicator chip
+function drawStageChip(stageNum, label) {
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 11px sans-serif';
+  const chipW = 170, chipH = 20, chipX = 95, chipY = 8;
+  ctx.fillStyle = '#2a0f30';
+  roundRect(ctx, chipX, chipY, chipW, chipH, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  roundRect(ctx, chipX, chipY, chipW, chipH, 10);
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText(`STAGE ${stageNum}  |  ${label}`, 180, chipY + 14);
+  ctx.restore();
+}
+
+// Question panel
+function drawQuestionPanel(text) {
+  ctx.save();
+  const px = 18, py = 248, pw = 324, ph = 78;
+  ctx.fillStyle = 'rgba(26,5,32,0.92)';
+  roundRect(ctx, px, py, pw, ph, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  roundRect(ctx, px, py, pw, ph, 10);
+  ctx.stroke();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.textAlign = 'center';
+  wrapText(ctx, text, 180, py + 22, 295, 20);
+  ctx.restore();
+}
+
+// Answer buttons
+function drawAnswerButtons(answers, hovered) {
+  const bx = 18, bw = 324;
+  const startY = 336;
+  const btnH = 55;
+  const gap = 8;
+
+  ctx.save();
+  for (let i = 0; i < answers.length; i++) {
+    const a = answers[i];
+    const by = startY + i * (btnH + gap);
+    const isHover = i === hovered;
+
+    ctx.fillStyle = isHover ? 'rgba(80,40,10,0.95)' : 'rgba(26,5,32,0.88)';
+    roundRect(ctx, bx, by, bw, btnH, 10);
+    ctx.fill();
+
+    ctx.strokeStyle = isHover ? '#FFE066' : '#3a1f05';
+    ctx.lineWidth = isHover ? 1.5 : 1;
+    roundRect(ctx, bx, by, bw, btnH, 10);
+    ctx.stroke();
+
+    // Answer letter label A/B/C/D
+    const letter = ['A', 'B', 'C', 'D'][i];
+    ctx.fillStyle = isHover ? '#FFE066' : '#C8A04A';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(letter, bx + 12, by + btnH / 2 + 4);
+
+    // Answer text
+    ctx.fillStyle = isHover ? '#FFFFFF' : '#FFE066';
+    ctx.font = '13px Georgia, serif';
+    ctx.textAlign = 'left';
+    wrapText(ctx, a.text, bx + 32, by + 20, 270, 18);
+  }
+  ctx.restore();
+}
+
+// Reaction display
+function drawReaction(text, extra, portaitState, progress) {
+  ctx.save();
+  // Reaction background box
+  const rx = 30, ry = 250, rw = 300, rh = extra ? 90 : 60;
+  ctx.globalAlpha = Math.min(1, progress * 3);
+  ctx.fillStyle = 'rgba(10,2,18,0.95)';
+  roundRect(ctx, rx, ry, rw, rh, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, rx, ry, rw, rh, 12);
+  ctx.stroke();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, 180, ry + 30);
+
+  if (extra) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'italic 12px Georgia, serif';
+    wrapText(ctx, extra, 180, ry + 52, 270, 18);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// Stage intro overlay
+function drawStageIntro(stage, label, progress) {
+  ctx.save();
+  const alpha = progress < 0.15 ? progress / 0.15 : progress > 0.8 ? (1 - progress) / 0.2 : 1;
+  ctx.globalAlpha = alpha;
+
+  ctx.fillStyle = 'rgba(5,2,8,0.9)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`STAGE ${stage}`, 180, 295);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText(label, 180, 330);
+
+  // Thin divider lines
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(60, 310); ctx.lineTo(290, 310); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(60, 345); ctx.lineTo(290, 345); ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  titlePulse += 0.04;
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 34px Georgia, serif';
+  ctx.shadowColor = '#C8A04A';
+  ctx.shadowBlur = 12;
+  ctx.fillText("HANGMAN'S BLUFF", 180, 140);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 14px Georgia, serif';
+  ctx.fillText("Bluff your way through the checkpoint", 180, 168);
+
+  // Brief instructions
+  ctx.fillStyle = 'rgba(200,160,74,0.85)';
+  ctx.font = '12px Georgia, serif';
+  const instLines = [
+    "The sheriff has questions.",
+    "Answer carefully  |  your story must hold up.",
+    "A contradiction will cost you.",
+  ];
+  instLines.forEach((l, i) => ctx.fillText(l, 180, 210 + i * 20));
+
+  // Personal best
+  if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('BEST: ' + best, 180, 275);
+  }
+
+  // Play button
+  const pulse = 0.85 + Math.sin(titlePulse) * 0.15;
+  ctx.save();
+  ctx.translate(180, 350);
+  ctx.scale(pulse, pulse);
+  ctx.fillStyle = '#2a0f30';
+  roundRect(ctx, -70, -22, 140, 44, 22);
+  ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  roundRect(ctx, -70, -22, 140, 44, 22);
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('RIDE IN', 0, 6);
+  ctx.restore();
+
+  // Sheriff silhouette on title
+  ctx.globalAlpha = 0.35;
+  drawSheriff('suspicious', 0);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function drawCleared() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 32px Georgia, serif';
+  ctx.shadowColor = '#FFE066';
+  ctx.shadowBlur = 16;
+  ctx.fillText('YOU RODE FREE', 180, 220);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia, serif';
+
+  // Rating based on suspicion
+  let rating, ratingColor;
+  if (suspicion < 20) { rating = 'STONE COLD BLUFF'; ratingColor = '#4CAF50'; }
+  else if (suspicion < 40) { rating = 'SLIPPED RIGHT PAST'; ratingColor = '#88FF88'; }
+  else { rating = 'BARELY MADE IT'; ratingColor = '#FF9F43'; }
+
+  ctx.fillStyle = ratingColor;
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText(rating, 180, 258);
+
+  // Suspicion total
+  ctx.fillStyle = '#FFE066';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('Final suspicion: ' + Math.round(suspicion) + '%', 180, 285);
+
+  // Score
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('Score: ' + lastScore, 180, 315);
+
+  if (lastScore >= best && lastScore > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 14px Georgia, serif';
+    ctx.fillText('NEW RECORD!', 180, 338);
+  }
+
+  // Stars visual
+  const starsCount = suspicion < 20 ? 3 : suspicion < 40 ? 2 : 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < starsCount ? '#FFD700' : '#2a1500';
+    ctx.shadowColor = i < starsCount ? '#FFE066' : 'transparent';
+    ctx.shadowBlur = i < starsCount ? 8 : 0;
+    drawStar(ctx, 140 + i * 40, 365, 14, 6, 5);
+  }
+  ctx.shadowBlur = 0;
+
+  // Play again button
+  ctx.fillStyle = '#2a0f30';
+  roundRect(ctx, 110, 400, 140, 44, 22);
+  ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  roundRect(ctx, 110, 400, 140, 44, 22);
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', 180, 427);
+
+  // Feedback button
+  ctx.fillStyle = '#1a0520';
+  roundRect(ctx, 110, 454, 140, 38, 19);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  roundRect(ctx, 110, 454, 140, 38, 19);
+  ctx.stroke();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('Leave Feedback', 180, 477);
+
+  ctx.restore();
+}
+
+function drawArrested() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Red vignette
+  const vig = ctx.createRadialGradient(180, 320, 60, 180, 320, 280);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(150,20,10,0.45)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 40px Georgia, serif';
+  ctx.shadowColor = '#E74C3C';
+  ctx.shadowBlur = 18;
+  ctx.fillText('ARRESTED', 180, 240);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 14px Georgia, serif';
+  ctx.fillText("The sheriff saw through your bluff.", 180, 272);
+
+  ctx.fillStyle = 'rgba(200,160,74,0.7)';
+  ctx.font = '13px Georgia, serif';
+  if (suspicion >= INSTANT_ARREST_SUS) {
+    ctx.fillText('Suspicion hit ' + INSTANT_ARREST_SUS + '%  |  too obvious.', 180, 300);
+  } else {
+    ctx.fillText('Final suspicion: ' + Math.round(suspicion) + '%  |  too high.', 180, 300);
+  }
+
+  // Handcuff icon (simple visual)
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(155, 345, 18, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(205, 345, 18, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(173, 345); ctx.lineTo(187, 345); ctx.stroke();
+
+  // Play again
+  ctx.fillStyle = '#2a0f30';
+  roundRect(ctx, 110, 390, 140, 44, 22);
+  ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  roundRect(ctx, 110, 390, 140, 44, 22);
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 15px Georgia, serif';
+  ctx.fillText('TRY AGAIN', 180, 417);
+
+  // Feedback
+  ctx.fillStyle = '#1a0520';
+  roundRect(ctx, 110, 444, 140, 38, 19);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1;
+  roundRect(ctx, 110, 444, 140, 38, 19);
+  ctx.stroke();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('Leave Feedback', 180, 467);
+
+  ctx.restore();
+}
+
+// Floating popups
+function updateAndDrawPopups(dt) {
+  for (let i = floatPopups.length - 1; i >= 0; i--) {
+    const p = floatPopups[i];
+    p.y += p.vy;
+    p.alpha -= dt * 0.8;
+    if (p.alpha <= 0) { floatPopups.splice(i, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = p.alpha;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 13px Georgia, serif';
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  }
+}
+
+// Utility: rounded rect path
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// Utility: word-wrap text
+function wrapText(ctx, text, x, y, maxW, lineH) {
+  const words = text.split(' ');
+  let line = '';
+  let currentY = y;
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, x, currentY);
+      line = word;
+      currentY += lineH;
+    } else {
+      line = test;
+    }
+  }
+  if (line) ctx.fillText(line, x, currentY);
+}
+
+// === MAIN LOOP ===
+let lastT = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastT) / 1000, 0.05);
+    lastT = ts;
+
+    drawBackground();
+
+    if (state === 'title') {
+      drawTitle();
+    }
+    else if (state === 'stage_intro') {
+      stageIntroTimer -= dt * 1000;
+      const q = QUESTIONS[questionIdx];
+      const stg = q ? q.stage : 1;
+      const lbl = q ? q.stageLabel : '';
+      const progress = 1 - stageIntroTimer / STAGE_INTRO_DUR;
+      drawSheriff('neutral', 0);
+      drawStageIntro(stg, lbl, progress);
+      if (stageIntroTimer <= 0) showQuestion();
+    }
+    else if (state === 'question') {
+      const q = currentQuestion();
+      const leanX = q.stage === 3 ? 6 : 0;
+      drawSheriff(sheriffPortrait, leanX);
+      drawStageChip(q.stage, q.stageLabel);
+      drawSuspicionMeter();
+      drawQuestionPanel(getQuestionText(q));
+      drawAnswerButtons(q.answers, hoveredAnswer);
+    }
+    else if (state === 'reaction') {
+      reactionTimer -= dt * 1000;
+      const q = QUESTIONS[questionIdx];
+      const leanX = sheriffPortrait === 'suspicious' || sheriffPortrait === 'angry' ? 8 : 0;
+      drawSheriff(sheriffPortrait, leanX);
+      if (q) {
+        drawStageChip(q.stage, q.stageLabel);
+        drawSuspicionMeter();
+      }
+      const progress = 1 - reactionTimer / REACTION_DURATION;
+      drawReaction(reactionText, reactionExtra, sheriffPortrait, progress);
+      if (reactionTimer <= 0) advanceFromReaction();
+    }
+    else if (state === 'cleared') {
+      drawSheriff('pleased', 0);
+      drawCleared();
+    }
+    else if (state === 'arrested') {
+      drawSheriff('angry', 10);
+      drawArrested();
+    }
+
+    updateAndDrawPopups(dt);
+    requestAnimationFrame(loop);
+  } catch(e) {
+    console.error('loop error:', e);
+    requestAnimationFrame(loop);
+  }
+}
+
+// === INPUT ===
+function getCanvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY,
+  };
+}
+
+function hitTestAnswerButtons(x, y, numAnswers) {
+  const bx = 18, bw = 324;
+  const startY = 336, btnH = 55, gap = 8;
+  for (let i = 0; i < numAnswers; i++) {
+    const by = startY + i * (btnH + gap);
+    if (x >= bx && x <= bx + bw && y >= by && y <= by + btnH) return i;
+  }
+  return -1;
+}
+
+function onPointerMove(e) {
+  if (state !== 'question') return;
+  const { x, y } = getCanvasPos(e);
+  hoveredAnswer = hitTestAnswerButtons(x, y, currentQuestion().answers.length);
+}
+
+function onPointerDown(e) {
+  e.preventDefault();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if (!audioCtx) getAudio();
+
+  const { x, y } = getCanvasPos(e);
+
+  if (state === 'title') {
+    // Hit test RIDE IN button
+    if (x >= 110 && x <= 250 && y >= 328 && y <= 372) startGame();
+    return;
+  }
+
+  if (state === 'question') {
+    const idx = hitTestAnswerButtons(x, y, currentQuestion().answers.length);
+    if (idx >= 0) chooseAnswer(idx);
+    return;
+  }
+
+  if (state === 'cleared') {
+    if (x >= 110 && x <= 250 && y >= 400 && y <= 444) startGame();
+    if (x >= 110 && x <= 250 && y >= 454 && y <= 492) document.getElementById('fb-overlay').classList.add('active');
+    return;
+  }
+
+  if (state === 'arrested') {
+    if (x >= 110 && x <= 250 && y >= 390 && y <= 434) startGame();
+    if (x >= 110 && x <= 250 && y >= 444 && y <= 482) document.getElementById('fb-overlay').classList.add('active');
+    return;
+  }
+}
+
+canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+canvas.addEventListener('pointermove', onPointerMove);
+canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (state === 'title' && e.code === 'Space') { startGame(); return; }
+  if (state === 'question') {
+    const idx = ['KeyA', 'KeyB', 'KeyC', 'KeyD'].indexOf(e.code);
+    if (idx >= 0) chooseAnswer(idx);
+    const num = parseInt(e.key) - 1;
+    if (num >= 0 && num < 4) chooseAnswer(num);
+  }
+});
+
+// === FEEDBACK ===
+document.getElementById('fb-submit').addEventListener('click', () => {
+  const rating = document.getElementById('fb-rating').value;
+  const msg = document.getElementById('fb-text').value.trim();
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game: "Hangman's Bluff", rating: parseInt(rating), message: msg }),
+  }).catch(() => {});
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+document.getElementById('fb-close').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('active');
+});
+
+// === TEST API ===
+window.__hb = {
+  get state()        { return state; },
+  set state(v)       { state = v; },
+  get suspicion()    { return suspicion; },
+  set suspicion(v)   { suspicion = v; },
+  get questionIdx()  { return questionIdx; },
+  set questionIdx(v) { questionIdx = v; },
+  get storyMemory()  { return storyMemory; },
+  set storyMemory(v) { storyMemory = v; },
+  get lastScore()    { return lastScore; },
+  set lastScore(v)   { lastScore = v; },
+  startGame,
+  chooseAnswer,
+  QUESTIONS,
+  PASS_THRESHOLD,
+  INSTANT_ARREST_SUS,
+  CONTRADICTION_BONUS,
+  MAX_SUSPICION,
+  TRADE_ANSWER_IDX,
+  TRADE_LABELS,
+  calcScore,
+};
+
+// Start loop
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Trail Blaze</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { height: 100%; overflow: hidden; }
+body { background: #000; display: flex; justify-content: center; align-items: center;
+       height: 100%; overflow: hidden; touch-action: none; position: fixed; width: 100%; }
+#wrap { position: relative; touch-action: none; }
+canvas { display: block; touch-action: none; cursor: pointer; }
+#fb-ov { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+         flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+         background: rgba(5,2,8,0.97); border: 2px solid #FFD700; box-sizing: border-box;
+         padding: 22px; z-index: 10; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="fb-ov">
+    <h2 style="color:#FFD700;font-family:serif;font-size:20px;margin:0;text-align:center">Rate This Game</h2>
+    <div id="fb-stars" style="display:flex;gap:10px;font-size:30px;cursor:pointer;user-select:none">
+      <span data-v="1">&#9734;</span><span data-v="2">&#9734;</span><span data-v="3">&#9734;</span><span data-v="4">&#9734;</span><span data-v="5">&#9734;</span>
+    </div>
+    <select id="fb-target" style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:7px;font-size:13px">
+      <option value="general">General / next game</option>
+      <option value="Trail Blaze" selected>Existing: Trail Blaze</option>
+      <option value="Wanted: Reward">Existing: Wanted: Reward</option>
+      <option value="Coyote Call">Existing: Coyote Call</option>
+      <option value="Last Rope Standing">Existing: Last Rope Standing</option>
+    </select>
+    <textarea id="fb-text" rows="4" placeholder="What worked? What could be better?"
+      style="width:100%;max-width:290px;background:#1a0a04;color:#E8DCC8;border:1px solid #555;border-radius:6px;padding:9px;font-size:13px;resize:none;font-family:sans-serif"></textarea>
+    <button id="fb-submit" style="background:#FFD700;color:#0d0400;font-weight:bold;font-size:15px;padding:9px 34px;border:none;border-radius:8px;cursor:pointer">Submit</button>
+    <button id="fb-cancel" style="background:none;border:none;color:#A09070;font-size:13px;cursor:pointer;text-decoration:underline">Cancel</button>
+    <p id="fb-status" style="color:#A09070;font-size:12px;min-height:16px;margin:0;text-align:center"></p>
+  </div>
+</div>
+<script>
+// ---- roundRect polyfill ---------------------------------------------------
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    const rv = Math.min(typeof r === 'number' ? r : (Array.isArray(r) ? r[0] || 0 : 0), w / 2, h / 2);
+    if (rv <= 0) { this.rect(x, y, w, h); return; }
+    this.moveTo(x + rv, y); this.lineTo(x + w - rv, y);
+    this.arcTo(x + w, y, x + w, y + rv, rv); this.lineTo(x + w, y + h - rv);
+    this.arcTo(x + w, y + h, x + w - rv, y + h, rv); this.lineTo(x + rv, y + h);
+    this.arcTo(x, y + h, x, y + h - rv, rv); this.lineTo(x, y + rv);
+    this.arcTo(x, y, x + rv, y, rv); this.closePath();
+  };
+}
+
+// ---- Constants -------------------------------------------------------------
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+const SLUG = 'trail-blaze';
+
+const W = 360, H = 640;
+const COLS = 10, ROWS = 15, TILE = 36;
+const MAP_X = 0, MAP_Y = 62;
+const MAP_H = ROWS * TILE;  // 540
+const BTN_Y = MAP_Y + MAP_H; // 602
+
+const PLAINS = 0, FOREST = 1, DESERT = 2, MOUNTAIN = 3, RIVER = 4;
+const TERRAIN_COST  = [1, 2, 2, 5, 3];
+const TERRAIN_COLOR = ['#3a5918', '#152c08', '#6e4e14', '#222236', '#162050'];
+const TERRAIN_LABEL = ['Plains 1', 'Forest 2', 'Desert 2', 'Mtn 5', 'River 3'];
+
+const THREAT_FLOOD = 1, THREAT_ROCK = 2, THREAT_WAGON = 3;
+const FLOOD_MULT   = 3;
+
+const START = { row: ROWS - 2, col: 1 };  // row 13, col 1
+const END   = { row: 1, col: COLS - 2 };  // row 1,  col 8
+
+const SUPPLIES_PER_ROUND = [60, 55, 50, 45, 40];
+const TOTAL_ROUNDS       = 5;
+const TRAVEL_MS          = 130;   // ms per tile during animation
+const SCORE_PER_SUPPLY   = 10;
+
+// ---- State -----------------------------------------------------------------
+let canvas, ctx, audioCtx, ambientSrc;
+let state = 'title';  // title | planning | traveling | roundEnd | gameover
+let round = 0;
+let totalScore = 0;
+let roundResult = null; // { won, myCost, optCost, pts }
+let supplies = 60;
+let grid    = [];     // ROWS x COLS array of terrain type
+let threats = [];     // [{row,col,type}]
+let path    = [];     // [{row,col}] drawn by player
+let pathDrawing = false;
+let optPath = null;   // A* optimal path, shown after round
+let travelIdx = 0;
+let travelAccum = 0;
+let popups = [];
+let best = parseInt(localStorage.getItem(SLUG + '_best') || '0', 10);
+
+// ---- Seeded RNG ------------------------------------------------------------
+function makeRNG(seed) {
+  let s = (seed >>> 0) || 1;
+  return () => {
+    s = Math.imul(s, 1664525) + 1013904223 | 0;
+    return (s >>> 0) / 4294967296;
+  };
+}
+
+// ---- Terrain generation ----------------------------------------------------
+function generateGrid(seed) {
+  const rng = makeRNG(seed);
+  const g = Array.from({ length: ROWS }, () => new Uint8Array(COLS).fill(PLAINS));
+
+  // Mountain clusters (2-3 clusters)
+  const numClusters = 2 + Math.floor(rng() * 2);
+  for (let k = 0; k < numClusters; k++) {
+    const cr = 2 + Math.floor(rng() * (ROWS - 5));
+    const cc = 1 + Math.floor(rng() * (COLS - 3));
+    const size = 4 + Math.floor(rng() * 7);
+    for (let i = 0; i < size; i++) {
+      const r = clamp(cr + Math.floor(rng() * 5) - 2, 0, ROWS - 1);
+      const c = clamp(cc + Math.floor(rng() * 5) - 2, 0, COLS - 1);
+      g[r][c] = MOUNTAIN;
+    }
+  }
+
+  // River: winding vertical strip from top to bottom
+  let rc = 3 + Math.floor(rng() * 3);
+  for (let r = 0; r < ROWS; r++) {
+    rc = clamp(rc + Math.floor(rng() * 3) - 1, 1, COLS - 2);
+    if (g[r][rc] !== MOUNTAIN) g[r][rc] = RIVER;
+    if (rng() > 0.72 && g[r][clamp(rc + 1, 0, COLS - 1)] !== MOUNTAIN)
+      g[r][clamp(rc + 1, 0, COLS - 1)] = RIVER;
+  }
+
+  // Desert patch (lower half)
+  for (let r = Math.floor(ROWS * 0.5); r < ROWS - 1; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (g[r][c] === PLAINS && rng() > 0.46) g[r][c] = DESERT;
+    }
+  }
+
+  // Forest patch (upper half)
+  for (let r = 1; r < Math.floor(ROWS * 0.5); r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (g[r][c] === PLAINS && rng() > 0.52) g[r][c] = FOREST;
+    }
+  }
+
+  // Clear cells around START and END (ensure accessible)
+  for (const cell of [START, END]) {
+    for (const [dr, dc] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const r = clamp(cell.row + dr, 0, ROWS - 1);
+      const c = clamp(cell.col + dc, 0, COLS - 1);
+      if (g[r][c] === MOUNTAIN) g[r][c] = PLAINS;
+    }
+  }
+
+  return g;
+}
+
+// ---- Threat generation -----------------------------------------------------
+function generateThreats(roundNum, seed) {
+  const rng = makeRNG(seed ^ (roundNum * 99991));
+  const result = [];
+
+  function addUnique(type, count) {
+    let tries = 0, added = 0;
+    while (added < count && tries++ < 300) {
+      const r = 2 + Math.floor(rng() * (ROWS - 4));
+      const c = 1 + Math.floor(rng() * (COLS - 2));
+      if (isEdge(r, c)) continue;
+      if (result.some(t => t.row === r && t.col === c)) continue;
+      result.push({ row: r, col: c, type });
+      added++;
+    }
+  }
+
+  if (roundNum >= 2) addUnique(THREAT_FLOOD, roundNum);           // 2,3,4,5 floods
+  if (roundNum >= 3) addUnique(THREAT_ROCK, roundNum - 2);        // 1,2,3 rocks
+  if (roundNum >= 4) {
+    // Wagon: 2 consecutive horizontal tiles
+    let r, c, tries = 0;
+    do {
+      r = 3 + Math.floor(rng() * (ROWS - 6));
+      c = 2 + Math.floor(rng() * (COLS - 5));
+      tries++;
+    } while (tries < 50 && (isEdge(r, c) || isEdge(r, c + 1)));
+    if (!isEdge(r, c)) result.push({ row: r, col: c, type: THREAT_WAGON });
+    if (!isEdge(r, c + 1)) result.push({ row: r, col: c + 1, type: THREAT_WAGON });
+    if (!isEdge(r, c + 2) && roundNum >= 5) result.push({ row: r, col: c + 2, type: THREAT_WAGON });
+  }
+
+  return result;
+}
+
+function isEdge(r, c) {
+  return (r === START.row && c === START.col) || (r === END.row && c === END.col);
+}
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+// ---- A* pathfinding --------------------------------------------------------
+function astar(startCell, endCell, g, ths) {
+  g  = g  || grid;
+  ths = ths || threats;
+
+  function tileCost(r, c) {
+    const thr = ths.find(t => t.row === r && t.col === c);
+    if (thr && (thr.type === THREAT_ROCK || thr.type === THREAT_WAGON)) return Infinity;
+    let cost = TERRAIN_COST[g[r][c]];
+    if (thr && thr.type === THREAT_FLOOD) cost *= FLOOD_MULT;
+    return cost;
+  }
+
+  function h(r, c) { return Math.abs(r - endCell.row) + Math.abs(c - endCell.col); }
+  function key(r, c) { return r * COLS + c; }
+
+  const open = [{ r: startCell.row, c: startCell.col, g: 0, f: h(startCell.row, startCell.col), prev: null }];
+  const dist = new Map([[key(startCell.row, startCell.col), 0]]);
+
+  while (open.length) {
+    let bi = 0;
+    for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
+    const cur = open.splice(bi, 1)[0];
+
+    if (cur.r === endCell.row && cur.c === endCell.col) {
+      const p = [];
+      let n = cur;
+      while (n) { p.unshift({ row: n.r, col: n.c }); n = n.prev; }
+      return p;
+    }
+
+    for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const nr = cur.r + dr, nc = cur.c + dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+      const tc = tileCost(nr, nc);
+      if (tc === Infinity) continue;
+      const ng = cur.g + tc;
+      const k  = key(nr, nc);
+      if (!dist.has(k) || dist.get(k) > ng) {
+        dist.set(k, ng);
+        open.push({ r: nr, c: nc, g: ng, f: ng + h(nr, nc), prev: cur });
+      }
+    }
+  }
+  return null;
+}
+
+// ---- Path cost -------------------------------------------------------------
+function pathCost(p) {
+  if (!p || p.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < p.length; i++) {
+    const { row, col } = p[i];
+    const thr = threats.find(t => t.row === row && t.col === col);
+    let cost = TERRAIN_COST[grid[row][col]];
+    if (thr && thr.type === THREAT_FLOOD) cost *= FLOOD_MULT;
+    total += cost;
+  }
+  return total;
+}
+
+// ---- Threat lookup ---------------------------------------------------------
+function threatAt(r, c) { return threats.find(t => t.row === r && t.col === c) || null; }
+
+function isBlocked(r, c) {
+  const thr = threatAt(r, c);
+  return !!(thr && (thr.type === THREAT_ROCK || thr.type === THREAT_WAGON));
+}
+
+// ---- Round setup -----------------------------------------------------------
+function startRound(rNum) {
+  round      = rNum;
+  supplies   = SUPPLIES_PER_ROUND[rNum - 1];
+  path       = [{ row: START.row, col: START.col }];
+  pathDrawing = false;
+  optPath    = null;
+  travelIdx  = 0;
+  travelAccum = 0;
+  state      = 'planning';
+
+  const seed = (Date.now() >>> 0) ^ ((rNum * 31337) >>> 0);
+  grid    = generateGrid(seed);
+  threats = generateThreats(rNum, seed);
+
+  // Ensure map is solvable; if not, remove blocking threats
+  if (!astar(START, END)) {
+    threats = threats.filter(t => t.type !== THREAT_ROCK && t.type !== THREAT_WAGON);
+    if (!astar(START, END)) threats = [];
+  }
+}
+
+// ---- Path reaches END? -----------------------------------------------------
+function pathAtEnd() {
+  if (path.length < 2) return false;
+  const last = path[path.length - 1];
+  return last.row === END.row && last.col === END.col;
+}
+
+// ---- Travel ----------------------------------------------------------------
+function startTravel() {
+  state     = 'traveling';
+  travelIdx = 0;
+  travelAccum = 0;
+}
+
+function updateTravel(dt) {
+  travelAccum += dt;
+  while (travelAccum >= TRAVEL_MS && travelIdx < path.length - 1) {
+    travelAccum -= TRAVEL_MS;
+    travelIdx++;
+    const { row, col } = path[travelIdx];
+    const thr  = threatAt(row, col);
+    let   cost = TERRAIN_COST[grid[row][col]];
+    if (thr && thr.type === THREAT_FLOOD) cost *= FLOOD_MULT;
+    supplies -= cost;
+    playStep(cost);
+
+    if (supplies <= 0) {
+      supplies = 0;
+      endRound(false);
+      return;
+    }
+    if (travelIdx === path.length - 1) {
+      endRound(true);
+      return;
+    }
+  }
+}
+
+function endRound(won) {
+  const opt     = astar(START, END);
+  const myCost  = pathCost(path);
+  const optCost = opt ? pathCost(opt) : myCost;
+  optPath       = opt;
+
+  let pts = 0;
+  if (won) {
+    pts = Math.ceil(supplies) * SCORE_PER_SUPPLY;
+    totalScore += pts;
+    spawnPopup('+' + pts + ' pts', W / 2, H / 2 - 40, '#FFD700');
+    playWin();
+  } else {
+    spawnPopup('OUT OF SUPPLIES', W / 2, H / 2 - 40, '#E74C3C');
+    playFail();
+  }
+
+  roundResult = { won, myCost, optCost, pts };
+  state = 'roundEnd';
+}
+
+// ---- Game flow -------------------------------------------------------------
+function startGame() {
+  totalScore = 0;
+  roundResult = null;
+  startRound(1);
+}
+
+function nextRound() {
+  if (round >= TOTAL_ROUNDS) { endGame(); return; }
+  startRound(round + 1);
+}
+
+function endGame() {
+  if (totalScore > best) {
+    best = totalScore;
+    localStorage.setItem(SLUG + '_best', best);
+  }
+  state = 'gameover';
+}
+
+function clearPath() {
+  path = [{ row: START.row, col: START.col }];
+  pathDrawing = false;
+}
+
+// ---- Popups ----------------------------------------------------------------
+function spawnPopup(text, x, y, color) {
+  popups.push({ text, x, y, color, age: 0 });
+}
+
+function updatePopups(dt) {
+  popups = popups.filter(p => { p.age += dt; return p.age < 1000; });
+}
+
+// ---- Drawing: tiles --------------------------------------------------------
+function drawTile(r, c) {
+  const x = MAP_X + c * TILE, y = MAP_Y + r * TILE;
+  const t = grid[r][c];
+  ctx.save();
+  ctx.fillStyle = TERRAIN_COLOR[t];
+  ctx.fillRect(x, y, TILE, TILE);
+
+  ctx.globalAlpha = 0.38;
+  if (t === MOUNTAIN) {
+    ctx.fillStyle = '#6688aa';
+    ctx.beginPath();
+    ctx.moveTo(x + TILE / 2, y + 5);
+    ctx.lineTo(x + TILE - 5, y + TILE - 5);
+    ctx.lineTo(x + 5, y + TILE - 5);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ddeeff';
+    ctx.beginPath();
+    ctx.moveTo(x + TILE / 2, y + 5);
+    ctx.lineTo(x + TILE / 2 + 5, y + 15);
+    ctx.lineTo(x + TILE / 2 - 5, y + 15);
+    ctx.closePath(); ctx.fill();
+  } else if (t === FOREST) {
+    ctx.fillStyle = '#2a6010';
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(x + 8 + i * 10, y + TILE / 2, 6, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (t === RIVER) {
+    ctx.strokeStyle = '#60aaff'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 3, y + TILE / 2 - 3);
+    ctx.bezierCurveTo(x + TILE * 0.3, y + TILE / 2 - 7, x + TILE * 0.7, y + TILE / 2 + 7, x + TILE - 3, y + TILE / 2 + 3);
+    ctx.stroke();
+  } else if (t === DESERT) {
+    ctx.fillStyle = '#c09040';
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.arc(x + 9 + i * 14, y + TILE / 2 + (i % 2 ? -3 : 3), 3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.5;
+  ctx.strokeRect(x + 0.25, y + 0.25, TILE - 0.5, TILE - 0.5);
+  ctx.restore();
+}
+
+// ---- Drawing: threats ------------------------------------------------------
+function drawThreat(thr) {
+  const x = MAP_X + thr.col * TILE, y = MAP_Y + thr.row * TILE;
+  ctx.save();
+
+  if (thr.type === THREAT_FLOOD) {
+    ctx.fillStyle = 'rgba(30,90,220,0.52)';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.strokeStyle = 'rgba(100,190,255,0.9)'; ctx.lineWidth = 1.5;
+    for (let row = 0; row < 2; row++) {
+      const wy = y + 11 + row * 13;
+      ctx.beginPath(); ctx.moveTo(x + 2, wy);
+      for (let xi = 0; xi < TILE - 4; xi += 5)
+        ctx.lineTo(x + 2 + xi + (xi % 10 < 5 ? 2 : -2), wy + (xi % 10 < 5 ? -2 : 2));
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#88ddff'; ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('x3', x + TILE / 2, y + TILE - 1);
+
+  } else if (thr.type === THREAT_ROCK) {
+    ctx.fillStyle = 'rgba(160,30,20,0.45)';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.strokeStyle = '#E74C3C'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + TILE - 6, y + TILE - 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + TILE - 6, y + 6); ctx.lineTo(x + 6, y + TILE - 6); ctx.stroke();
+    ctx.fillStyle = '#ff8888'; ctx.font = 'bold 8px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('ROCK', x + TILE / 2, y + TILE - 1);
+
+  } else if (thr.type === THREAT_WAGON) {
+    ctx.fillStyle = 'rgba(90,45,0,0.65)';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = '#6b3600'; ctx.fillRect(x + 4, y + 11, TILE - 8, 15);
+    ctx.fillStyle = '#c8841a'; ctx.fillRect(x + 5, y + 12, TILE - 10, 13);
+    ctx.strokeStyle = '#4a2400'; ctx.lineWidth = 2;
+    for (const wx of [x + 9, x + TILE - 9]) {
+      ctx.beginPath(); ctx.arc(wx, y + TILE - 8, 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(wx, y + TILE - 13); ctx.lineTo(wx, y + TILE - 3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(wx - 5, y + TILE - 8); ctx.lineTo(wx + 5, y + TILE - 8); ctx.stroke();
+    }
+    ctx.fillStyle = '#ffaa66'; ctx.font = 'bold 7px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('RIVAL', x + TILE / 2, y + TILE - 1);
+  }
+  ctx.restore();
+}
+
+// ---- Drawing: start / end markers -----------------------------------------
+function drawStartEnd() {
+  // START - campfire glow
+  const sx = MAP_X + START.col * TILE, sy = MAP_Y + START.row * TILE;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,220,50,0.15)'; ctx.fillRect(sx, sy, TILE, TILE);
+  const sg = ctx.createRadialGradient(sx + TILE / 2, sy + TILE / 2, 2, sx + TILE / 2, sy + TILE / 2, 13);
+  sg.addColorStop(0, 'rgba(255,180,30,0.95)'); sg.addColorStop(1, 'rgba(255,80,0,0)');
+  ctx.fillStyle = sg;
+  ctx.beginPath(); ctx.arc(sx + TILE / 2, sy + TILE / 2, 13, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('START', sx + TILE / 2, sy + TILE - 1);
+  ctx.restore();
+
+  // END - flag
+  const ex = MAP_X + END.col * TILE, ey = MAP_Y + END.row * TILE;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,160,50,0.18)'; ctx.fillRect(ex, ey, TILE, TILE);
+  ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(ex + TILE / 2, ey + 5); ctx.lineTo(ex + TILE / 2, ey + TILE - 5); ctx.stroke();
+  ctx.fillStyle = '#FF9F43';
+  ctx.beginPath();
+  ctx.moveTo(ex + TILE / 2, ey + 5);
+  ctx.lineTo(ex + TILE - 5, ey + 13);
+  ctx.lineTo(ex + TILE / 2, ey + 21);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('GOAL', ex + TILE / 2, ey + TILE - 1);
+  ctx.restore();
+}
+
+// ---- Drawing: player path --------------------------------------------------
+function drawPath() {
+  if (path.length < 1) return;
+  ctx.save();
+
+  // Highlight tiles
+  ctx.fillStyle = 'rgba(255,210,0,0.22)';
+  for (const { row, col } of path) {
+    ctx.fillRect(MAP_X + col * TILE + 1, MAP_Y + row * TILE + 1, TILE - 2, TILE - 2);
+  }
+
+  // Dashed connecting line
+  if (path.length >= 2) {
+    ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 3;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    for (let i = 0; i < path.length; i++) {
+      const px = MAP_X + path[i].col * TILE + TILE / 2;
+      const py = MAP_Y + path[i].row * TILE + TILE / 2;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Traveled portion (solid fill up to travelIdx during traveling)
+  if (state === 'traveling' && travelIdx > 0) {
+    ctx.fillStyle = 'rgba(255,200,0,0.45)';
+    for (let i = 0; i <= travelIdx; i++) {
+      const { row, col } = path[i];
+      ctx.fillRect(MAP_X + col * TILE + 2, MAP_Y + row * TILE + 2, TILE - 4, TILE - 4);
+    }
+  }
+
+  ctx.restore();
+}
+
+// ---- Drawing: optimal path -------------------------------------------------
+function drawOptimalPath() {
+  if (!optPath || optPath.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(80,255,160,0.75)'; ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.setLineDash([4, 5]);
+  ctx.beginPath();
+  for (let i = 0; i < optPath.length; i++) {
+    const px = MAP_X + optPath[i].col * TILE + TILE / 2;
+    const py = MAP_Y + optPath[i].row * TILE + TILE / 2;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// ---- Drawing: traveler pawn ------------------------------------------------
+function drawTraveler() {
+  if (travelIdx < 0 || travelIdx >= path.length) return;
+  const { row, col } = path[travelIdx];
+  const x = MAP_X + col * TILE + TILE / 2;
+  const y = MAP_Y + row * TILE + TILE / 2;
+  ctx.save();
+  const grd = ctx.createRadialGradient(x, y, 3, x, y, 15);
+  grd.addColorStop(0, 'rgba(255,220,50,0.95)'); grd.addColorStop(1, 'rgba(255,120,0,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2); ctx.fill();
+  // Horse silhouette
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath(); ctx.ellipse(x, y, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 10, y - 4, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// ---- Drawing: HUD ----------------------------------------------------------
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = '#0a0300'; ctx.fillRect(0, 0, W, MAP_Y);
+
+  // Title
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 13px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('TRAIL BLAZE', W / 2, 3);
+
+  // Round
+  ctx.fillStyle = '#C8A04A'; ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('Round ' + round + '/' + TOTAL_ROUNDS, 8, 3);
+
+  // Score
+  ctx.textAlign = 'right';
+  ctx.fillText('Score: ' + totalScore, W - 8, 3);
+
+  // Supplies bar
+  const BX = 8, BY = 20, BW = W - 16, BH = 14;
+  const supMax = SUPPLIES_PER_ROUND[round - 1] || 60;
+  const pct = Math.max(0, supplies / supMax);
+  ctx.fillStyle = '#1a0900';
+  ctx.beginPath(); ctx.roundRect(BX, BY, BW, BH, 5); ctx.fill();
+  const barCol = pct > 0.5 ? '#4CAF50' : pct > 0.25 ? '#FFA500' : '#E74C3C';
+  if (pct > 0) {
+    ctx.fillStyle = barCol;
+    ctx.beginPath(); ctx.roundRect(BX, BY, BW * pct, BH, 5); ctx.fill();
+  }
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(BX, BY, BW, BH, 5); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Supplies: ' + Math.ceil(supplies), W / 2, BY + BH / 2);
+
+  // Status line
+  const cost = pathCost(path);
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  if (state === 'planning') {
+    const atEnd  = pathAtEnd();
+    const valid  = atEnd && cost <= supplies;
+    ctx.fillStyle = atEnd ? (valid ? '#6ddf6d' : '#E74C3C') : '#888';
+    ctx.fillText(
+      atEnd ? (valid ? 'Path cost: ' + cost + '  /  Tap TRAVEL' : 'Need ' + cost + ' supplies, only ' + Math.ceil(supplies) + ' left')
+            : 'Drag from START to GOAL',
+      W / 2, 38
+    );
+  } else if (state === 'traveling') {
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText('Traveling...  ' + Math.ceil(supplies) + ' supplies remain', W / 2, 38);
+  }
+  ctx.restore();
+}
+
+// ---- Drawing: bottom buttons -----------------------------------------------
+function drawButtons() {
+  if (state !== 'planning') return;
+  ctx.save();
+  ctx.fillStyle = '#0a0300'; ctx.fillRect(0, BTN_Y, W, H - BTN_Y);
+
+  ctx.fillStyle = '#2a1200';
+  ctx.beginPath(); ctx.roundRect(8, BTN_Y + 6, 100, 28, 8); ctx.fill();
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('CLEAR', 58, BTN_Y + 20);
+
+  const canTravel = pathAtEnd() && pathCost(path) <= supplies;
+  ctx.fillStyle = canTravel ? '#8B6000' : '#1a0c00';
+  ctx.beginPath(); ctx.roundRect(W - 152, BTN_Y + 6, 144, 28, 8); ctx.fill();
+  if (canTravel) {
+    ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(W - 152, BTN_Y + 6, 144, 28, 8); ctx.stroke();
+  }
+  ctx.fillStyle = canTravel ? '#FFD700' : '#444';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('TRAVEL →', W - 80, BTN_Y + 20);
+  ctx.restore();
+}
+
+// ---- Drawing: popups -------------------------------------------------------
+function drawPopups() {
+  ctx.save();
+  for (const p of popups) {
+    const alpha = p.age < 400 ? 1 : 1 - (p.age - 400) / 600;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color; ctx.font = 'bold 18px Georgia,serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(p.text, p.x, p.y - p.age * 0.04);
+  }
+  ctx.globalAlpha = 1; ctx.restore();
+}
+
+// ---- Drawing: title screen -------------------------------------------------
+function drawTitle() {
+  ctx.save();
+  ctx.fillStyle = '#050208'; ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 50; i++) {
+    const sx = (i * 73 + 31) % W, sy = (i * 97 + 17) % (H * 0.38);
+    ctx.fillStyle = 'rgba(255,255,200,' + (0.4 + (i % 5) * 0.12) + ')';
+    ctx.beginPath(); ctx.arc(sx, sy, (i % 3) * 0.6 + 0.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.shadowColor = 'rgba(255,200,0,0.55)'; ctx.shadowBlur = 18;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 42px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('TRAIL BLAZE', W / 2, 70);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'italic 13px Georgia,serif';
+  ctx.fillText('GAME 44', W / 2, 122);
+
+  ctx.fillStyle = '#E8DCC8'; ctx.font = '13px sans-serif';
+  ctx.fillText('Find the path. Manage your supplies.', W / 2, 148);
+
+  // Terrain legend panel
+  const lx = 18, ly = 178;
+  ctx.fillStyle = 'rgba(12,6,0,0.85)';
+  ctx.beginPath(); ctx.roundRect(lx, ly, W - 36, 115, 8); ctx.fill();
+  ctx.strokeStyle = '#3a2800'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(lx, ly, W - 36, 115, 8); ctx.stroke();
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 11px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('TERRAIN COSTS PER TILE', W / 2, ly + 7);
+
+  const types = [
+    [PLAINS, 'Plains', '1 supply'],
+    [FOREST, 'Forest', '2 supplies'],
+    [DESERT, 'Desert', '2 supplies'],
+    [MOUNTAIN, 'Mountain', '5 supplies'],
+    [RIVER, 'River', '3 supplies'],
+  ];
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  types.forEach(([type, name, cost], i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const tx = lx + 12 + col * 158, ty = ly + 24 + row * 26;
+    ctx.fillStyle = TERRAIN_COLOR[type]; ctx.fillRect(tx, ty + 2, 14, 14);
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 0.5; ctx.strokeRect(tx, ty + 2, 14, 14);
+    ctx.fillStyle = '#E8DCC8';
+    ctx.fillText(name + '  ' + cost, tx + 18, ty + 3);
+  });
+  ctx.fillStyle = '#706040'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('Flood tiles x3 cost  |  Rockslides: impassable', W / 2, ly + 100);
+
+  // Instructions
+  ctx.fillStyle = '#E8DCC8'; ctx.font = '12px sans-serif';
+  ctx.fillText('Drag a path from START to GOAL', W / 2, 308);
+  ctx.fillText('Shorter, cheaper paths earn more points', W / 2, 326);
+
+  if (best > 0) {
+    ctx.fillStyle = '#C8A04A'; ctx.font = '12px sans-serif';
+    ctx.fillText('Best: ' + best, W / 2, 356);
+  }
+
+  const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 600);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 16px Georgia,serif';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('TAP TO START', W / 2, H - 14);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ---- Drawing: round end overlay --------------------------------------------
+function drawRoundEnd() {
+  const res = roundResult;
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.84)';
+  ctx.fillRect(0, 190, W, 280);
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = res.won ? '#FFD700' : '#E74C3C';
+  ctx.font = 'bold 28px Georgia,serif';
+  ctx.fillText(res.won ? 'TRAIL BLAZED!' : 'TRAIL LOST!', W / 2, 200);
+
+  if (res.won) {
+    ctx.fillStyle = '#FFE066'; ctx.font = '15px sans-serif';
+    ctx.fillText('+' + res.pts + ' pts  (' + Math.ceil(supplies) + ' supplies left)', W / 2, 240);
+  } else {
+    ctx.fillStyle = '#C8A04A'; ctx.font = '12px sans-serif';
+    ctx.fillText('Ran out of supplies before the goal', W / 2, 240);
+  }
+
+  ctx.fillStyle = '#888'; ctx.font = '12px sans-serif';
+  ctx.fillText('Your path cost: ' + res.myCost + '   Optimal: ' + res.optCost, W / 2, 268);
+  ctx.fillStyle = 'rgba(80,255,160,0.7)'; ctx.font = '10px sans-serif';
+  ctx.fillText('green line = optimal route', W / 2, 286);
+
+  ctx.fillStyle = '#C8A04A'; ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('Total: ' + totalScore + ' pts', W / 2, 308);
+
+  const isLast = round >= TOTAL_ROUNDS;
+  ctx.fillStyle = '#8B6000';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 95, 332, 190, 36, 10); ctx.fill();
+  ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(W / 2 - 95, 332, 190, 36, 10); ctx.stroke();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 14px sans-serif'; ctx.textBaseline = 'middle';
+  ctx.fillText(isLast ? 'See Final Score' : 'Round ' + (round + 1) + ' →', W / 2, 350);
+  ctx.restore();
+}
+
+// ---- Drawing: game over ----------------------------------------------------
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = '#050208'; ctx.fillRect(0, 0, W, H);
+
+  for (let i = 0; i < 50; i++) {
+    const sx = (i * 73 + 31) % W, sy = (i * 97 + 17) % (H * 0.5);
+    ctx.fillStyle = 'rgba(255,255,200,' + (0.3 + (i % 4) * 0.1) + ')';
+    ctx.beginPath(); ctx.arc(sx, sy, (i % 3) * 0.5 + 0.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.shadowColor = 'rgba(255,200,0,0.5)'; ctx.shadowBlur = 14;
+  ctx.fillStyle = '#FFE066'; ctx.font = 'bold 34px Georgia,serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('TRAIL COMPLETE', W / 2, 130);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 54px sans-serif';
+  ctx.fillText(totalScore, W / 2, 188);
+  ctx.fillStyle = '#908070'; ctx.font = '13px sans-serif';
+  ctx.fillText('points', W / 2, 250);
+
+  if (totalScore >= best && best > 0) {
+    const pulse = 0.8 + 0.2 * Math.sin(Date.now() / 240);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#FF9F43'; ctx.font = 'bold 18px Georgia,serif';
+    ctx.fillText('NEW RECORD!', W / 2, 278);
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = '#666'; ctx.font = '12px sans-serif';
+  ctx.fillText('Best: ' + best, W / 2, 306);
+
+  ctx.fillStyle = '#8B6000';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 105, 346, 210, 40, 10); ctx.fill();
+  ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(W / 2 - 105, 346, 210, 40, 10); ctx.stroke();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 16px sans-serif'; ctx.textBaseline = 'middle';
+  ctx.fillText('Play Again', W / 2, 366);
+
+  ctx.fillStyle = '#1e0e00';
+  ctx.beginPath(); ctx.roundRect(W / 2 - 105, 396, 210, 36, 10); ctx.fill();
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(W / 2 - 105, 396, 210, 36, 10); ctx.stroke();
+  ctx.fillStyle = '#C8A04A'; ctx.font = '14px sans-serif';
+  ctx.fillText('Share Score', W / 2, 414);
+
+  ctx.restore();
+}
+
+// ---- Main render -----------------------------------------------------------
+function render() {
+  ctx.fillStyle = '#050208'; ctx.fillRect(0, 0, W, H);
+
+  if (state === 'title')    { drawTitle(); drawPopups(); return; }
+  if (state === 'gameover') { drawGameOver(); drawPopups(); return; }
+
+  // Map
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) drawTile(r, c);
+
+  // Threats
+  for (const thr of threats) drawThreat(thr);
+
+  // Optimal path (roundEnd only)
+  if (state === 'roundEnd') drawOptimalPath();
+
+  // Player path and traveler
+  drawPath();
+  if (state === 'traveling') drawTraveler();
+
+  drawStartEnd();
+  drawHUD();
+  drawButtons();
+
+  if (state === 'roundEnd') drawRoundEnd();
+  drawPopups();
+}
+
+// ---- Input -----------------------------------------------------------------
+function getCanvasXY(e) {
+  const rect = canvas.getBoundingClientRect();
+  const s    = W / rect.width;
+  if (e.touches && e.touches.length > 0) {
+    const t = e.touches[0];
+    return [(t.clientX - rect.left) * s, (t.clientY - rect.top) * s];
+  }
+  return [(e.clientX - rect.left) * s, (e.clientY - rect.top) * s];
+}
+
+function cellAt(x, y) {
+  const col = Math.floor((x - MAP_X) / TILE);
+  const row = Math.floor((y - MAP_Y) / TILE);
+  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
+  return { row, col };
+}
+
+function cellEq(a, b) { return a && b && a.row === b.row && a.col === b.col; }
+
+function adjacent(a, b) { return Math.abs(a.row - b.row) + Math.abs(a.col - b.col) === 1; }
+
+function handleDown(x, y) {
+  if (state === 'title')    { startGame(); return; }
+  if (state === 'gameover') { handleGameOverTap(x, y); return; }
+  if (state === 'roundEnd') { nextRound(); return; }
+
+  if (state === 'planning') {
+    // Check bottom buttons
+    if (y > BTN_Y) {
+      if (x < 120) { clearPath(); return; }
+      if (x > W - 160) {
+        if (pathAtEnd() && pathCost(path) <= supplies) startTravel();
+      }
+      return;
+    }
+    // Start drawing if touching START
+    const cell = cellAt(x, y);
+    if (cell && cellEq(cell, START)) {
+      pathDrawing = true;
+      path = [{ row: START.row, col: START.col }];
+    }
+  }
+}
+
+function handleMove(x, y) {
+  if (state !== 'planning' || !pathDrawing) return;
+  const cell = cellAt(x, y);
+  if (!cell) return;
+
+  const last = path[path.length - 1];
+  if (cellEq(cell, last)) return;
+
+  // Backtrack?
+  const bi = path.findIndex(p => cellEq(p, cell));
+  if (bi !== -1) { path = path.slice(0, bi + 1); return; }
+
+  // Must be adjacent and passable
+  if (!adjacent(last, cell)) return;
+  if (isBlocked(cell.row, cell.col) && !cellEq(cell, END)) return;
+
+  path.push({ row: cell.row, col: cell.col });
+  playStepSound(TERRAIN_COST[grid[cell.row][cell.col]]);
+}
+
+function handleUp(x, y) {
+  pathDrawing = false;
+}
+
+function handleGameOverTap(x, y) {
+  if (y >= 346 && y <= 386) {
+    // Play Again
+    state = 'title';
+    return;
+  }
+  if (y >= 396 && y <= 432) {
+    // Share
+    if (navigator.share) {
+      navigator.share({ title: 'Trail Blaze', text: 'I scored ' + totalScore + ' on Trail Blaze! Can you beat it?' })
+        .catch(() => {});
+    }
+    return;
+  }
+  // Default: back to title
+  state = 'title';
+}
+
+// ---- Audio -----------------------------------------------------------------
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  startAmbient();
+}
+
+function tone(freq, dur, type, vol) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g   = audioCtx.createGain();
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.type = type || 'sine';
+  osc.frequency.value = freq;
+  g.gain.setValueAtTime(vol || 0.15, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.start(); osc.stop(audioCtx.currentTime + dur);
+}
+
+function playStepSound(cost) {
+  if (!audioCtx) return;
+  const freq = Math.max(180, 460 - cost * 45);
+  tone(freq, 0.07, 'triangle', 0.07);
+}
+
+function playWin() {
+  if (!audioCtx) return;
+  [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.28, 'sine', 0.18), i * 90));
+}
+
+function playFail() {
+  if (!audioCtx) return;
+  [280, 210, 170].forEach((f, i) => setTimeout(() => tone(f, 0.35, 'sawtooth', 0.14), i * 140));
+}
+
+function startAmbient() {
+  if (!audioCtx || ambientSrc) return;
+  try {
+    const sampleRate = audioCtx.sampleRate;
+    const buf  = audioCtx.createBuffer(1, sampleRate * 2, sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.3;
+    ambientSrc = audioCtx.createBufferSource();
+    ambientSrc.buffer = buf; ambientSrc.loop = true;
+    const filt = audioCtx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 380;
+    const vol = audioCtx.createGain(); vol.gain.value = 0.035;
+    ambientSrc.connect(filt); filt.connect(vol); vol.connect(audioCtx.destination);
+    ambientSrc.start();
+  } catch (e) { /* audio not critical */ }
+}
+
+// ---- Main loop -------------------------------------------------------------
+let lastTs = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min(ts - lastTs, 80);
+    lastTs = ts;
+    if (state === 'traveling') updateTravel(dt);
+    updatePopups(dt);
+    render();
+  } catch (e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---- Init ------------------------------------------------------------------
+function init() {
+  canvas = document.getElementById('c');
+  ctx    = canvas.getContext('2d');
+  const wrap  = document.getElementById('wrap');
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = W * scale + 'px';
+  canvas.style.height = H * scale + 'px';
+  wrap.style.width    = W * scale + 'px';
+  wrap.style.height   = H * scale + 'px';
+
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (e.pointerType !== 'touch') {
+      const [x, y] = getCanvasXY(e);
+      initAudio(); handleDown(x, y);
+      canvas.setPointerCapture(e.pointerId);
+    }
+  });
+  canvas.addEventListener('pointermove', e => {
+    e.preventDefault();
+    if (e.pointerType !== 'touch' && (e.buttons & 1)) {
+      const [x, y] = getCanvasXY(e);
+      handleMove(x, y);
+    }
+  });
+  canvas.addEventListener('pointerup', e => {
+    e.preventDefault();
+    if (e.pointerType !== 'touch') {
+      const [x, y] = getCanvasXY(e);
+      handleUp(x, y);
+    }
+  });
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const [x, y] = getCanvasXY(e);
+    initAudio(); handleDown(x, y);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const [x, y] = getCanvasXY(e);
+    handleMove(x, y);
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    handleUp(0, 0);
+  }, { passive: false });
+
+  document.addEventListener('touchstart', e => {
+    const ov = document.getElementById('fb-ov');
+    if (ov && ov.style.display === 'flex') return;
+    e.preventDefault();
+    const [x, y] = getCanvasXY(e);
+    if (state === 'title') { initAudio(); handleDown(x, y); }
+  }, { passive: false });
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); handleDown(W / 2, H / 2); }
+  });
+
+  requestAnimationFrame(ts => { lastTs = ts; loop(ts); });
+}
+
+window.addEventListener('load', init);
+
+// ---- Test helpers ----------------------------------------------------------
+window._tb = {
+  getState:      () => state,
+  getRound:      () => round,
+  getSupplies:   () => supplies,
+  getTotalScore: () => totalScore,
+  getPath:       () => path,
+  getGrid:       () => grid,
+  getThreats:    () => threats,
+  getOptPath:    () => optPath,
+  getTravelIdx:  () => travelIdx,
+  getRoundResult: () => roundResult,
+  startGame,
+  startRound,
+  clearPath,
+  startTravel,
+  endRound,
+  nextRound,
+  pathAtEnd,
+  pathCost,
+  astar,
+  generateGrid,
+  generateThreats,
+  isBlocked,
+  threatAt,
+  handleDown,
+  handleMove,
+  handleUp,
+  SUPPLIES_PER_ROUND, TOTAL_ROUNDS, COLS, ROWS, TILE, TILE,
+  START, END, TERRAIN_COST, FLOOD_MULT,
+  PLAINS, FOREST, DESERT, MOUNTAIN, RIVER,
+  THREAT_FLOOD, THREAT_ROCK, THREAT_WAGON,
+};
+
+// ---- Feedback overlay ------------------------------------------------------
+function showFeedback() { document.getElementById('fb-ov').style.display = 'flex'; }
+(function () {
+  const ov     = document.getElementById('fb-ov');
+  const stars  = document.getElementById('fb-stars');
+  const submit = document.getElementById('fb-submit');
+  const cancel = document.getElementById('fb-cancel');
+  const status = document.getElementById('fb-status');
+  let rating = 0;
+
+  stars.addEventListener('click', e => {
+    const v = parseInt(e.target.dataset.v);
+    if (!v) return;
+    rating = v;
+    [...stars.children].forEach((s, i) => s.textContent = i < v ? '★' : '☆');
+  });
+
+  submit.addEventListener('click', () => {
+    const msg = document.getElementById('fb-text').value.trim();
+    const tgt = document.getElementById('fb-target').value;
+    if (!msg && !rating) { status.textContent = 'Add a rating or message.'; return; }
+    status.textContent = 'Sending...';
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST', mode: 'no-cors',
+      body: JSON.stringify({ game: tgt || SLUG, rating, message: msg, score: totalScore }),
+    }).finally(() => {
+      status.textContent = 'Sent! Thanks.';
+      setTimeout(() => {
+        ov.style.display = 'none'; status.textContent = ''; rating = 0;
+        [...stars.children].forEach(s => s.textContent = '☆');
+      }, 1800);
+    });
+  });
+
+  cancel.addEventListener('click', () => { ov.style.display = 'none'; });
+})();
+</script>
+</body>
+</html>

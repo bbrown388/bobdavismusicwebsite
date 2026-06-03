@@ -1,0 +1,899 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Rattlesnake Round-Up  |  Bob Davis</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden}
+canvas{display:block;touch-action:none}
+#fb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);justify-content:center;align-items:center;z-index:100}
+#fb-overlay.show{display:flex}
+#fb-box{background:#001218;border:2px solid #FFE066;border-radius:12px;padding:24px;width:300px;font-family:Georgia,serif;color:#FFE066}
+#fb-box h3{margin-bottom:12px;font-size:18px}
+#fb-box select,#fb-box textarea{width:100%;margin-bottom:10px;padding:8px;border-radius:6px;background:#001c28;color:#FFE066;border:1px solid #FFE066;font-family:Georgia,serif}
+#fb-box textarea{height:80px;resize:none}
+#fb-row{display:flex;gap:10px}
+#fb-row button{flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-family:Georgia,serif;font-size:14px;font-weight:bold}
+#fb-send{background:#FFE066;color:#001218}
+#fb-cancel{background:#003040;color:#FFE066}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <div id="fb-box">
+    <h3>Leave Feedback</h3>
+    <select id="fb-target">
+      <option value="general">General / next game</option>
+      <option value="Rattlesnake Round-Up" selected>Rattlesnake Round-Up</option>
+    </select>
+    <textarea id="fb-text" placeholder="What do you think?"></textarea>
+    <div id="fb-row">
+      <button id="fb-send">Send</button>
+      <button id="fb-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+let scale = 1;
+
+function resize() {
+  scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = scale * W + 'px';
+  canvas.style.height = scale * H + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Layout constants ────────────────────────────────────────────────────────
+const PIT_X = 20, PIT_Y = 88, PIT_W = 315, PIT_H = 490;
+// Pit bounds: right = PIT_X + PIT_W = 335, bottom = PIT_Y + PIT_H = 578
+const BAG_X = 305, BAG_Y = 555, BAG_R = 28;
+
+// ── Game constants ──────────────────────────────────────────────────────────
+const ROUND_TIME   = 55;   // seconds per round
+const ROUNDS_TOTAL = 5;
+const SEG_SPACING  = 8;    // px between body segments
+const HIT_RADIUS   = 22;   // tap radius to catch a snake head
+
+const STYPE = {
+  regular:     { lockTime:    0, pinDuration: 3000, segN: 12, speedBase: 1.0, color: [255, 200, 50]  },
+  tough:       { lockTime:  800, pinDuration: 2500, segN: 15, speedBase: 1.4, color: [255, 120, 20]  },
+  diamondback: { lockTime: 1400, pinDuration: 2000, segN: 18, speedBase: 1.8, color: [255,  50, 10]  },
+};
+
+// Snakes per round: array of [type, count]
+const ROUND_DEFS = [
+  [['regular', 3]],
+  [['regular', 3], ['tough', 1]],
+  [['regular', 2], ['tough', 2]],
+  [['regular', 1], ['tough', 2], ['diamondback', 1]],
+  [['regular', 1], ['tough', 2], ['diamondback', 2]],
+];
+
+// ── Game state ──────────────────────────────────────────────────────────────
+let gameState  = 'title'; // title | playing | roundEnd | win | lose
+let round      = 0;
+let score      = 0;
+let timeLeft   = ROUND_TIME;
+let snakes     = [];
+let grab       = null;  // { snake, locked, lockStart, pinStart, px, py }
+let popups     = [];    // { text, x, y, alpha, color }
+let best       = parseInt(localStorage.getItem('rru_best') || '0');
+let lastT      = 0;
+let roundEndT  = 0;
+let totalSnakes = 0;
+let _snakeId   = 0;
+
+// ── Audio ────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playNoiseBurst(freq, bw, dur, vol) {
+  try {
+    const ac  = getAudio();
+    const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
+    const d   = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src  = ac.createBufferSource();
+    const bpf  = ac.createBiquadFilter();
+    const gain = ac.createGain();
+    bpf.type = 'bandpass'; bpf.frequency.value = freq; bpf.Q.value = bw;
+    gain.gain.setValueAtTime(vol, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    src.buffer = buf;
+    src.connect(bpf).connect(gain).connect(ac.destination);
+    src.start();
+  } catch {}
+}
+
+function playTone(freq, dur, type, vol) {
+  try {
+    const ac  = getAudio();
+    const osc = ac.createOscillator();
+    const g   = ac.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(vol || 0.2, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.connect(g).connect(ac.destination);
+    osc.start();
+    osc.stop(ac.currentTime + dur);
+  } catch {}
+}
+
+function playRattle() {
+  playNoiseBurst(4500, 4, 0.25, 0.5);
+}
+
+function playLockClick() {
+  playTone(900, 0.05, 'square', 0.12);
+  playTone(1200, 0.05, 'square', 0.08);
+}
+
+function playBag() {
+  playNoiseBurst(200, 0.8, 0.15, 0.6);
+  playTone(180, 0.12, 'sine', 0.15);
+}
+
+let ambientStarted = false;
+function startAmbient() {
+  if (ambientStarted) return;
+  ambientStarted = true;
+  try {
+    const ac = getAudio();
+    const master = ac.createGain();
+    master.gain.value = 0.04;
+    master.connect(ac.destination);
+    for (let i = 0; i < 3; i++) {
+      const buf  = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const d    = buf.getChannelData(0);
+      for (let j = 0; j < d.length; j++) d[j] = Math.random() * 2 - 1;
+      const src  = ac.createBufferSource();
+      const bpf  = ac.createBiquadFilter();
+      bpf.type = 'bandpass';
+      bpf.frequency.value = 3200 + i * 700;
+      bpf.Q.value = 25;
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(bpf).connect(master);
+      src.start();
+    }
+  } catch {}
+}
+
+// ── Noise texture ────────────────────────────────────────────────────────────
+let noiseCanvas = null;
+function buildNoise() {
+  noiseCanvas = document.createElement('canvas');
+  noiseCanvas.width = W; noiseCanvas.height = H;
+  const nc = noiseCanvas.getContext('2d');
+  nc.fillStyle = '#001218';
+  nc.fillRect(0, 0, W, H);
+  for (let i = 0; i < 350; i++) {
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    const r = Math.random() * 1.5 + 0.3;
+    const a = Math.random() * 0.12 + 0.02;
+    nc.fillStyle = `rgba(0,100,80,${a})`;
+    nc.beginPath();
+    nc.arc(x, y, r, 0, Math.PI * 2);
+    nc.fill();
+  }
+}
+
+// ── Snake factory ─────────────────────────────────────────────────────────────
+function pitRandX() { return PIT_X + 30 + Math.random() * (PIT_W - 60); }
+function pitRandY() { return PIT_Y + 30 + Math.random() * (PIT_H - 100); }
+
+function makeSnake(type, idx, total) {
+  const cfg = STYPE[type];
+  const cols = Math.min(3, total);
+  const col  = idx % cols;
+  const row  = Math.floor(idx / cols);
+  const sx   = Math.max(PIT_X + 30, Math.min(PIT_X + PIT_W - 50,
+    PIT_X + 50 + col * Math.floor((PIT_W - 100) / Math.max(1, cols - 1)) + (Math.random() - 0.5) * 30));
+  const sy   = Math.max(PIT_Y + 30, Math.min(PIT_Y + PIT_H - 120,
+    PIT_Y + 50 + row * 110 + (Math.random() - 0.5) * 25));
+  const angle = Math.random() * Math.PI * 2;
+  const segs  = [];
+  for (let i = 0; i < cfg.segN; i++) {
+    segs.push({ x: sx - Math.cos(angle) * i * SEG_SPACING,
+                y: sy - Math.sin(angle) * i * SEG_SPACING });
+  }
+  return {
+    id: _snakeId++,
+    type, cfg,
+    segs,
+    speed: cfg.speedBase + round * 0.12 + Math.random() * 0.15,
+    targetX: pitRandX(), targetY: pitRandY(),
+    state: 'slithering', // slithering | locking | captured | bagged
+    lockProgress: 0,
+    pinTimeLeft: cfg.pinDuration,
+  };
+}
+
+// ── Round / game init ─────────────────────────────────────────────────────────
+function startRound() {
+  grab    = null;
+  popups  = [];
+  timeLeft = ROUND_TIME;
+  snakes  = [];
+  _snakeId = 0;
+  const def = ROUND_DEFS[round];
+  const total = def.reduce((a, [, n]) => a + n, 0);
+  totalSnakes = total;
+  let idx = 0;
+  for (const [type, count] of def) {
+    for (let i = 0; i < count; i++) {
+      snakes.push(makeSnake(type, idx++, total));
+    }
+  }
+}
+
+function startGame() {
+  round = 0;
+  score = 0;
+  gameState = 'playing';
+  lastT = 0;
+  startRound();
+  startAmbient();
+}
+
+// ── Update ───────────────────────────────────────────────────────────────────
+function update(ts) {
+  if (!lastT) lastT = ts;
+  const dt = Math.min(ts - lastT, 50);
+  lastT = ts;
+
+  if (gameState === 'roundEnd') {
+    roundEndT -= dt;
+    if (roundEndT <= 0) {
+      round++;
+      if (round >= ROUNDS_TOTAL) {
+        if (score > best) { best = score; localStorage.setItem('rru_best', best); }
+        gameState = 'win';
+      } else {
+        gameState = 'playing';
+        startRound();
+      }
+    }
+    return;
+  }
+  if (gameState !== 'playing') return;
+
+  // Countdown
+  timeLeft -= dt / 1000;
+  if (timeLeft <= 0) {
+    timeLeft = 0;
+    if (score > best) { best = score; localStorage.setItem('rru_best', best); }
+    gameState = 'lose';
+    return;
+  }
+
+  // Locking progress (driven by timestamp)
+  if (grab && !grab.locked) {
+    const elapsed = ts - grab.lockStart;
+    const s = grab.snake;
+    s.lockProgress = Math.min(1, elapsed / s.cfg.lockTime);
+    if (s.lockProgress >= 1) {
+      grab.locked  = true;
+      grab.pinStart = ts;
+      s.state       = 'captured';
+      s.pinTimeLeft = s.cfg.pinDuration;
+      playLockClick();
+    }
+  }
+
+  // Snake movement
+  for (const s of snakes) {
+    if (s.state === 'bagged') continue;
+
+    if (s.state === 'slithering') {
+      const dx   = s.targetX - s.segs[0].x;
+      const dy   = s.targetY - s.segs[0].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 15) {
+        s.targetX = pitRandX();
+        s.targetY = pitRandY();
+      } else {
+        s.segs[0].x += (dx / dist) * s.speed;
+        s.segs[0].y += (dy / dist) * s.speed;
+      }
+      s.segs[0].x = Math.max(PIT_X + 8, Math.min(PIT_X + PIT_W - 8, s.segs[0].x));
+      s.segs[0].y = Math.max(PIT_Y + 8, Math.min(PIT_Y + PIT_H - 8, s.segs[0].y));
+    } else if (s.state === 'captured') {
+      if (grab && grab.snake === s) {
+        s.segs[0].x = grab.px;
+        s.segs[0].y = grab.py;
+        s.pinTimeLeft -= dt;
+        if (s.pinTimeLeft <= 0) {
+          s.state   = 'slithering';
+          s.targetX = pitRandX(); s.targetY = pitRandY();
+          grab = null;
+          playRattle();
+          addPopup('ESCAPED!', s.segs[0].x, s.segs[0].y - 20, '#E74C3C');
+        }
+      }
+    }
+    // locking state: head stays still, no movement update needed
+    followHead(s);
+  }
+
+  // Popups float up and fade
+  for (const p of popups) { p.y -= 0.7; p.alpha -= 0.014; }
+  popups = popups.filter(p => p.alpha > 0);
+
+  // Check round clear
+  if (snakes.every(s => s.state === 'bagged')) {
+    const bonus = Math.floor(timeLeft * 3);
+    score += bonus;
+    if (bonus > 0) addPopup(`+${bonus} BONUS`, W / 2, H / 2 + 50, '#FF9F43');
+    gameState = 'roundEnd';
+    roundEndT = 2200;
+  }
+}
+
+function followHead(s) {
+  for (let i = 1; i < s.segs.length; i++) {
+    const prev = s.segs[i - 1];
+    const seg  = s.segs[i];
+    const dx   = seg.x - prev.x;
+    const dy   = seg.y - prev.y;
+    const d    = Math.hypot(dx, dy);
+    if (d > SEG_SPACING) {
+      seg.x = prev.x + (dx / d) * SEG_SPACING;
+      seg.y = prev.y + (dy / d) * SEG_SPACING;
+    }
+  }
+}
+
+function addPopup(text, x, y, color) {
+  popups.push({ text, x, y, alpha: 1, color: color || '#FFE066' });
+}
+
+// ── Draw ─────────────────────────────────────────────────────────────────────
+function drawThermalBg() {
+  ctx.fillStyle = '#001218';
+  ctx.fillRect(0, 0, W, H);
+  if (noiseCanvas) ctx.drawImage(noiseCanvas, 0, 0);
+  // Scanlines
+  ctx.save();
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillStyle = 'rgba(0,0,0,0.07)';
+    ctx.fillRect(0, y, W, 1);
+  }
+  // Vignette
+  const vg = ctx.createRadialGradient(W/2, H/2, H * 0.2, W/2, H/2, H * 0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawPit() {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,200,150,0.22)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(PIT_X, PIT_Y, PIT_W, PIT_H, 10);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBagZone() {
+  ctx.save();
+  // Outer cool glow
+  const bg = ctx.createRadialGradient(BAG_X, BAG_Y, 0, BAG_X, BAG_Y, BAG_R + 14);
+  bg.addColorStop(0,   'rgba(100,210,255,0.28)');
+  bg.addColorStop(0.55,'rgba(50,150,220,0.12)');
+  bg.addColorStop(1,   'rgba(0,80,120,0)');
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  ctx.arc(BAG_X, BAG_Y, BAG_R + 14, 0, Math.PI * 2);
+  ctx.fill();
+  // Dashed border
+  ctx.strokeStyle = 'rgba(100,210,255,0.65)';
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([5, 3]);
+  ctx.beginPath();
+  ctx.arc(BAG_X, BAG_Y, BAG_R, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Label
+  ctx.fillStyle = 'rgba(120,220,255,0.9)';
+  ctx.font = 'bold 11px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BAG', BAG_X, BAG_Y);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawSnake(s) {
+  ctx.save();
+  const [cr, cg, cb] = s.cfg.color;
+  const n = s.segs.length;
+
+  // Draw body from tail to head
+  for (let i = n - 1; i >= 0; i--) {
+    const seg  = s.segs[i];
+    const heat = 0.5 + (1 - i / n) * 0.5;   // tail~0.5, head~1.0
+    const r    = i === 0 ? 13 : Math.max(5, 9 - (i / n) * 4);
+
+    const g = ctx.createRadialGradient(seg.x, seg.y, 0, seg.x, seg.y, r);
+    g.addColorStop(0,    `rgba(255,255,210,${(heat * 0.95).toFixed(2)})`);
+    g.addColorStop(0.28, `rgba(${cr},${cg},${cb},${(heat * 0.8).toFixed(2)})`);
+    g.addColorStop(0.65, `rgba(${Math.floor(cr * 0.55)},${Math.floor(cg * 0.2)},0,${(heat * 0.45).toFixed(2)})`);
+    g.addColorStop(1,    'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const head = s.segs[0];
+
+  // Lock ring (locking state)
+  if (s.state === 'locking') {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(60,200,255,0.22)';
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(60,200,255,0.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 18, -Math.PI / 2,
+            -Math.PI / 2 + s.lockProgress * Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Pin timer arc (captured state)
+  if (s.state === 'captured') {
+    const pct   = Math.max(0, s.pinTimeLeft / s.cfg.pinDuration);
+    const color = pct > 0.35 ? 'rgba(80,255,160,0.9)' : 'rgba(255,80,60,0.95)';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 20, -Math.PI / 2,
+            -Math.PI / 2 + pct * Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Type indicator on head (tough = diamond pattern, diamondback = double tick)
+  if (s.type === 'tough') {
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (s.type === 'diamondback') {
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // HUD panel
+  ctx.fillStyle = 'rgba(0,10,18,0.72)';
+  ctx.beginPath();
+  ctx.roundRect(10, 6, W - 20, 72, 8);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,180,130,0.2)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Round
+  ctx.fillStyle = '#6BBFA0';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('ROUND', 22, 24);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 26px Georgia, serif';
+  ctx.fillText(`${round + 1} / ${ROUNDS_TOTAL}`, 22, 56);
+
+  // Timer
+  const tc = timeLeft < 10 ? '#E74C3C' : '#FFE066';
+  ctx.fillStyle = '#6BBFA0';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('TIME', W / 2, 24);
+  ctx.fillStyle = tc;
+  ctx.font = 'bold 26px Georgia, serif';
+  ctx.fillText(Math.ceil(timeLeft), W / 2, 56);
+
+  // Score
+  ctx.fillStyle = '#6BBFA0';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('SCORE', W - 22, 24);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 26px Georgia, serif';
+  ctx.fillText(score, W - 22, 56);
+
+  // Snakes remaining
+  const rem = snakes.filter(s => s.state !== 'bagged').length;
+  ctx.fillStyle = rem === 0 ? '#80FF80' : '#C8A04A';
+  ctx.font = '11px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${rem} snake${rem !== 1 ? 's' : ''} left`, W / 2, PIT_Y + PIT_H + 18);
+
+  ctx.restore();
+}
+
+function drawGame() {
+  drawThermalBg();
+  drawPit();
+  drawBagZone();
+  for (const s of snakes) {
+    if (s.state !== 'bagged') drawSnake(s);
+  }
+  drawHUD();
+  // Popups
+  ctx.save();
+  for (const p of popups) {
+    ctx.globalAlpha = Math.max(0, p.alpha);
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 17px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.restore();
+}
+
+function drawRoundEnd() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,12,20,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 28px Georgia, serif';
+  ctx.fillText(`ROUND ${round + 1} CLEAR`, W / 2, H / 2 - 12);
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText(`Score: ${score}`, W / 2, H / 2 + 18);
+  ctx.restore();
+}
+
+function drawTitle() {
+  drawThermalBg();
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  // Title panel
+  ctx.fillStyle = 'rgba(0,12,20,0.78)';
+  ctx.beginPath();
+  ctx.roundRect(18, 145, W - 36, 230, 12);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,200,150,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Draw a decorative thermal snake silhouette in the panel
+  ctx.save();
+  const snakeG = ctx.createRadialGradient(W/2, 205, 0, W/2, 205, 50);
+  snakeG.addColorStop(0, 'rgba(255,200,50,0.12)');
+  snakeG.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = snakeG;
+  ctx.fillRect(0, 155, W, 100);
+  ctx.restore();
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 30px Georgia, serif';
+  ctx.fillText('RATTLESNAKE', W / 2, 210);
+  ctx.fillText('ROUND-UP', W / 2, 248);
+
+  ctx.fillStyle = '#6BBFA0';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('THERMAL VIEW', W / 2, 272);
+
+  ctx.fillStyle = 'rgba(200,160,74,0.85)';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('Tap a snake to pin it', W / 2, 298);
+  ctx.fillText('Drag it to the BAG', W / 2, 318);
+  ctx.fillStyle = 'rgba(255,120,20,0.9)';
+  ctx.font = '12px Georgia, serif';
+  ctx.fillText('Orange = tough  •  Red = diamondback', W / 2, 342);
+
+  if (best > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = '13px Georgia, serif';
+    ctx.fillText(`Best: ${best}`, W / 2, 365);
+  }
+
+  // Start button
+  ctx.fillStyle = 'rgba(0,12,20,0.8)';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 75, 400, 150, 48, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.fillText('TAP TO START', W / 2, 430);
+
+  ctx.restore();
+}
+
+function drawEndScreen(win) {
+  drawThermalBg();
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = 'rgba(0,12,20,0.82)';
+  ctx.beginPath();
+  ctx.roundRect(18, 130, W - 36, 300, 12);
+  ctx.fill();
+  ctx.strokeStyle = win ? 'rgba(80,255,180,0.45)' : 'rgba(220,60,60,0.45)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = win ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 28px Georgia, serif';
+  ctx.fillText(win ? "WRANGLED 'EM ALL!" : "TIME'S UP!", W / 2, 194);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 22px Georgia, serif';
+  ctx.fillText(`Score: ${score}`, W / 2, 240);
+
+  if (score > 0 && score >= best) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.fillText('NEW RECORD!', W / 2, 272);
+  } else if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = '14px Georgia, serif';
+    ctx.fillText(`Best: ${best}`, W / 2, 272);
+  }
+
+  // Play Again
+  ctx.fillStyle = 'rgba(0,12,20,0.8)';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 75, 305, 150, 46, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 17px Georgia, serif';
+  ctx.fillText('PLAY AGAIN', W / 2, 333);
+
+  // Feedback
+  ctx.fillStyle = 'rgba(0,12,20,0.7)';
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 75, 363, 150, 38, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#C8A04A';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '13px Georgia, serif';
+  ctx.fillText('Leave Feedback', W / 2, 387);
+
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (gameState === 'title') { drawTitle(); return; }
+  if (gameState === 'win')   { drawEndScreen(true);  return; }
+  if (gameState === 'lose')  { drawEndScreen(false); return; }
+  drawGame();
+  if (gameState === 'roundEnd') drawRoundEnd();
+}
+
+// ── Input ────────────────────────────────────────────────────────────────────
+function getCanvasPos(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (cx - r.left) / scale, y: (cy - r.top) / scale };
+}
+
+function handleDown(x, y) {
+  if (gameState === 'title') { startGame(); return; }
+  if (gameState === 'win' || gameState === 'lose') {
+    // Feedback button hit?
+    if (y >= 363 && y <= 401 && x >= W/2 - 75 && x <= W/2 + 75) {
+      document.getElementById('fb-overlay').classList.add('show');
+      return;
+    }
+    startGame();
+    return;
+  }
+  if (gameState !== 'playing') return;
+  if (grab) return; // already grabbing
+
+  for (const s of snakes) {
+    if (s.state !== 'slithering') continue;
+    if (Math.hypot(x - s.segs[0].x, y - s.segs[0].y) <= HIT_RADIUS) {
+      if (s.cfg.lockTime === 0) {
+        s.state       = 'captured';
+        s.pinTimeLeft = s.cfg.pinDuration;
+        grab = { snake: s, locked: true, lockStart: performance.now(),
+                 pinStart: performance.now(), px: s.segs[0].x, py: s.segs[0].y };
+      } else {
+        s.state        = 'locking';
+        s.lockProgress = 0;
+        grab = { snake: s, locked: false, lockStart: performance.now(),
+                 px: s.segs[0].x, py: s.segs[0].y };
+      }
+      return;
+    }
+  }
+}
+
+function handleMove(x, y) {
+  if (!grab) return;
+  if (grab.locked) {
+    grab.px = x;
+    grab.py = y;
+  }
+  // locking progress driven by update() timestamp loop
+}
+
+function handleUp(x, y) {
+  if (!grab) return;
+  const s = grab.snake;
+
+  if (!grab.locked) {
+    s.state        = 'slithering';
+    s.lockProgress = 0;
+    s.targetX = pitRandX(); s.targetY = pitRandY();
+    playRattle();
+    addPopup('SLIPPED!', s.segs[0].x, s.segs[0].y - 20, '#E74C3C');
+    grab = null;
+    return;
+  }
+
+  if (Math.hypot(x - BAG_X, y - BAG_Y) <= BAG_R) {
+    s.state = 'bagged';
+    score += 100;
+    playBag();
+    addPopup('+100', x, y - 24, '#FFE066');
+  } else {
+    s.state   = 'slithering';
+    s.targetX = pitRandX(); s.targetY = pitRandY();
+    playRattle();
+    addPopup('DROPPED!', s.segs[0].x, s.segs[0].y - 20, '#E74C3C');
+  }
+  grab = null;
+}
+
+canvas.addEventListener('pointerdown', e => {
+  const p = getCanvasPos(e.clientX, e.clientY);
+  handleDown(p.x, p.y);
+});
+canvas.addEventListener('pointermove', e => {
+  const p = getCanvasPos(e.clientX, e.clientY);
+  handleMove(p.x, p.y);
+});
+canvas.addEventListener('pointerup', e => {
+  const p = getCanvasPos(e.clientX, e.clientY);
+  handleUp(p.x, p.y);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const p = getCanvasPos(t.clientX, t.clientY);
+  handleDown(p.x, p.y);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const p = getCanvasPos(t.clientX, t.clientY);
+  handleMove(p.x, p.y);
+}, { passive: false });
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const p = getCanvasPos(t.clientX, t.clientY);
+  handleUp(p.x, p.y);
+}, { passive: false });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') handleDown(W / 2, H / 2);
+});
+
+// ── Feedback overlay ─────────────────────────────────────────────────────────
+document.getElementById('fb-send').addEventListener('click', async () => {
+  const target = document.getElementById('fb-target').value;
+  const text   = document.getElementById('fb-text').value.trim();
+  if (!text) return;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: target, message: text, score }),
+    });
+  } catch {}
+  document.getElementById('fb-overlay').classList.remove('show');
+  document.getElementById('fb-text').value = '';
+});
+document.getElementById('fb-cancel').addEventListener('click', () => {
+  document.getElementById('fb-overlay').classList.remove('show');
+});
+
+// ── Music slot ───────────────────────────────────────────────────────────────
+if (MUSIC_SRC) {
+  const music = new Audio(MUSIC_SRC);
+  music.loop = true;
+  music.volume = 0.4;
+  canvas.addEventListener('pointerdown', () => {
+    if (music.paused) music.play().catch(() => {});
+  }, { once: true });
+}
+
+// ── Game loop ─────────────────────────────────────────────────────────────────
+function loop(ts) {
+  try {
+    update(ts);
+    draw();
+  } catch (e) {
+    console.error('loop error:', e);
+  }
+  requestAnimationFrame(loop);
+}
+
+buildNoise();
+requestAnimationFrame(loop);
+
+// ── Test helpers ──────────────────────────────────────────────────────────────
+window._rru = {
+  getState:     () => gameState,
+  getRound:     () => round,
+  getScore:     () => score,
+  getTimeLeft:  () => timeLeft,
+  getSnakes:    () => snakes,
+  getGrab:      () => grab,
+  getBest:      () => best,
+  startGame,
+  startRound,
+  handleDown,
+  handleMove,
+  handleUp,
+  addPopup,
+  BAG_X, BAG_Y, BAG_R,
+  PIT_X, PIT_Y, PIT_W, PIT_H,
+  STYPE, ROUND_DEFS, ROUNDS_TOTAL,
+  HIT_RADIUS, ROUND_TIME,
+  FEEDBACK_ENDPOINT,
+  W, H,
+};
+</script>
+</body>
+</html>

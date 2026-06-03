@@ -1,0 +1,2066 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Iron Horse  |  Bob Davis Games</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #050208; display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; font-family: Georgia, serif; }
+  canvas { display: block; touch-action: none; background: #000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Audio Synthesis Engine ---
+let audioCtx = null;
+let chugTimer = 0;
+let lastChugTime = 0;
+let ventNode = null;
+let ventGain = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    startContinuousVenting();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+// Low-level white noise node helper
+function createNoiseNode() {
+  if (!audioCtx) return null;
+  const bufferSize = audioCtx.sampleRate * 1.5;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  return source;
+}
+
+function startContinuousVenting() {
+  try {
+    const noise = createNoiseNode();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1600;
+    filter.Q.value = 1.0;
+
+    ventGain = audioCtx.createGain();
+    ventGain.gain.value = 0;
+
+    noise.connect(filter);
+    filter.connect(ventGain);
+    ventGain.connect(audioCtx.destination);
+    noise.start(0);
+    ventNode = noise;
+  } catch(e) {}
+}
+
+function setVentingVolume(vol) {
+  if (ventGain) {
+    ventGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+  }
+}
+
+function playTone(freq, dur, type = 'sine', vol = 0.18) {
+  try {
+    ensureAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch(e) {}
+}
+
+// Procedural high-pressure steam whistle
+function playWhistle(dur = 0.4, vol = 0.25) {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    
+    // Whistle is a harmonically rich chord: F5 (698Hz) + A5 (880Hz) + C6 (1046Hz)
+    const freqs = [698, 880, 1046];
+    const oscillators = [];
+    const masterGain = audioCtx.createGain();
+    masterGain.gain.setValueAtTime(0, now);
+    masterGain.gain.linearRampToValueAtTime(vol, now + 0.05);
+    masterGain.gain.setValueAtTime(vol, now + dur - 0.08);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+    // Bandpass filtered noise for breathy texture
+    const noise = createNoiseNode();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 2200;
+    filter.Q.value = 3.0;
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.value = 0.15;
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(masterGain);
+    noise.start(0);
+
+    freqs.forEach((f, idx) => {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = f;
+      // Small vibrato
+      const lfo = audioCtx.createOscillator();
+      const lfoGain = audioCtx.createGain();
+      lfo.frequency.value = 8;
+      lfoGain.gain.value = 5;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+      
+      osc.connect(masterGain);
+      lfo.start(now);
+      osc.start(now);
+      oscillators.push(osc, lfo);
+    });
+
+    masterGain.connect(audioCtx.destination);
+    
+    setTimeout(() => {
+      try {
+        oscillators.forEach(o => o.stop());
+        noise.stop();
+      } catch(e) {}
+    }, dur * 1000 + 100);
+  } catch(e) {}
+}
+
+// Metallic shovel scrape & clank sound
+function playShovelSound() {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    // Clank (sine ring)
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'triangle';
+    o.frequency.value = 980;
+    o.frequency.exponentialRampToValueAtTime(1500, now + 0.08);
+    g.gain.setValueAtTime(0.18, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(now + 0.1);
+
+    // Scrape (noise burst)
+    const noise = createNoiseNode();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1800;
+    filter.Q.value = 2.0;
+    const ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(0.14, now);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    noise.connect(filter);
+    filter.connect(ng);
+    ng.connect(audioCtx.destination);
+    noise.start(now);
+    
+    setTimeout(() => {
+      try { noise.stop(); } catch(e) {}
+    }, 200);
+  } catch(e) {}
+}
+
+// Procedural train chug noise trigger
+function playChug(strength) {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    const noise = createNoiseNode();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(140 + strength * 160, now);
+    filter.frequency.exponentialRampToValueAtTime(80, now + 0.12);
+    filter.Q.value = 1.5;
+
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.15 + strength * 0.2, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+    noise.connect(filter);
+    filter.connect(g);
+    g.connect(audioCtx.destination);
+    noise.start(now);
+    
+    setTimeout(() => {
+      try { noise.stop(); } catch(e) {}
+    }, 200);
+  } catch(e) {}
+}
+
+// Braking steam hiss sound
+function playBrakeHiss() {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    const noise = createNoiseNode();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 3200;
+    filter.Q.value = 1.0;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.08, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    noise.connect(filter);
+    filter.connect(g);
+    g.connect(audioCtx.destination);
+    noise.start(now);
+    
+    setTimeout(() => {
+      try { noise.stop(); } catch(e) {}
+    }, 200);
+  } catch(e) {}
+}
+
+// Deep low explosion
+function playExplosionSound() {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    
+    // Rumble (oscillator sweep)
+    const o = audioCtx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(160, now);
+    o.frequency.exponentialRampToValueAtTime(20, now + 1.2);
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 250;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.6, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+    o.connect(filter); filter.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(now + 1.2);
+
+    // Crack (noise burst)
+    const noise = createNoiseNode();
+    const nf = audioCtx.createBiquadFilter();
+    nf.type = 'lowpass';
+    nf.frequency.value = 600;
+    const ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(0.5, now);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    noise.connect(nf); nf.connect(ng); ng.connect(audioCtx.destination);
+    noise.start(now);
+    
+    setTimeout(() => {
+      try { noise.stop(); } catch(e) {}
+    }, 1500);
+  } catch(e) {}
+}
+
+// High crash sound
+function playCrashSound() {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    o.type = 'square';
+    o.frequency.setValueAtTime(300, now);
+    o.frequency.linearRampToValueAtTime(60, now + 0.5);
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 400;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.4, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    o.connect(filter); filter.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(now + 0.5);
+
+    const noise = createNoiseNode();
+    const ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(0.3, now);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    noise.connect(ng); ng.connect(audioCtx.destination);
+    noise.start(now);
+    
+    setTimeout(() => { try { noise.stop(); } catch(e) {} }, 600);
+  } catch(e) {}
+}
+
+function playWin() {
+  const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99]; // C major arpeggio
+  notes.forEach((f, i) => {
+    setTimeout(() => playTone(f, 0.4, 'triangle', 0.16), i * 110);
+  });
+}
+
+function playLose() {
+  const notes = [220.00, 207.65, 196.00, 174.61]; // A minor descending
+  notes.forEach((f, i) => {
+    setTimeout(() => playTone(f, 0.4, 'sawtooth', 0.15), i * 150);
+  });
+}
+
+function playPassengerMutter() {
+  // play a funny disappointed sound
+  [140, 110, 130, 95].forEach((f, i) => {
+    setTimeout(() => playTone(f, 0.25, 'sawtooth', 0.12), i * 100);
+  });
+}
+
+function playStationBoarding() {
+  // upward arpeggio
+  [349.23, 440.00, 523.25].forEach((f, i) => {
+    setTimeout(() => playTone(f, 0.2, 'triangle', 0.14), i * 80);
+  });
+}
+
+// --- Game Logic Constants ---
+const TARGET_X = 70; // x-position of beat grid target hit line
+const BEAT_TOLERANCE_PERFECT = 0.075; // seconds
+const BEAT_TOLERANCE_GOOD = 0.150; // seconds
+
+const STATION_COUNT = 5;
+const TRACK_Y = 420;
+
+// Parallax scrolling speed ratios
+const BG_MOUNTAIN_RATIO = 0.08;
+const BG_CACTUS_RATIO = 0.35;
+const TRACK_SPEED_RATIO = 1.6;
+
+// Locomotive layout config
+const TRAIN_X = 100;
+const WHEEL_Y = 405;
+const LARGE_WHEEL_R = 15;
+const SMALL_WHEEL_R = 9;
+
+// --- State Variables ---
+let state = 'title';
+let score = 0, roundIdx = 0, timeLeft = 0;
+let lives = 3, boilerPressure = 50, speed = 0;
+let distanceToStation = 800; // meters to next station
+let currentStationIdx = 1;
+
+let best = parseInt(localStorage.getItem('iron_horse_best') || '0');
+let feedbackOpen = false, fbRating = 0, fbText = '';
+let touchActive = false;
+
+// Parallax scroll accumulators
+let mountainScrollX = 0;
+let cactusScrollX = 0;
+let trackScrollX = 0;
+
+// Animation helpers
+let wheelAngle = 0;
+let pistonPhase = 0;
+let whistleSteamT = 0;
+let shovelDoorOpenT = 0;
+let screenShakeUntil = 0;
+let screenShakeIntensity = 0;
+
+// Collections
+let particles = [];
+let feedbacks = [];
+let beatMarkers = [];
+
+// Beat Grid Engine states
+let gameTime = 0;
+let nextMarkerId = 0;
+let nextMarkerTime = 1.0; // spawn first marker at 1.0 seconds
+let currentBPM = 100;
+let markerSpawnInterval = 60 / 100; // quarter note interval
+
+// Station approach state
+let stationApproachMode = false;
+let stationProgress = 0; // 0..1 representing distance 200..0
+let stoppedAtStation = false;
+let stationDelayTimer = 0;
+let stationResultFeedback = '';
+
+// Hazard State
+let activeHazard = null; // null | { type: 'cattle'|'broken_rail', dist: 350, cleared: boolean, hit: boolean, alertShown: boolean }
+let hazardCooldown = 400; // meters between hazards
+
+// Stars definition list
+const STARS = [];
+for (let i = 0; i < 45; i++) {
+  STARS.push({
+    x: Math.random() * W,
+    y: Math.random() * 260,
+    r: 0.6 + Math.random() * 0.9,
+    alpha: 0.2 + Math.random() * 0.8,
+    twinkle: Math.random() * Math.PI * 2
+  });
+}
+
+function spawnParticle(x, y, vx, vy, color, r, lifeMax = 1.0, isFire = false) {
+  particles.push({ x, y, vx, vy, color, r, life: lifeMax, maxL: lifeMax, isFire });
+}
+
+function addFeedback(text, x, y, color) {
+  feedbacks.push({ text, x, y, color, born: performance.now(), duration: 800 });
+}
+
+function triggerScreenShake(intensity, durationMs) {
+  screenShakeUntil = performance.now() + durationMs;
+  screenShakeIntensity = intensity;
+}
+
+function startRound() {
+  currentStationIdx = 1;
+  distanceToStation = 800;
+  currentBPM = 100 + roundIdx * 8;
+  markerSpawnInterval = 60 / currentBPM;
+  
+  lives = 3;
+  boilerPressure = 55;
+  speed = 0;
+  wheelAngle = 0;
+  pistonPhase = 0;
+  whistleSteamT = 0;
+  shovelDoorOpenT = 0;
+  
+  particles = [];
+  feedbacks = [];
+  beatMarkers = [];
+  
+  gameTime = 0;
+  nextMarkerTime = 0.5;
+  
+  stationApproachMode = false;
+  stoppedAtStation = false;
+  stationDelayTimer = 0;
+  
+  activeHazard = null;
+  hazardCooldown = 300;
+}
+
+function startGame() {
+  score = 0;
+  roundIdx = 0;
+  state = 'playing';
+  startRound();
+  ensureAudio();
+}
+
+function triggerBoilerExplosion() {
+  playExplosionSound();
+  triggerScreenShake(24, 1500);
+  
+  // Spawn massive fire/ash burst
+  for (let i = 0; i < 60; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const vel = 60 + Math.random() * 220;
+    const c = i % 3 === 0 ? '#ff3a00' : (i % 3 === 1 ? '#ffa000' : '#4a403a');
+    spawnParticle(
+      TRAIN_X + 20 + (Math.random() - 0.5) * 40,
+      WHEEL_Y - 20 + (Math.random() - 0.5) * 20,
+      Math.cos(angle) * vel,
+      Math.sin(angle) * vel - 50,
+      c,
+      6 + Math.random() * 10,
+      1.5 + Math.random() * 1.5,
+      true
+    );
+  }
+  
+  speed = 0;
+  state = 'gameover';
+  setVentingVolume(0);
+  playLose();
+}
+
+function handleShovelTap() {
+  ensureAudio();
+  shovelDoorOpenT = 0.25; // open door briefly
+  playShovelSound();
+  
+  // Spawn coal glowing spark particles
+  for (let i = 0; i < 6; i++) {
+    spawnParticle(
+      50 + Math.random() * 20,
+      560 + Math.random() * 20,
+      (Math.random() - 0.5) * 40,
+      -80 - Math.random() * 60,
+      '#ffa000',
+      2.5 + Math.random() * 2,
+      0.6,
+      true
+    );
+  }
+  
+  // Find closest untapped beat marker
+  let closest = null;
+  let minDiff = 9999;
+  
+  for (const m of beatMarkers) {
+    if (m.hit || m.missed) continue;
+    const diff = Math.abs(m.time - gameTime);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = m;
+    }
+  }
+  
+  if (closest && minDiff <= BEAT_TOLERANCE_GOOD) {
+    closest.hit = true;
+    if (minDiff <= BEAT_TOLERANCE_PERFECT) {
+      boilerPressure = Math.min(100, boilerPressure + 14);
+      score += 60;
+      addFeedback('PERFECT!', TARGET_X, 455, '#FFE066');
+      triggerScreenShake(2, 100);
+      playTone(523.25, 0.08, 'triangle', 0.15); // high ping
+      // Gold sparks
+      for (let i = 0; i < 10; i++) {
+        spawnParticle(TARGET_X, 480, (Math.random() - 0.5) * 80, -30 - Math.random() * 60, '#FFE066', 3, 0.8);
+      }
+    } else {
+      boilerPressure = Math.min(100, boilerPressure + 8);
+      score += 25;
+      addFeedback('GOOD!', TARGET_X, 455, '#4CAF50');
+      playTone(392.00, 0.08, 'triangle', 0.12);
+      // Green sparks
+      for (let i = 0; i < 6; i++) {
+        spawnParticle(TARGET_X, 480, (Math.random() - 0.5) * 60, -20 - Math.random() * 50, '#4CAF50', 2.5, 0.6);
+      }
+    }
+  } else {
+    // Shoveled off-beat! Wastes coal, pressure penalty
+    boilerPressure = Math.max(0, boilerPressure - 6);
+    addFeedback('POOR!', TARGET_X, 455, '#C8A04A');
+    playTone(180, 0.15, 'sawtooth', 0.1);
+    // Dark gray smoke sparks
+    for (let i = 0; i < 5; i++) {
+      spawnParticle(TARGET_X, 480, (Math.random() - 0.5) * 30, -10 - Math.random() * 30, '#4a3f3a', 4, 0.5);
+    }
+  }
+}
+
+function handleWhistleTap() {
+  ensureAudio();
+  whistleSteamT = 0.5;
+  playWhistle(0.4, 0.25);
+  
+  if (activeHazard && activeHazard.type === 'cattle' && !activeHazard.cleared) {
+    activeHazard.cleared = true;
+    addFeedback('SCARRED!', TRAIN_X + 110, TRACK_Y - 45, '#4CAF50');
+  }
+}
+
+// Unified input trigger
+function handleTapDown(x, y) {
+  if (state === 'title') {
+    startGame();
+    return;
+  }
+  
+  if (state === 'gameover' || state === 'victory') {
+    // Click play again
+    if (y > 440 && y < 490 && x > 100 && x < 260) {
+      if (state === 'victory' && roundIdx < 2) {
+        roundIdx++;
+      }
+      startGame();
+    }
+    // Feedback button
+    if (y > 510 && y < 550 && x > 110 && x < 250) {
+      openFeedback();
+    }
+    return;
+  }
+  
+  // Dashboard zones
+  if (y > 510) {
+    if (x < 130) {
+      handleShovelTap();
+    } else if (x > 130 && x < 230) {
+      handleWhistleTap();
+    }
+  }
+}
+
+function handleTapUp(x, y) {
+  // Any action on tap release if needed
+}
+
+function getCanvasCoords(e) {
+  const r = canvas.getBoundingClientRect();
+  const touch = e.touches ? e.touches[0] : e;
+  return {
+    x: (touch.clientX - r.left) * (W / r.width),
+    y: (touch.clientY - r.top) * (H / r.height)
+  };
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  touchActive = true;
+  const p = getCanvasCoords(e);
+  handleTapDown(p.x, p.y);
+}, { passive: false });
+
+canvas.addEventListener('click', (e) => {
+  if (touchActive) return; // avoid duplicate click handler on mobile
+  const p = getCanvasCoords(e);
+  handleTapDown(p.x, p.y);
+});
+
+// Capture keyboard Space bar or B/W keys for desktop support
+window.addEventListener('keydown', (e) => {
+  if (state === 'playing') {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      handleShovelTap();
+    } else if (e.code === 'KeyW') {
+      handleWhistleTap();
+    }
+  } else if (state === 'title' && e.code === 'Space') {
+    startGame();
+  }
+});
+
+// Check if braking button is held down
+let isBrakingPressed = false;
+canvas.addEventListener('mousedown', (e) => {
+  const p = getCanvasCoords(e);
+  if (state === 'playing' && p.y > 510 && p.x > 230) {
+    isBrakingPressed = true;
+  }
+});
+window.addEventListener('mouseup', () => {
+  isBrakingPressed = false;
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  const p = getCanvasCoords(e);
+  if (state === 'playing') {
+    // If touch moves into brake zone
+    isBrakingPressed = (p.y > 510 && p.x > 230);
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchend', () => {
+  isBrakingPressed = false;
+});
+
+// For testing/mocking injection
+window.__run = {
+  update: (dt) => {
+    update(dt);
+  },
+  startGame: () => {
+    startGame();
+  },
+  getActiveHazard: () => activeHazard,
+  setActiveHazard: (h) => { activeHazard = h; },
+  forceShovel: (timingOffset = 0) => {
+    // Helper to simulate shoveling on key frame times
+    ensureAudio();
+    if (beatMarkers.length > 0) {
+      let closest = beatMarkers[0];
+      let minD = Math.abs(closest.time - gameTime);
+      for (const m of beatMarkers) {
+        let d = Math.abs(m.time - gameTime);
+        if (d < minD) { minD = d; closest = m; }
+      }
+      // manually shift gameTime to align with closest marker +/- offset
+      gameTime = closest.time + timingOffset;
+    }
+    handleShovelTap();
+  },
+  forceBrake: (hold) => {
+    isBrakingPressed = hold;
+  },
+  forceWhistle: () => {
+    handleWhistleTap();
+  },
+  forcePressure: (p) => {
+    boilerPressure = p;
+  },
+  forceStationDistance: (d) => {
+    distanceToStation = d;
+  },
+  forceSpeed: (s) => {
+    speed = s;
+  },
+  getState: () => ({
+    state, score, lives, boilerPressure, speed, distanceToStation, currentStationIdx, roundIdx
+  })
+};
+
+
+// --- Continuous update loop ---
+function update(dt) {
+  // Handle game timers and states
+  if (state === 'playing') {
+    gameTime += dt;
+    
+    // 1. Spawning Rhythm Beat Markers
+    if (gameTime >= nextMarkerTime) {
+      beatMarkers.push({
+        id: nextMarkerId++,
+        time: nextMarkerTime,
+        hit: false,
+        missed: false
+      });
+      nextMarkerTime += markerSpawnInterval;
+    }
+    
+    // Clean up old scrolled past markers
+    for (const m of beatMarkers) {
+      if (!m.hit && !m.missed && gameTime - m.time > BEAT_TOLERANCE_GOOD) {
+        m.missed = true;
+        boilerPressure = Math.max(0, boilerPressure - 5); // decay penalty
+        addFeedback('MISS!', TARGET_X, 455, '#E74C3C');
+        playTone(110, 0.2, 'sawtooth', 0.1);
+      }
+    }
+    beatMarkers = beatMarkers.filter(m => gameTime - m.time < 0.6);
+    
+    // 2. Continuous Steam Vent sound scaling
+    if (boilerPressure > 85) {
+      const excess = (boilerPressure - 85) / 15; // 0..1
+      setVentingVolume(0.04 + excess * 0.12);
+      if (Math.random() < 0.35) {
+        // Red steam release sparks
+        spawnParticle(TRAIN_X + 38, WHEEL_Y - 34, -20 - Math.random() * 40, -100 - Math.random() * 50, '#ff4b00', 3, 0.5);
+      }
+    } else {
+      setVentingVolume(0);
+    }
+    
+    // Explosion check
+    if (boilerPressure >= 100) {
+      triggerBoilerExplosion();
+      return;
+    }
+    
+    // 3. Train Physics & Braking
+    const isBraking = isBrakingPressed;
+    if (isBraking) {
+      playBrakeHiss();
+      speed = Math.max(0, speed - 35 * dt);
+      if (Math.random() < 0.25) {
+        // Brake sparks
+        spawnParticle(TRAIN_X + 10, WHEEL_Y + LARGE_WHEEL_R, -80 - Math.random() * 40, (Math.random() - 0.5) * 20, '#ffaa00', 1.8, 0.3);
+        spawnParticle(TRAIN_X + 45, WHEEL_Y + LARGE_WHEEL_R, -80 - Math.random() * 40, (Math.random() - 0.5) * 20, '#ffaa00', 1.8, 0.3);
+      }
+    } else {
+      // Accelerate or coast based on pressure
+      let targetSpeed = 0;
+      if (boilerPressure >= 20) {
+        // Pressure 20..100 maps to speed target 0..120 MPH
+        targetSpeed = (boilerPressure - 20) * 1.5;
+      } else {
+        // Stalled state (Low steam)
+        targetSpeed = 4;
+      }
+      
+      if (speed < targetSpeed) {
+        speed = Math.min(targetSpeed, speed + 18 * dt);
+      } else {
+        speed = Math.max(targetSpeed, speed - 8 * dt);
+      }
+    }
+    
+    // Natural pressure decay, consumed faster at speed
+    const consumption = (4.5 + speed * 0.05) * dt;
+    boilerPressure = Math.max(0, boilerPressure - consumption);
+    
+    // Update scrolling positions
+    trackScrollX = (trackScrollX - speed * TRACK_SPEED_RATIO * dt) % 40;
+    cactusScrollX = (cactusScrollX - speed * BG_CACTUS_RATIO * dt) % 360;
+    mountainScrollX = (mountainScrollX - speed * BG_MOUNTAIN_RATIO * dt) % 360;
+    
+    // Wheel and piston movement
+    wheelAngle += (speed * 0.08) * dt;
+    pistonPhase = wheelAngle;
+    
+    // Smokestack steam release
+    if (speed > 0.5) {
+      chugTimer += speed * 0.15 * dt;
+      if (chugTimer >= 1.0) {
+        chugTimer -= 1.0;
+        playChug(Math.min(1.0, speed / 80));
+        // Spawn puff
+        const puffColor = boilerPressure > 80 ? 'rgba(231,76,60,0.45)' : 'rgba(255,255,255,0.45)';
+        spawnParticle(
+          TRAIN_X + 54,
+          WHEEL_Y - 36,
+          -speed * 0.4 - 20,
+          -50 - Math.random() * 40,
+          puffColor,
+          6 + Math.random() * 8,
+          0.8 + Math.random() * 0.4
+        );
+      }
+    }
+    
+    // 4. Station Stop Calculations
+    if (!stoppedAtStation) {
+      distanceToStation -= speed * 0.045 * dt;
+      
+      // Enter approach mode
+      if (distanceToStation < 200) {
+        stationApproachMode = true;
+        stationProgress = Math.max(0, Math.min(1.0, 1.0 - distanceToStation / 200));
+        
+        // If the train has stopped completely inside the approach zone
+        if (speed === 0) {
+          const scoreOffset = Math.abs(stationProgress - 0.5); // centered at 0.5
+          if (scoreOffset <= 0.15) {
+            stoppedAtStation = true;
+            stationDelayTimer = 2.5;
+            distanceToStation = 0; // Snap to station
+            if (scoreOffset <= 0.04) {
+              score += 500;
+              stationResultFeedback = 'PERFECT STOP! +500';
+              playStationBoarding();
+              triggerScreenShake(5, 200);
+              for (let i = 0; i < 15; i++) {
+                spawnParticle(W/2, H*0.4, (Math.random()-0.5)*90, -40-Math.random()*60, '#FFE066', 3.5, 0.8);
+              }
+            } else {
+              score += 200;
+              stationResultFeedback = 'GOOD STOP! +200';
+              playStationBoarding();
+              for (let i = 0; i < 8; i++) {
+                spawnParticle(W/2, H*0.4, (Math.random()-0.5)*60, -30-Math.random()*50, '#4CAF50', 2.8, 0.6);
+              }
+            }
+          }
+        }
+      }
+      
+      // Reach station marker
+      if (distanceToStation <= 0) {
+        distanceToStation = 0;
+        if (!stoppedAtStation) {
+          stoppedAtStation = true;
+          stationDelayTimer = 2.5; // wait at station
+          // Since we reached <= 0 without successfully stopping in the target zone, it's an overshoot
+          score = Math.max(0, score - 100);
+          stationResultFeedback = 'OVERSHOT STATION! -100';
+          playPassengerMutter();
+          triggerScreenShake(6, 400);
+          for (let i = 0; i < 10; i++) {
+            spawnParticle(TRAIN_X + 30, WHEEL_Y, -50-Math.random()*40, -20-Math.random()*30, '#E74C3C', 3, 0.5);
+          }
+        }
+      }
+    } else {
+      // Stopped at station, waiting to depart
+      speed = 0;
+      stationDelayTimer -= dt;
+      if (stationDelayTimer <= 0) {
+        // Depart and advance to next station
+        stoppedAtStation = false;
+        stationApproachMode = false;
+        currentStationIdx++;
+        playWhistle(0.3, 0.2);
+        
+        if (currentStationIdx > STATION_COUNT) {
+          // Victory!
+          state = 'victory';
+          playWin();
+          if (score > best) {
+            best = score;
+            localStorage.setItem('iron_horse_best', best);
+          }
+        } else {
+          // Reset distance for next station
+          distanceToStation = 800 + currentStationIdx * 100;
+          currentBPM = 100 + roundIdx * 8 + currentStationIdx * 4;
+          markerSpawnInterval = 60 / currentBPM;
+          activeHazard = null; // reset hazard queue for next segment
+          hazardCooldown = 320;
+        }
+      }
+    }
+    
+    // 5. Hazard Mechanics
+    if (!stationApproachMode && !stoppedAtStation && !activeHazard) {
+      hazardCooldown -= speed * 0.045 * dt;
+      if (hazardCooldown <= 0) {
+        // Spawn a hazard
+        const type = Math.random() < 0.5 ? 'cattle' : 'broken_rail';
+        activeHazard = {
+          type,
+          x: 360,
+          cleared: false,
+          hit: false,
+          alertShown: false
+        };
+        hazardCooldown = 350 + Math.random() * 200; // prep next
+      }
+    }
+    
+    if (activeHazard) {
+      // Move hazard towards train based on speed
+      activeHazard.x -= speed * TRACK_SPEED_RATIO * dt;
+      
+      if (!activeHazard.alertShown) {
+        activeHazard.alertShown = true;
+        if (activeHazard.type === 'cattle') {
+          addFeedback('CATTLE ON TRACKS!', W/2, 180, '#FF9F43');
+          playTone(400, 0.1, 'sawtooth', 0.18);
+        } else {
+          addFeedback('SLOW DOWN! BROKEN RAIL!', W/2, 180, '#E74C3C');
+          playTone(300, 0.1, 'sawtooth', 0.18);
+        }
+      }
+      
+      // Resolve Cattle Whistling Jump
+      if (activeHazard.type === 'cattle' && activeHazard.cleared) {
+        activeHazard.x += speed * 0.5 * dt; // cow runs right
+        // cow flies off screen vertically
+      }
+      
+      // Collision detection (Train center at X=130)
+      if (activeHazard.x <= 130 && !activeHazard.hit) {
+        activeHazard.hit = true;
+        if (activeHazard.type === 'cattle') {
+          if (activeHazard.cleared) {
+            // Cow safely jumped/ran away
+            score += 150;
+            addFeedback('CLEAR PASS!', 150, TRACK_Y - 40, '#4CAF50');
+          } else {
+            // Crash!
+            lives--;
+            speed = 0;
+            playCrashSound();
+            triggerScreenShake(15, 500);
+            addFeedback('CATTLE COLLISION! -1 LIFE', W/2, 220, '#E74C3C');
+            if (lives <= 0) {
+              state = 'gameover';
+              playLose();
+            }
+          }
+        } else {
+          // Broken Rail speed check
+          if (speed < 15) {
+            score += 200;
+            addFeedback('SAFE SPEED OVER RAIL!', 150, TRACK_Y - 40, '#4CAF50');
+          } else {
+            lives--;
+            speed = 0;
+            playCrashSound();
+            triggerScreenShake(18, 600);
+            addFeedback('RAIL DERAILED! -1 LIFE', W/2, 220, '#E74C3C');
+            if (lives <= 0) {
+              state = 'gameover';
+              playLose();
+            }
+          }
+        }
+      }
+      
+      // Despawn when far behind
+      if (activeHazard.x < -60) {
+        activeHazard = null;
+      }
+    }
+  }
+  
+  // Update particles
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    if (p.isFire) {
+      p.vy += 8 * dt; // small gravity for explosions
+    }
+  }
+  particles = particles.filter(p => p.life > 0);
+  
+  // Animation timers
+  if (whistleSteamT > 0) whistleSteamT -= dt;
+  if (shovelDoorOpenT > 0) shovelDoorOpenT -= dt;
+}
+
+// --- Drawing Functions ---
+function hpill(cx, cy, text, color, w, alpha = 0.65) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(10,5,0,0.8)';
+  ctx.beginPath();
+  ctx.roundRect(cx - w/2, cy - 14, w, 28, 14);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = color;
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, cy);
+  ctx.restore();
+}
+
+function drawTitle() {
+  // Deep Radial Sky
+  const sky = ctx.createRadialGradient(W/2, H*0.38, 0, W/2, H*0.38, H*0.75);
+  sky.addColorStop(0, '#1c0f3a');
+  sky.addColorStop(1, '#050208');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Twinkling Stars
+  ctx.fillStyle = '#FFE066';
+  for (const s of STARS) {
+    s.twinkle += 0.05;
+    const a = s.alpha * (0.6 + 0.4 * Math.sin(s.twinkle));
+    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1.0;
+  
+  // Big glowing moon
+  const mx = 280, my = 65, mr = 35;
+  const glow = ctx.createRadialGradient(mx, my, mr*0.6, mx, my, mr*2.2);
+  glow.addColorStop(0, 'rgba(255,224,102,0.12)');
+  glow.addColorStop(1, 'rgba(255,224,102,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  
+  const moonG = ctx.createRadialGradient(mx-3, my-3, 0, mx, my, mr);
+  moonG.addColorStop(0, '#FFFDF0'); moonG.addColorStop(0.6, '#FFE066'); moonG.addColorStop(1, '#F4C842');
+  ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI*2);
+  ctx.fillStyle = moonG; ctx.fill();
+  
+  // Silhouette mountain profile at the bottom
+  ctx.fillStyle = '#0d0520';
+  ctx.beginPath();
+  ctx.moveTo(0, TRACK_Y);
+  ctx.lineTo(40, 340);
+  ctx.lineTo(90, 370);
+  ctx.lineTo(160, 310);
+  ctx.lineTo(210, 360);
+  ctx.lineTo(280, 290);
+  ctx.lineTo(360, 380);
+  ctx.lineTo(360, TRACK_Y);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Ground
+  ctx.fillStyle = '#0a0318';
+  ctx.fillRect(0, TRACK_Y, W, H - TRACK_Y);
+  
+  // Drawing logo text
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 44px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('IRON HORSE', W/2, 170);
+  
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 16px Georgia, serif';
+  ctx.fillText('Steam Locomotive Driving Sim', W/2, 210);
+  
+  // Instructions
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('TAP TO START THE ENGINE', W/2, 300);
+  
+  ctx.fillStyle = '#907860';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('Shovel Coal on Beat for Steam Pressure', W/2, 335);
+  ctx.fillText('Brake precisely inside Station Platforms', W/2, 355);
+  ctx.fillText('Scare Cattle & slow down for Broken Rails', W/2, 375);
+  
+  if (best > 0) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(`PERSONAL BEST: ${best} PTS`, W/2, 260);
+  }
+}
+
+function drawHUD() {
+  // Score top center
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W/2, 30);
+  
+  // Station index top right
+  ctx.fillStyle = '#A09070';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(`STATION ${currentStationIdx}/${STATION_COUNT}`, W - 15, 30);
+  
+  // Distance to station next line
+  if (!stoppedAtStation) {
+    ctx.fillStyle = '#E8DCC8';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(`${Math.round(distanceToStation)}m`, W - 15, 48);
+  } else {
+    ctx.fillStyle = '#4CAF50';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`BOARDING...`, W - 15, 48);
+  }
+  
+  // Lives top left (Hearts)
+  ctx.textAlign = 'left';
+  let heartsStr = '';
+  for (let i = 0; i < 3; i++) {
+    heartsStr += i < lives ? '♥' : '♡';
+  }
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillText(heartsStr, 15, 30);
+  
+  // Speedometer below lives
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`SPEED: ${Math.round(speed)} MPH`, 15, 48);
+  
+  // ── Boiler Pressure Gauge ──
+  const gx = 180, gy = 56, gw = 120, gh = 8;
+  ctx.fillStyle = 'rgba(10,5,0,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(gx - gw/2, gy, gw, gh, 4);
+  ctx.fill();
+  
+  // Color zone mapping
+  let fillG = ctx.createLinearGradient(gx - gw/2, 0, gx + gw/2, 0);
+  fillG.addColorStop(0, '#7a403a'); // low danger
+  fillG.addColorStop(0.2, '#FFE066'); // safe gold
+  fillG.addColorStop(0.85, '#ff7c00'); // caution orange
+  fillG.addColorStop(1, '#ff1a00'); // overpressure red
+  
+  ctx.fillStyle = fillG;
+  ctx.beginPath();
+  ctx.roundRect(gx - gw/2, gy, gw * (boilerPressure / 100), gh, 4);
+  ctx.fill();
+  
+  // Needle tick
+  ctx.fillStyle = '#FFFDF0';
+  ctx.fillRect(gx - gw/2 + gw * (boilerPressure / 100) - 1, gy - 2, 2, gh + 4);
+  
+  ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = boilerPressure > 85 ? '#E74C3C' : (boilerPressure < 20 ? '#ff7c00' : '#A09070');
+  let gaugeLabel = `BOILER PRESSURE: ${Math.round(boilerPressure)}%`;
+  if (boilerPressure > 85) gaugeLabel += ' - DANGER!';
+  if (boilerPressure < 20) gaugeLabel += ' - LOW STEAM!';
+  ctx.fillText(gaugeLabel, gx, gy + 19);
+}
+
+function drawScene() {
+  // Clear screen
+  ctx.fillStyle = '#050208';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Radial sky glow behind moon
+  const sky = ctx.createRadialGradient(W/2, H*0.38, 0, W/2, H*0.38, H*0.75);
+  sky.addColorStop(0, '#1c0f3a');
+  sky.addColorStop(1, '#050208');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Twinkling Stars
+  ctx.fillStyle = '#FFE066';
+  for (const s of STARS) {
+    const a = s.alpha * (0.6 + 0.4 * Math.sin(s.twinkle + gameTime * 2.5));
+    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1.0;
+  
+  // Glowing Moon
+  const mx = 290, my = 75, mr = 32;
+  const glow = ctx.createRadialGradient(mx, my, mr*0.6, mx, my, mr*2.2);
+  glow.addColorStop(0, 'rgba(255,224,102,0.11)');
+  glow.addColorStop(1, 'rgba(255,224,102,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  
+  const moonG = ctx.createRadialGradient(mx-3, my-3, 0, mx, my, mr);
+  moonG.addColorStop(0, '#FFFDF0'); moonG.addColorStop(0.6, '#FFE066'); moonG.addColorStop(1, '#F4C842');
+  ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI*2);
+  ctx.fillStyle = moonG; ctx.fill();
+  
+  // ── Parallax Layer 1: Mountains (slowest) ──
+  ctx.fillStyle = '#0d0520';
+  ctx.beginPath();
+  let mx1 = mountainScrollX;
+  ctx.moveTo(0, TRACK_Y);
+  for (let i = 0; i <= 360; i += 30) {
+    const x = i;
+    const px = (x - mx1 + 360) % 360;
+    const py = 310 + Math.sin(x * 0.03) * 30 + Math.cos(x * 0.01) * 20;
+    ctx.lineTo(px, py);
+  }
+  ctx.lineTo(W, TRACK_Y);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Draw extra overlapping mountains for seamless scrolling wrap
+  ctx.beginPath();
+  ctx.moveTo(0, TRACK_Y);
+  for (let i = 0; i <= 360; i += 30) {
+    const x = i;
+    const px = (x - mx1) % 360;
+    if (px >= -30 && px <= W + 30) {
+      const py = 310 + Math.sin(x * 0.03) * 30 + Math.cos(x * 0.01) * 20;
+      ctx.lineTo(px, py);
+    }
+  }
+  ctx.lineTo(W, TRACK_Y);
+  ctx.closePath();
+  ctx.fill();
+  
+  // ── Parallax Layer 2: Cactus & Fence-posts (mid speed) ──
+  ctx.fillStyle = '#0a0318';
+  let cx1 = cactusScrollX;
+  // Let's draw some procedural fences and silhouettes
+  for (let i = -60; i < W + 60; i += 90) {
+    const px = ((i - cx1 + W + 60) % (W + 120)) - 60;
+    // draw fence tie
+    ctx.fillRect(px, TRACK_Y - 20, 4, 20);
+    ctx.fillRect(px - 45, TRACK_Y - 14, 90, 2);
+    
+    // Draw occasional cactus
+    if (Math.sin(px * 0.08) > 0.6) {
+      ctx.fillRect(px + 10, TRACK_Y - 45, 6, 25);
+      ctx.fillRect(px + 5, TRACK_Y - 38, 16, 4);
+      ctx.fillRect(px + 5, TRACK_Y - 48, 4, 10);
+      ctx.fillRect(px + 17, TRACK_Y - 44, 4, 6);
+    }
+  }
+  
+  // ── Parallax Layer 3: Railroad Track & Ground (full speed) ──
+  ctx.fillStyle = '#050210';
+  ctx.fillRect(0, TRACK_Y, W, H - TRACK_Y);
+  
+  // Rails (horizontal lines)
+  ctx.fillStyle = '#221a30';
+  ctx.fillRect(0, TRACK_Y, W, 2);
+  ctx.fillRect(0, TRACK_Y + 12, W, 2);
+  
+  // Track Ties (vertical sleepers)
+  ctx.fillStyle = '#100c1c';
+  let tx1 = trackScrollX;
+  for (let px = -20; px < W + 20; px += 24) {
+    const x = px + tx1;
+    ctx.fillRect(x, TRACK_Y + 1, 6, 12);
+  }
+  
+  // ── Hazards Silhouette ──
+  if (activeHazard) {
+    ctx.save();
+    ctx.fillStyle = '#1a0520';
+    if (activeHazard.type === 'cattle') {
+      // Draw cow silhouette
+      ctx.translate(activeHazard.x, TRACK_Y - 18);
+      if (activeHazard.cleared) {
+        // jumping/running animation
+        const jumpY = Math.sin(activeHazard.x * 0.05) * 20;
+        ctx.translate(0, jumpY - 10);
+        ctx.rotate(0.2);
+      }
+      // Body
+      ctx.beginPath();
+      ctx.roundRect(-16, -6, 28, 14, 4);
+      ctx.fill();
+      // Head
+      ctx.beginPath();
+      ctx.ellipse(14, -8, 6, 6, 0, 0, Math.PI*2);
+      ctx.fill();
+      // Legs
+      ctx.fillRect(-12, 8, 3, 10);
+      ctx.fillRect(-6, 8, 3, 10);
+      ctx.fillRect(4, 8, 3, 10);
+      ctx.fillRect(10, 8, 3, 10);
+      // Horns
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#1a0520';
+      ctx.beginPath();
+      ctx.moveTo(12, -12); ctx.quadraticCurveTo(15, -18, 18, -14);
+      ctx.stroke();
+    } else {
+      // Broken Rail: cross ties damaged with a warning sign
+      ctx.translate(activeHazard.x, TRACK_Y - 14);
+      ctx.strokeStyle = '#E74C3C';
+      ctx.lineWidth = 3;
+      // Alert sign triangle
+      ctx.fillStyle = '#1a0520';
+      ctx.beginPath();
+      ctx.moveTo(0, -32);
+      ctx.lineTo(20, 0);
+      ctx.lineTo(-20, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // exclamation inside sign
+      ctx.fillStyle = '#E74C3C';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', 0, -8);
+      
+      // Cracks on the track
+      ctx.fillStyle = '#E74C3C';
+      ctx.fillRect(-15, 14, 30, 2);
+    }
+    ctx.restore();
+  }
+  
+  // ── Detailed Steam Locomotive Drawing ──
+  ctx.save();
+  ctx.fillStyle = '#1a0520'; // silhouette base color
+  
+  // Shadow ellipse
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  ctx.beginPath();
+  ctx.ellipse(TRAIN_X + 28, WHEEL_Y + LARGE_WHEEL_R - 2, 60, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+  
+  ctx.fillStyle = '#1a0520';
+  
+  // 1. Train Body Parts
+  // Cabin
+  ctx.beginPath();
+  ctx.roundRect(TRAIN_X - 25, WHEEL_Y - 45, 26, 40, [4, 4, 0, 0]);
+  ctx.fill();
+  // Cab Roof
+  ctx.fillRect(TRAIN_X - 29, WHEEL_Y - 48, 34, 4);
+  // Boiler cylinder
+  ctx.fillRect(TRAIN_X, WHEEL_Y - 33, 58, 25);
+  // Cowcatcher plow (Front nose)
+  ctx.beginPath();
+  ctx.moveTo(TRAIN_X + 58, WHEEL_Y - 12);
+  ctx.lineTo(TRAIN_X + 72, WHEEL_Y - 2);
+  ctx.lineTo(TRAIN_X + 58, WHEEL_Y - 2);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Smokestack chimney
+  ctx.fillRect(TRAIN_X + 48, WHEEL_Y - 44, 8, 12);
+  ctx.fillRect(TRAIN_X + 46, WHEEL_Y - 46, 12, 3);
+  
+  // Whistle dome on top
+  ctx.beginPath();
+  ctx.arc(TRAIN_X + 35, WHEEL_Y - 36, 4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillRect(TRAIN_X + 34, WHEEL_Y - 36, 2, 4);
+  
+  // Whistle steam puff animation
+  if (whistleSteamT > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath();
+    ctx.arc(TRAIN_X + 30 - whistleSteamT * 10, WHEEL_Y - 45 - (0.5-whistleSteamT)*20, 5 + (0.5-whistleSteamT)*12, 0, Math.PI*2);
+    ctx.fill();
+  }
+  
+  ctx.fillStyle = '#1a0520';
+  
+  // Coal Car tender (coupled behind cab)
+  ctx.fillRect(TRAIN_X - 60, WHEEL_Y - 28, 30, 22);
+  // Coal heap silhouette
+  ctx.beginPath();
+  ctx.arc(TRAIN_X - 52, WHEEL_Y - 28, 10, 0, Math.PI*2);
+  ctx.arc(TRAIN_X - 42, WHEEL_Y - 28, 8, 0, Math.PI*2);
+  ctx.fill();
+  
+  // Coupe connector line
+  ctx.fillRect(TRAIN_X - 30, WHEEL_Y - 15, 6, 4);
+  
+  // 2. Rotating Wheels
+  // Large driver wheels (x2)
+  drawWheel(TRAIN_X + 8, WHEEL_Y, LARGE_WHEEL_R, wheelAngle);
+  drawWheel(TRAIN_X + 40, WHEEL_Y, LARGE_WHEEL_R, wheelAngle);
+  
+  // Small guide wheels (Front)
+  drawWheel(TRAIN_X + 62, WHEEL_Y + 5, SMALL_WHEEL_R, wheelAngle * (LARGE_WHEEL_R/SMALL_WHEEL_R));
+  // Coal car wheels
+  drawWheel(TRAIN_X - 52, WHEEL_Y + 5, SMALL_WHEEL_R, wheelAngle * (LARGE_WHEEL_R/SMALL_WHEEL_R));
+  drawWheel(TRAIN_X - 38, WHEEL_Y + 5, SMALL_WHEEL_R, wheelAngle * (LARGE_WHEEL_R/SMALL_WHEEL_R));
+  
+  // 3. Fully Animated Piston / Driving Connecting Rod
+  // Crankpins rotate on the large driver wheels
+  const px1 = TRAIN_X + 8 + Math.cos(pistonPhase) * 6;
+  const py1 = WHEEL_Y + Math.sin(pistonPhase) * 6;
+  const px2 = TRAIN_X + 40 + Math.cos(pistonPhase) * 6;
+  const py2 = WHEEL_Y + Math.sin(pistonPhase) * 6;
+  
+  // Crosshead slider moves strictly horizontally inside guides
+  const crossheadX = TRAIN_X + 54 + Math.cos(pistonPhase) * 5;
+  const crossheadY = WHEEL_Y - 2;
+  
+  // Drawing rods in slightly lighter steel gray silhouette
+  ctx.strokeStyle = '#2a1a35';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  
+  // Side-rod coupling the two drivers
+  ctx.beginPath();
+  ctx.moveTo(px1, py1);
+  ctx.lineTo(px2, py2);
+  ctx.stroke();
+  
+  // Piston connecting rod coupling rear driver to the crosshead
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#4a2f58';
+  ctx.beginPath();
+  ctx.moveTo(px2, py2);
+  ctx.lineTo(crossheadX, crossheadY);
+  ctx.stroke();
+  
+  // Crosshead guide bars (static)
+  ctx.strokeStyle = '#100818';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(TRAIN_X + 48, WHEEL_Y - 5);
+  ctx.lineTo(TRAIN_X + 64, WHEEL_Y - 5);
+  ctx.moveTo(TRAIN_X + 48, WHEEL_Y + 1);
+  ctx.lineTo(TRAIN_X + 64, WHEEL_Y + 1);
+  ctx.stroke();
+  
+  ctx.restore();
+}
+
+function drawWheel(x, y, r, angle) {
+  ctx.save();
+  ctx.fillStyle = '#100518';
+  ctx.strokeStyle = '#2a0f30';
+  ctx.lineWidth = 2;
+  
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  
+  // Wheel rim
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+  
+  // Spokes (4 lines crossing)
+  ctx.strokeStyle = '#1a0520';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 4; i++) {
+    const sa = (i * Math.PI) / 4;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(sa) * r, Math.sin(sa) * r);
+    ctx.lineTo(-Math.cos(sa) * r, -Math.sin(sa) * r);
+    ctx.stroke();
+  }
+  
+  // Center hub pin
+  ctx.fillStyle = '#3a1f4d';
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.28, 0, Math.PI*2);
+  ctx.fill();
+  
+  ctx.restore();
+}
+
+// Visual scrolling timing grid indicator
+function drawBeatGrid() {
+  const gy = 495;
+  
+  // Rail-like rhythm track backing
+  ctx.fillStyle = 'rgba(12, 6, 20, 0.9)';
+  ctx.fillRect(0, gy - 20, W, 40);
+  
+  ctx.fillStyle = '#2a1500';
+  ctx.fillRect(0, gy - 16, W, 2);
+  ctx.fillRect(0, gy + 14, W, 2);
+  
+  // Visual glow behind target line
+  ctx.fillStyle = 'rgba(255, 224, 102, 0.08)';
+  ctx.fillRect(TARGET_X - 16, gy - 20, 32, 40);
+  
+  // Golden target alignment bar
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(TARGET_X, gy - 20);
+  ctx.lineTo(TARGET_X, gy + 20);
+  ctx.stroke();
+  
+  // Scrolling beat markers
+  const scrollSpeed = 160; // pixels per second scrolling left
+  
+  for (const m of beatMarkers) {
+    if (m.hit) continue; // don't draw hit ones, or draw them faded
+    
+    // Position calculated relative to gameTime
+    const x = TARGET_X + (m.time - gameTime) * scrollSpeed;
+    
+    if (x >= -20 && x <= W + 20) {
+      // Glow if close to target
+      const dist = Math.abs(x - TARGET_X);
+      ctx.save();
+      if (dist < 20) {
+        ctx.shadowColor = '#FFE066';
+        ctx.shadowBlur = 12;
+      }
+      ctx.fillStyle = m.missed ? '#907860' : '#FFD700';
+      ctx.beginPath();
+      // Draw a glowing musical coal nugget shape
+      ctx.moveTo(x, gy - 8);
+      ctx.lineTo(x + 8, gy);
+      ctx.lineTo(x, gy + 8);
+      ctx.lineTo(x - 8, gy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  
+  // Shovel/Brake/Whistle indicator texts on bottom Dashboard Panel
+  ctx.fillStyle = '#0a0312';
+  ctx.fillRect(0, 520, W, 120);
+  
+  ctx.strokeStyle = '#3a1f05';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, 520);
+  ctx.lineTo(W, 520);
+  ctx.stroke();
+  
+  // Divide board lines
+  ctx.strokeStyle = 'rgba(58, 31, 5, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(130, 520); ctx.lineTo(130, H);
+  ctx.moveTo(230, 520); ctx.lineTo(230, H);
+  ctx.stroke();
+  
+  // ── Draw Interactive Control Panel Graphics ──
+  
+  // Left: Shovel Coal button area
+  ctx.save();
+  ctx.translate(65, 570);
+  // Drawing Shovel furnace mouth
+  ctx.fillStyle = 'rgba(10,5,0,0.85)';
+  ctx.beginPath();
+  ctx.roundRect(-24, -20, 48, 36, 6);
+  ctx.fill();
+  
+  // Furnace inner fire glow
+  ctx.fillStyle = `rgba(255, 120, 0, ${0.4 + 0.3 * Math.sin(gameTime * 6)})`;
+  if (shovelDoorOpenT > 0) ctx.fillStyle = '#ffaa00'; // intense flash
+  ctx.beginPath();
+  ctx.roundRect(-18, -15, 36, 26, 4);
+  ctx.fill();
+  
+  // Grill lines
+  ctx.strokeStyle = '#100502';
+  ctx.lineWidth = 2.5;
+  for (let gx = -12; gx <= 12; gx += 8) {
+    ctx.beginPath();
+    ctx.moveTo(gx, -13); ctx.lineTo(gx, 9);
+    ctx.stroke();
+  }
+  
+  // Door flap (opens by sliding down briefly)
+  if (shovelDoorOpenT <= 0) {
+    ctx.fillStyle = '#4a3f3a';
+    ctx.beginPath();
+    ctx.roundRect(-22, -18, 44, 32, 4);
+    ctx.fill();
+    ctx.strokeStyle = '#1c1512';
+    ctx.stroke();
+    // handle
+    ctx.fillStyle = '#FFE066';
+    ctx.fillRect(-10, -5, 20, 3);
+  }
+  
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SHOVEL [SPACE]', 0, 32);
+  ctx.restore();
+  
+  // Center: Whistle Cord button area
+  ctx.save();
+  ctx.translate(180, 570);
+  
+  // Whistle silhouette shape
+  ctx.fillStyle = '#c5a04a'; // brass yellow
+  ctx.fillRect(-5, -20, 10, 25);
+  ctx.beginPath();
+  ctx.arc(0, -20, 5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#100c02';
+  ctx.fillRect(-6, -10, 12, 3);
+  
+  // Pull Cord handle
+  ctx.strokeStyle = '#ffe8a0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(15, -12);
+  // cord drops down on whistle
+  const cordPull = whistleSteamT > 0 ? 12 : 0;
+  ctx.lineTo(15, 4 + cordPull);
+  ctx.stroke();
+  ctx.fillStyle = '#9c381c';
+  ctx.beginPath();
+  ctx.arc(15, 8 + cordPull, 3, 0, Math.PI*2);
+  ctx.fill();
+  
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('WHISTLE [W]', 0, 32);
+  ctx.restore();
+  
+  // Right: Brake Lever button area
+  ctx.save();
+  ctx.translate(295, 570);
+  
+  // Lever mounting base plate
+  ctx.fillStyle = '#3a2010';
+  ctx.beginPath();
+  ctx.arc(0, 10, 16, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#1a0520';
+  ctx.beginPath();
+  ctx.arc(0, 10, 12, 0, Math.PI*2);
+  ctx.fill();
+  
+  // Steel brake handle lever rotating on brake state
+  ctx.save();
+  ctx.translate(0, 10);
+  const rotAngle = isBrakingPressed ? -0.5 : 0.6;
+  ctx.rotate(rotAngle);
+  ctx.strokeStyle = '#908075';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, -32);
+  ctx.stroke();
+  // Brass knob on top
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.arc(0, -32, 5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BRAKE [HOLD]', 0, 32);
+  ctx.restore();
+}
+
+function drawStationApproachHUD() {
+  // Landing progress stop indicator in center
+  if (!stationApproachMode) return;
+  
+  const widthVal = 200;
+  const leftX = W / 2 - widthVal / 2;
+  const cy = 115;
+  const heightVal = 14;
+  
+  ctx.save();
+  
+  // Background pill track
+  ctx.fillStyle = 'rgba(10,5,0,0.8)';
+  ctx.beginPath();
+  ctx.roundRect(leftX, cy - heightVal/2, widthVal, heightVal, 7);
+  ctx.fill();
+  
+  // Draw green precision platform target zone
+  // Placed at center (stationProgress = 0.5)
+  // PERFECT zone (scoreOffset <= 0.04) -> width = 200 * 0.08 = 16px wide
+  // GOOD zone (scoreOffset <= 0.15) -> width = 200 * 0.3 = 60px wide
+  ctx.fillStyle = 'rgba(76, 175, 80, 0.4)';
+  ctx.fillRect(leftX + widthVal * 0.35, cy - heightVal/2, widthVal * 0.3, heightVal);
+  ctx.fillStyle = '#4CAF50';
+  ctx.fillRect(leftX + widthVal * 0.46, cy - heightVal/2, widthVal * 0.08, heightVal);
+  
+  // Slider indicator matching distance progress
+  // Progress = 0 means far away (200m), progress = 1.0 means reached station (0m)
+  stationProgress = Math.max(0, Math.min(1.0, 1.0 - distanceToStation / 200));
+  const sliderX = leftX + stationProgress * widthVal;
+  
+  // Needle drawing
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.moveTo(sliderX, cy - 11);
+  ctx.lineTo(sliderX - 6, cy - 18);
+  ctx.lineTo(sliderX + 6, cy - 18);
+  ctx.closePath();
+  ctx.fill();
+  
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(sliderX, cy - 11);
+  ctx.lineTo(sliderX, cy + 9);
+  ctx.stroke();
+  
+  // Label overlay
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('STATION PLATFORM STOPPING ZONE', W/2, cy - 23);
+  
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(5, 2, 8, 0.88)';
+  ctx.fillRect(0, 0, W, H);
+  
+  ctx.fillStyle = '#E74C3C';
+  ctx.font = 'bold 40px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BOILER BLEW!', W/2, 200);
+  
+  ctx.fillStyle = '#A09070';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText('The engine overpressurized and exploded.', W/2, 240);
+  
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText(`FINAL SCORE: ${score} PTS`, W/2, 310);
+  
+  // Play again button
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.roundRect(100, 440, 160, 50, 25);
+  ctx.fill();
+  
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('TRY AGAIN', W/2, 470);
+  
+  // Feedback button
+  ctx.fillStyle = 'rgba(255,224,102,0.15)';
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(110, 510, 140, 40, 20);
+  ctx.fill(); ctx.stroke();
+  
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('SHARE FEEDBACK', W/2, 534);
+}
+
+function drawVictory() {
+  ctx.fillStyle = 'rgba(5, 2, 8, 0.88)';
+  ctx.fillRect(0, 0, W, H);
+  
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 44px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('VICTORY!', W/2, 180);
+  
+  ctx.fillStyle = '#A09070';
+  ctx.font = '15px Georgia, serif';
+  ctx.fillText(`Round ${roundIdx + 1} completed successfully!`, W/2, 220);
+  ctx.fillText('All 5 stations reached on time.', W/2, 240);
+  
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.fillText(`FINAL SCORE: ${score} PTS`, W/2, 300);
+  
+  if (score >= best) {
+    const pulse = 0.78 + 0.22 * Math.sin(performance.now() / 150);
+    ctx.fillStyle = `rgba(255,215,0,${pulse})`;
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillText('★ NEW HIGH SCORE ★', W/2, 340);
+  } else {
+    ctx.fillStyle = '#907860';
+    ctx.font = '13px sans-serif';
+    ctx.fillText(`Personal best: ${best} pts`, W/2, 340);
+  }
+  
+  // Play again / Next round button
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.roundRect(90, 440, 180, 50, 25);
+  ctx.fill();
+  
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 14px sans-serif';
+  const btnTxt = roundIdx < 2 ? 'PROCEED TO NEXT WAVE' : 'PLAY AGAIN';
+  ctx.fillText(btnTxt, W/2, 470);
+  
+  // Feedback button
+  ctx.fillStyle = 'rgba(255,224,102,0.15)';
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(110, 510, 140, 40, 20);
+  ctx.fill(); ctx.stroke();
+  
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('SHARE FEEDBACK', W/2, 534);
+}
+
+function drawFeedbacks(now) {
+  feedbacks = feedbacks.filter(f => now - f.born < f.duration);
+  for (const f of feedbacks) {
+    const age = now - f.born;
+    ctx.save();
+    ctx.globalAlpha = 1.0 - age / f.duration;
+    ctx.fillStyle = f.color;
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // Float upwards gently
+    ctx.fillText(f.text, f.x, f.y - age * 0.05);
+    ctx.restore();
+  }
+}
+
+function drawParticles() {
+  ctx.save();
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxL;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * (p.life / p.maxL), 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Draw a beautiful station platform silhouette in the background during platform stops
+function drawStationPlatform() {
+  if (!stationApproachMode && !stoppedAtStation) return;
+  
+  ctx.save();
+  ctx.fillStyle = '#0a0312';
+  // platform floor
+  ctx.fillRect(W/2 - 120, TRACK_Y - 14, 240, 6);
+  // platform posts (x3)
+  ctx.fillRect(W/2 - 100, TRACK_Y - 60, 4, 46);
+  ctx.fillRect(W/2, TRACK_Y - 60, 4, 46);
+  ctx.fillRect(W/2 + 100, TRACK_Y - 60, 4, 46);
+  // roof
+  ctx.fillRect(W/2 - 110, TRACK_Y - 64, 220, 5);
+  // platform sign
+  ctx.fillStyle = '#FFE066';
+  ctx.fillRect(W/2 - 30, TRACK_Y - 48, 60, 14);
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 8px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('STATION', W/2, TRACK_Y - 38);
+  ctx.restore();
+}
+
+function drawFeedbackOverlay() {
+  if (!feedbackOpen) return;
+  ctx.fillStyle = 'rgba(5,2,8,0.92)';
+  ctx.fillRect(0, 0, W, H);
+  
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 24px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SHARE FEEDBACK', W/2, 140);
+  
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('How do you rate the gameplay?', W/2, 185);
+  
+  // Stars 1-5
+  for (let i = 1; i <= 5; i++) {
+    ctx.fillStyle = i <= fbRating ? '#FFE066' : 'rgba(255,224,102,0.2)';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillText('★', W/2 - 120 + i*40, 240);
+  }
+  
+  ctx.fillStyle = '#907860';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('Click inside keyboard box to submit text', W/2, 290);
+  
+  // Render mockup text input box
+  ctx.fillStyle = 'rgba(10,5,0,0.8)';
+  ctx.strokeStyle = 'rgba(255,224,102,0.3)';
+  ctx.beginPath();
+  ctx.roundRect(30, 310, 300, 80, 8);
+  ctx.fill(); ctx.stroke();
+  
+  ctx.fillStyle = fbText ? '#E8DCC8' : '#907860';
+  ctx.font = '13px sans-serif';
+  ctx.textAlign = 'left';
+  const displayVal = fbText ? fbText : 'Tap here to type feedback...';
+  // Wrap simple text
+  ctx.fillText(displayVal.substring(0, 36), 42, 335);
+  if (displayVal.length > 36) ctx.fillText(displayVal.substring(36, 72), 42, 355);
+  
+  // Close / Submit buttons
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.roundRect(60, 430, 110, 40, 20);
+  ctx.fill();
+  ctx.fillStyle = '#050208';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SUBMIT', 115, 455);
+  
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(190, 430, 110, 40, 20);
+  ctx.stroke();
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('CANCEL', 245, 455);
+}
+
+// Input routing for feedback rating
+canvas.addEventListener('click', (e) => {
+  if (!feedbackOpen) return;
+  const p = getCanvasCoords(e);
+  // star ratings (Y=240 bounds)
+  if (p.y > 210 && p.y < 260) {
+    for (let i = 1; i <= 5; i++) {
+      const starX = W/2 - 120 + i*40;
+      if (Math.abs(p.x - starX) < 18) {
+        fbRating = i;
+        playTone(330 + i * 50, 0.08, 'sine', 0.15);
+      }
+    }
+  }
+  
+  // input trigger keyboard mockup
+  if (p.y > 310 && p.y < 390 && p.x > 30 && p.x < 330) {
+    const rawInput = prompt('Type your review message:', fbText);
+    if (rawInput !== null) {
+      fbText = rawInput;
+    }
+  }
+  
+  // submit
+  if (p.y > 430 && p.y < 470) {
+    if (p.x > 60 && p.x < 170) {
+      submitFeedback();
+    } else if (p.x > 190 && p.x < 300) {
+      feedbackOpen = false;
+    }
+  }
+});
+
+function openFeedback() {
+  fbRating = 5;
+  fbText = '';
+  feedbackOpen = true;
+}
+
+function submitFeedback() {
+  if (fbRating === 0) return;
+  
+  // Send data payload to Formspree/Apps Script endpoint
+  const payload = {
+    game: 'Iron Horse',
+    rating: fbRating,
+    message: fbText
+  };
+  
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+  
+  feedbackOpen = false;
+  addFeedback('FEEDBACK SENT! THANK YOU', W/2, H/2, '#4CAF50');
+}
+
+// --- Frame loop driver ---
+let lastTime = 0;
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05); // cap frame ticks at 50ms (avoid tab sleeping throttle bursts)
+  lastTime = now;
+  
+  update(dt);
+  
+  // Draw pipeline
+  ctx.save();
+  // Screen shake wrapper
+  if (now < screenShakeUntil) {
+    const amt = screenShakeIntensity;
+    ctx.translate(
+      (Math.random() - 0.5) * amt * 2,
+      (Math.random() - 0.5) * amt * 2
+    );
+  }
+  
+  if (state === 'title') {
+    drawTitle();
+  } else {
+    drawScene();
+    drawStationPlatform();
+    drawParticles();
+    drawBeatGrid();
+    drawStationApproachHUD();
+    drawHUD();
+    drawFeedbacks(now);
+    
+    // Platform stopped overlay
+    if (stoppedAtStation) {
+      ctx.fillStyle = 'rgba(5,2,8,0.72)';
+      ctx.fillRect(0, 180, W, 80);
+      ctx.fillStyle = '#FFE066';
+      ctx.font = 'bold 15px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(stationResultFeedback, W/2, 215);
+      ctx.fillStyle = '#A09070';
+      ctx.font = '11px sans-serif';
+      ctx.fillText(`DEPARTING IN ${Math.ceil(stationDelayTimer)}s...`, W/2, 242);
+    }
+    
+    if (state === 'gameover') {
+      drawGameOver();
+    } else if (state === 'victory') {
+      drawVictory();
+    }
+  }
+  
+  drawFeedbackOverlay();
+  
+  ctx.restore();
+  
+  requestAnimationFrame(loop);
+}
+
+// Boot loop
+requestAnimationFrame((t) => {
+  lastTime = t;
+  loop(t);
+});
+
+</script>
+</body>
+</html>

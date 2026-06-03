@@ -1,0 +1,1225 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snake Eyes  |  Bob Davis Games</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #050208; display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+  canvas { display: block; touch-action: none; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const MUSIC_SRC = '';
+
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// --- Scaling ---
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Audio ---
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playTone(freq, dur, type = 'sine', vol = 0.18) {
+  try {
+    ensureAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch(e) {}
+}
+function playChord(freqs, dur) {
+  freqs.forEach((f, i) => setTimeout(() => playTone(f, dur, 'triangle', 0.12), i * 60));
+}
+function playRollSound() {
+  [220, 277, 330].forEach((f, i) => setTimeout(() => playTone(f, 0.08, 'square', 0.06), i * 30));
+}
+function playWinSound() { playChord([330, 415, 495, 660], 0.5); }
+function playLoseSound() { playChord([220, 196, 165], 0.5); }
+function playCallSound() { playTone(440, 0.15, 'sawtooth', 0.1); playTone(330, 0.25, 'sawtooth', 0.1); }
+function playBidSound() { playTone(392, 0.08, 'triangle', 0.1); }
+function playRevealTick() { playTone(550, 0.05, 'square', 0.06); }
+
+// --- Music ---
+let musicEl = null;
+let musicOn = false;
+if (MUSIC_SRC) {
+  musicEl = new Audio(MUSIC_SRC);
+  musicEl.loop = true; musicEl.volume = 0.35;
+}
+function toggleMusic() {
+  if (!musicEl) return;
+  ensureAudio();
+  musicOn = !musicOn;
+  musicOn ? musicEl.play() : musicEl.pause();
+}
+
+// --- Dice ---
+function rollDice(n) {
+  return Array.from({ length: n }, () => Math.floor(Math.random() * 6) + 1);
+}
+function countFace(dice, face) {
+  return dice.filter(d => d === face).length;
+}
+
+// --- Personalities ---
+const PERSONALITIES = [
+  { name: 'Cautious',    bluffRate: 0.12, callThreshold: 0.22, aggression: 0.30, color: '#7BA7BC' },
+  { name: 'Aggressive',  bluffRate: 0.52, callThreshold: 0.12, aggression: 0.82, color: '#E74C3C' },
+  { name: 'Calculating', bluffRate: 0.28, callThreshold: 0.28, aggression: 0.52, color: '#FFE066' },
+  { name: 'Reckless',    bluffRate: 0.65, callThreshold: 0.42, aggression: 0.88, color: '#FF9F43' }
+];
+
+// --- Probability Helpers ---
+// P(X >= k) where X ~ Binomial(n, 1/6)
+function binomialGTE(n, k) {
+  if (k <= 0) return 1;
+  if (k > n) return 0;
+  let prob = 0;
+  const p = 1 / 6, q = 5 / 6;
+  for (let i = k; i <= n; i++) {
+    prob += binomCoeff(n, i) * Math.pow(p, i) * Math.pow(q, n - i);
+  }
+  return Math.min(1, Math.max(0, prob));
+}
+const _memo = {};
+function binomCoeff(n, k) {
+  const key = n + ',' + k;
+  if (_memo[key] !== undefined) return _memo[key];
+  if (k === 0 || k === n) return (_memo[key] = 1);
+  return (_memo[key] = binomCoeff(n - 1, k - 1) + binomCoeff(n - 1, k));
+}
+
+// Probability the current bid (qty, face) is valid given known player dice
+function bidProbability(bid, playerDice, totalDice) {
+  const playerCount = countFace(playerDice, bid.face);
+  const unknownDice = totalDice - playerDice.length;
+  const needed = bid.qty - playerCount;
+  return binomialGTE(unknownDice, needed);
+}
+
+// --- Sheriff AI ---
+function sheriffMakeBid(sheriffDice, currentBid, personality, totalDice, playerDiceCount) {
+  const p = PERSONALITIES[personality];
+
+  // Decide whether to call
+  const sheriffKnown = countFace(sheriffDice, currentBid.face);
+  const unknownToSheriff = totalDice - sheriffDice.length;
+  const neededFromPlayer = currentBid.qty - sheriffKnown;
+  const prob = binomialGTE(unknownToSheriff, neededFromPlayer);
+
+  if (currentBid.qty > 0 && prob < p.callThreshold) {
+    return { type: 'call' };
+  }
+
+  // Build a bid
+  // Sheriff's best face (most of it)
+  const faceCounts = [0, 0, 0, 0, 0, 0, 0];
+  sheriffDice.forEach(d => faceCounts[d]++);
+
+  // Decide bid face: bluff or honest
+  let bidFace, bidBase;
+  if (Math.random() < p.bluffRate) {
+    // Bluff: pick a face they have few of
+    bidFace = Math.floor(Math.random() * 6) + 1;
+    bidBase = faceCounts[bidFace];
+  } else {
+    // Honest: pick face they have most of
+    bidFace = faceCounts.reduce((best, c, i) => i >= 1 && c > faceCounts[best] ? i : best, 1);
+    bidBase = faceCounts[bidFace];
+  }
+
+  // Expected player contribution
+  const expectedFromPlayer = Math.round(playerDiceCount / 6);
+  const myTotal = bidBase + expectedFromPlayer;
+
+  // Aggression factor bumps quantity
+  const aggrBump = Math.random() < p.aggression ? 1 : 0;
+  let bidQty = myTotal + aggrBump;
+
+  // Must be higher than current bid
+  if (currentBid.qty === 0) {
+    // First bid: start reasonable
+    bidQty = Math.max(1, bidQty);
+  } else {
+    // Try same face with higher qty first
+    if (bidFace === currentBid.face && bidQty <= currentBid.qty) {
+      bidQty = currentBid.qty + 1;
+    }
+    // If still can't beat on same face, raise face
+    if (bidFace <= currentBid.face || (bidFace === currentBid.face && bidQty < currentBid.qty)) {
+      if (bidFace < currentBid.face) {
+        bidFace = currentBid.face;
+        bidQty = currentBid.qty + 1;
+      } else {
+        // bidFace === currentBid.face
+        bidQty = Math.max(currentBid.qty + 1, bidQty);
+      }
+    } else if (bidFace > currentBid.face) {
+      bidQty = Math.max(1, bidQty);
+    } else {
+      bidQty = currentBid.qty + 1;
+    }
+    // Safety clamp
+    if (!isValidBid({ qty: bidQty, face: bidFace }, currentBid)) {
+      // Fallback: just raise qty on current face
+      bidFace = currentBid.face;
+      bidQty = currentBid.qty + 1;
+    }
+    // Don't bid more dice than exist
+    if (bidQty > totalDice) {
+      return { type: 'call' };
+    }
+  }
+
+  return { type: 'bid', qty: bidQty, face: bidFace };
+}
+
+function isValidBid(newBid, currentBid) {
+  if (currentBid.qty === 0) return newBid.qty >= 1 && newBid.face >= 1 && newBid.face <= 6;
+  if (newBid.qty > currentBid.qty) return true;
+  if (newBid.qty === currentBid.qty && newBid.face > currentBid.face) return true;
+  return false;
+}
+
+// --- Round Config ---
+const ROUNDS = [
+  { bounty: 200, label: 'Two-Bit Brawl' },
+  { bounty: 400, label: 'Silver Spur' },
+  { bounty: 600, label: 'Deputy\'s Gold' },
+  { bounty: 800, label: 'Marshal\'s Purse' },
+  { bounty: 1000, label: 'Outlaw\'s Crown' }
+];
+
+// --- Game State ---
+let state = 'title';
+let round = 0;
+let playerScore = 0;
+let personality = 0;
+
+let playerDice = [];
+let sheriffDice = [];
+let currentBid = { qty: 0, face: 0 };
+let lastBidder = ''; // 'player' or 'sheriff'
+let turn = ''; // 'player' or 'sheriff'
+
+// UI state
+let selectedFace = 1;
+let selectedQty = 1;
+let popups = [];
+let revealAnim = 0; // 0..1 for dice flip reveal
+let revealStep = 0; // which dice are revealed so far
+let revealTimer = 0;
+let revealResult = null; // { winner: 'player'|'sheriff', actual: n, bid: {qty,face} }
+let outcomeTimer = 0;
+let roundWins = []; // 'player' or 'sheriff' per round
+let sheriffThinking = false;
+let sheriffThinkTimer = 0;
+let rollAnim = 0;
+let rollAnimTimer = 0;
+let feedbackVisible = false;
+let feedbackMsg = '';
+let feedbackRating = 0;
+
+// --- Popup system ---
+function addPopup(text, color, x, y) {
+  popups.push({ text, color, x, y, life: 1.0, vy: -1.2 });
+}
+
+// --- Drawing Helpers ---
+function roundRect(x, y, w, h, r, fill, stroke) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
+  ctx.restore();
+}
+
+function pill(x, y, w, h, fill, text, textColor, fontSize) {
+  roundRect(x, y, w, h, h / 2, fill, null);
+  ctx.save();
+  ctx.fillStyle = textColor || '#fff';
+  ctx.font = `bold ${fontSize || 13}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + w / 2, y + h / 2);
+  ctx.restore();
+}
+
+// Draw a single die face
+function drawDie(x, y, size, face, faceUp, glowing, highlight) {
+  ctx.save();
+  const r = 8;
+  const halfS = size / 2;
+
+  if (!faceUp) {
+    // Face down: dark die
+    roundRect(x - halfS, y - halfS, size, size, r, '#1a0d35', '#3a2060');
+    // Pattern
+    ctx.fillStyle = '#2a1545';
+    ctx.fillRect(x - halfS + 4, y - halfS + 4, size - 8, size - 8);
+    ctx.restore();
+    return;
+  }
+
+  // Glow
+  if (glowing || highlight) {
+    ctx.shadowColor = glowing ? '#FFE066' : '#FF9F43';
+    ctx.shadowBlur = 12;
+  }
+
+  // Background
+  const bg = highlight ? '#3a2800' : '#2a1500';
+  roundRect(x - halfS, y - halfS, size, size, r, bg, glowing ? '#FFE066' : '#C8A04A');
+
+  ctx.shadowBlur = 0;
+
+  // Pips
+  ctx.fillStyle = glowing ? '#FFE066' : (highlight ? '#FF9F43' : '#F4C842');
+  const pipR = size * 0.09;
+  const o = size * 0.27; // offset from center
+
+  const pipPositions = {
+    1: [[0, 0]],
+    2: [[-o, -o], [o, o]],
+    3: [[-o, -o], [0, 0], [o, o]],
+    4: [[-o, -o], [o, -o], [-o, o], [o, o]],
+    5: [[-o, -o], [o, -o], [0, 0], [-o, o], [o, o]],
+    6: [[-o, -o], [o, -o], [-o, 0], [o, 0], [-o, o], [o, o]]
+  };
+
+  (pipPositions[face] || []).forEach(([px, py]) => {
+    ctx.beginPath();
+    ctx.arc(x + px, y + py, pipR, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+// Draw a row of dice
+function drawDiceRow(dice, cx, y, size, faceUp, revealedCount, highlightFace, isRolling) {
+  const n = dice.length;
+  const gap = size + 8;
+  const startX = cx - ((n - 1) * gap) / 2;
+  for (let i = 0; i < n; i++) {
+    const x = startX + i * gap;
+    const revealed = faceUp || (i < revealedCount);
+    const face = isRolling ? (Math.floor(Math.random() * 6) + 1) : dice[i];
+    const glowing = revealed && highlightFace && dice[i] === highlightFace;
+    drawDie(x, y, size, revealed ? face : 1, revealed, glowing, false);
+  }
+}
+
+// --- UI Buttons ---
+const BTN = {
+  bid:  { x: 30,  y: 540, w: 120, h: 44 },
+  call: { x: 210, y: 540, w: 120, h: 44 },
+  face: (i) => ({ x: 30 + i * 52, y: 480, w: 42, h: 42 }),
+  qty:  { minus: { x: 38, y: 430, w: 44, h: 36 }, label: { x: 82, y: 430, w: 60, h: 36 }, plus: { x: 142, y: 430, w: 44, h: 36 } },
+  play:  { x: 110, y: 380, w: 140, h: 48 },
+  again: { x: 110, y: 430, w: 140, h: 48 },
+  music: { x: 310, y: 600, w: 40, h: 30 },
+  fbStar: (i) => ({ x: 90 + i * 44, y: 330, w: 36, h: 36 }),
+  fbSend: { x: 110, y: 400, w: 140, h: 44 },
+  fbSkip: { x: 120, y: 460, w: 120, h: 36 }
+};
+
+function inBtn(btn, tx, ty) {
+  return tx >= btn.x && tx <= btn.x + btn.w && ty >= btn.y && ty <= btn.y + btn.h;
+}
+
+// --- Game Logic ---
+function startGame() {
+  round = 0;
+  playerScore = 0;
+  roundWins = [];
+  personality = Math.floor(Math.random() * 4);
+  startRound();
+}
+
+function startRound() {
+  playerDice = rollDice(5);
+  sheriffDice = rollDice(5);
+  currentBid = { qty: 0, face: 0 };
+  lastBidder = '';
+  turn = 'player';
+  selectedFace = 1;
+  selectedQty = 1;
+  revealAnim = 0;
+  revealStep = 0;
+  revealResult = null;
+  outcomeTimer = 0;
+  sheriffThinking = false;
+  sheriffThinkTimer = 0;
+  rollAnim = 1.0;
+  rollAnimTimer = 0;
+  state = 'playing';
+  playRollSound();
+}
+
+function playerBid() {
+  const bid = { qty: selectedQty, face: selectedFace };
+  if (!isValidBid(bid, currentBid)) {
+    addPopup('Raise higher!', '#E74C3C', W / 2, 510);
+    return;
+  }
+  currentBid = bid;
+  lastBidder = 'player';
+  turn = 'sheriff';
+  playBidSound();
+  sheriffThinking = true;
+  sheriffThinkTimer = 0.8 + Math.random() * 0.6;
+  // Auto-advance selected qty/face to be just above current bid
+  selectedFace = currentBid.face;
+  selectedQty = currentBid.qty + 1;
+  if (selectedQty > 10) { selectedQty = currentBid.qty; selectedFace = Math.min(6, currentBid.face + 1); }
+}
+
+function playerCall() {
+  if (currentBid.qty === 0) {
+    addPopup('Make a bid first!', '#E74C3C', W / 2, 510);
+    return;
+  }
+  if (lastBidder !== 'sheriff') {
+    addPopup("Can't call your own bid!", '#E74C3C', W / 2, 510);
+    return;
+  }
+  playCallSound();
+  resolveRound('player_called');
+}
+
+function sheriffTakeTurn() {
+  const action = sheriffMakeBid(sheriffDice, currentBid, personality, 10, playerDice.length);
+  if (action.type === 'call') {
+    playCallSound();
+    resolveRound('sheriff_called');
+  } else {
+    currentBid = { qty: action.qty, face: action.face };
+    lastBidder = 'sheriff';
+    turn = 'player';
+    playBidSound();
+    // Auto-update player's selector
+    selectedFace = currentBid.face;
+    selectedQty = currentBid.qty + 1;
+    if (selectedQty > 10) { selectedQty = currentBid.qty; selectedFace = Math.min(6, currentBid.face + 1); }
+  }
+}
+
+function resolveRound(caller) {
+  const actual = countFace(playerDice, currentBid.face) + countFace(sheriffDice, currentBid.face);
+  let winner;
+  if (caller === 'player_called') {
+    // Player calls sheriff's bid. If actual < qty → player wins. Else sheriff wins.
+    winner = actual < currentBid.qty ? 'player' : 'sheriff';
+  } else {
+    // Sheriff calls player's bid. If actual >= qty → player wins. Else sheriff wins.
+    winner = actual >= currentBid.qty ? 'player' : 'sheriff';
+  }
+  revealResult = { winner, actual, bid: { ...currentBid }, caller };
+  state = 'reveal';
+  revealStep = 0;
+  revealTimer = 0;
+  if (winner === 'player') {
+    playerScore += ROUNDS[round].bounty;
+    roundWins.push('player');
+  } else {
+    roundWins.push('sheriff');
+  }
+}
+
+// --- Draw Functions ---
+function drawBg() {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#050208');
+  g.addColorStop(0.45, '#0f0820');
+  g.addColorStop(1, '#1a0d35');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function drawTableFelt() {
+  ctx.save();
+  // Table surface
+  const g = ctx.createLinearGradient(0, 110, 0, 400);
+  g.addColorStop(0, '#0d1a0d');
+  g.addColorStop(0.5, '#0a150a');
+  g.addColorStop(1, '#061006');
+  roundRect(20, 110, W - 40, 285, 16, g, '#1a3a1a');
+  ctx.restore();
+}
+
+function drawSheriffPortrait(x, y, w, h) {
+  ctx.save();
+  // Badge background
+  const p = PERSONALITIES[personality];
+  roundRect(x, y, w, h, 10, '#1a0d35', p.color + '88');
+
+  // Hat brim
+  ctx.fillStyle = '#2a1500';
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h * 0.42, w * 0.42, h * 0.08, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Hat body
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.28, y + h * 0.42);
+  ctx.lineTo(x + w * 0.32, y + h * 0.12);
+  ctx.lineTo(x + w * 0.68, y + h * 0.12);
+  ctx.lineTo(x + w * 0.72, y + h * 0.42);
+  ctx.fill();
+
+  // Head
+  ctx.fillStyle = '#3a2010';
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h * 0.56, w * 0.22, h * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#FFE066';
+  ctx.beginPath();
+  ctx.arc(x + w * 0.42, y + h * 0.51, 2.5, 0, Math.PI * 2);
+  ctx.arc(x + w * 0.58, y + h * 0.51, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Mustache
+  ctx.fillStyle = '#5a3010';
+  ctx.beginPath();
+  ctx.arc(x + w * 0.44, y + h * 0.58, 5, 0, Math.PI);
+  ctx.arc(x + w * 0.56, y + h * 0.58, 5, 0, Math.PI);
+  ctx.fill();
+
+  // Badge
+  ctx.fillStyle = p.color;
+  ctx.font = `bold 9px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('★', x + w / 2, y + h * 0.74);
+
+  // Personality label
+  ctx.fillStyle = p.color;
+  ctx.font = `bold 8px sans-serif`;
+  ctx.fillText(p.name, x + w / 2, y + h * 0.88);
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  ctx.save();
+  // Round indicator
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`ROUND ${round + 1} / 5`, 14, 24);
+
+  // Bounty
+  const bounty = ROUNDS[round].bounty;
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('$' + bounty + ' ' + ROUNDS[round].label, W / 2, 24);
+
+  // Score
+  ctx.fillStyle = '#F4C842';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('$' + playerScore, W - 14, 24);
+
+  // Round win indicators
+  const dw = 18;
+  const startX = W / 2 - (roundWins.length * dw) / 2;
+  roundWins.forEach((w, i) => {
+    ctx.fillStyle = w === 'player' ? '#FF9F43' : '#E74C3C';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(w === 'player' ? '★' : '✗', startX + i * dw + dw / 2, 40);
+  });
+
+  ctx.restore();
+}
+
+function drawCurrentBid() {
+  ctx.save();
+  const bx = W / 2, by = 265;
+  if (currentBid.qty === 0) {
+    ctx.fillStyle = '#5a4030';
+    ctx.font = 'italic 14px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No bid yet  |  make the first call', bx, by);
+  } else {
+    // Bid box
+    const bw = 200, bh = 48;
+    roundRect(bx - bw / 2, by - bh / 2, bw, bh, 10, '#1a0d35', '#C8A04A');
+
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 20px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${currentBid.qty}  ×  `, bx - 22, by + 7);
+
+    // Face icon
+    const dSize = 28;
+    drawDie(bx + 28, by, dSize, currentBid.face, true, false, false);
+
+    // Who bid it
+    ctx.fillStyle = lastBidder === 'player' ? '#FF9F43' : '#7BA7BC';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(lastBidder === 'player' ? 'YOUR BID' : "SHERIFF'S BID", bx, by + bh / 2 + 12);
+  }
+  ctx.restore();
+}
+
+function drawProbability() {
+  if (currentBid.qty === 0) return;
+  ctx.save();
+  const prob = bidProbability(currentBid, playerDice, 10);
+  const pct = Math.round(prob * 100);
+
+  const barW = 180, barH = 10;
+  const bx = W / 2 - barW / 2, by = 302;
+
+  // Background
+  roundRect(bx, by, barW, barH, 5, '#1a0820', null);
+  // Fill
+  const col = prob > 0.6 ? '#2ecc71' : prob > 0.35 ? '#FF9F43' : '#E74C3C';
+  roundRect(bx, by, barW * prob, barH, 5, col, null);
+  // Border
+  roundRect(bx, by, barW, barH, 5, null, '#3a2060');
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`~${pct}% chance bid is valid`, W / 2, by + barH + 14);
+  ctx.restore();
+}
+
+function drawBidControls() {
+  ctx.save();
+  // Qty label
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('QTY', 38, 424);
+
+  // Minus
+  const qm = BTN.qty.minus;
+  const active = turn === 'player' && state === 'playing' && !sheriffThinking;
+  roundRect(qm.x, qm.y, qm.w, qm.h, 8, active ? '#2a1500' : '#130a00', '#C8A04A');
+  ctx.fillStyle = active ? '#FFE066' : '#5a4030';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('−', qm.x + qm.w / 2, qm.y + qm.h / 2 + 7);
+
+  // Qty value
+  const ql = BTN.qty.label;
+  roundRect(ql.x, ql.y, ql.w, ql.h, 8, '#1a0820', '#3a2060');
+  ctx.fillStyle = active ? '#FFE066' : '#5a4030';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(selectedQty, ql.x + ql.w / 2, ql.y + ql.h / 2 + 6);
+
+  // Plus
+  const qp = BTN.qty.plus;
+  roundRect(qp.x, qp.y, qp.w, qp.h, 8, active ? '#2a1500' : '#130a00', '#C8A04A');
+  ctx.fillStyle = active ? '#FFE066' : '#5a4030';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('+', qp.x + qp.w / 2, qp.y + qp.h / 2 + 7);
+
+  // Face label
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('FACE', 210, 424);
+
+  // Face selectors (right side)
+  for (let i = 0; i < 6; i++) {
+    const faceNum = i + 1;
+    const fx = 210 + (i % 3) * 52;
+    const fy = 430 + Math.floor(i / 3) * 48;
+    const selected = selectedFace === faceNum;
+    roundRect(fx, fy, 42, 38, 8, selected ? '#2a1500' : '#0d0820', selected ? '#FFE066' : '#3a2060');
+    drawDie(fx + 21, fy + 19, 28, faceNum, true, selected, false);
+  }
+
+  ctx.restore();
+}
+
+function drawActionButtons() {
+  ctx.save();
+  const active = turn === 'player' && state === 'playing' && !sheriffThinking;
+  const canCall = active && currentBid.qty > 0 && lastBidder === 'sheriff';
+
+  // BID button
+  const bb = BTN.bid;
+  const bidColor = active ? '#2a6000' : '#0a1500';
+  roundRect(bb.x, bb.y, bb.w, bb.h, 10, bidColor, active ? '#5aB000' : '#1a2800');
+  ctx.fillStyle = active ? '#FFE066' : '#3a4020';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BID', bb.x + bb.w / 2, bb.y + bb.h / 2 + 6);
+
+  // CALL button
+  const cb = BTN.call;
+  const callColor = canCall ? '#5a1500' : '#0d0820';
+  roundRect(cb.x, cb.y, cb.w, cb.h, 10, callColor, canCall ? '#E74C3C' : '#1a0820');
+  ctx.fillStyle = canCall ? '#FFE066' : '#3a2030';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CALL!', cb.x + cb.w / 2, cb.y + cb.h / 2 + 6);
+
+  ctx.restore();
+}
+
+function drawSheriffThinking() {
+  if (!sheriffThinking) return;
+  ctx.save();
+  ctx.fillStyle = '#7BA7BC';
+  ctx.font = 'italic 12px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Sheriff is thinking...', W / 2, 330);
+  ctx.restore();
+}
+
+function drawRevealScreen() {
+  ctx.save();
+
+  // Dim overlay
+  ctx.fillStyle = 'rgba(5,2,8,0.7)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('REVEAL', W / 2, 80);
+
+  const r = revealResult;
+  const hf = r ? r.bid.face : currentBid.face;
+
+  // Sheriff dice reveal
+  ctx.fillStyle = '#7BA7BC';
+  ctx.font = '11px sans-serif';
+  ctx.fillText("Sheriff's Dice", W / 2, 125);
+  drawDiceRow(sheriffDice, W / 2, 160, 38, false, revealStep, hf, false);
+
+  // Player dice (always shown)
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('Your Dice', W / 2, 210);
+  drawDiceRow(playerDice, W / 2, 248, 38, true, 5, hf, false);
+
+  if (revealResult) {
+    // Count
+    const actual = revealResult.actual;
+    const needed = revealResult.bid.qty;
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 16px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Actual ${hf}s: ${actual}  /  Bid: ${needed}`, W / 2, 300);
+
+    // Result
+    const won = revealResult.winner === 'player';
+    ctx.fillStyle = won ? '#FF9F43' : '#E74C3C';
+    ctx.font = 'bold 22px Georgia, serif';
+    const callerWasPlayer = revealResult.caller === 'player_called';
+    const resultText = won
+      ? (callerWasPlayer ? 'GOOD CALL! ✓' : 'BID STOOD! ✓')
+      : (callerWasPlayer ? 'BAD CALL! ✗' : 'BUSTED! ✗');
+    ctx.fillText(resultText, W / 2, 340);
+
+    if (won) {
+      ctx.fillStyle = '#FF9F43';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText('+$' + ROUNDS[round].bounty, W / 2, 366);
+    }
+
+    // Continue prompt
+    if (outcomeTimer > 1.5) {
+      roundRect(W / 2 - 80, 390, 160, 44, 10, '#2a1500', '#FFE066');
+      ctx.fillStyle = '#FFE066';
+      ctx.font = 'bold 14px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(round < 4 ? 'NEXT ROUND' : 'SEE RESULTS', W / 2, 418);
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  drawBg();
+
+  // Title text
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 42px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SNAKE EYES', W / 2, 140);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = 'italic 16px Georgia, serif';
+  ctx.fillText("Liar's Dice vs the Sheriff", W / 2, 170);
+
+  // Dice decorations
+  for (let i = 0; i < 5; i++) {
+    drawDie(52 + i * 64, 215, 42, i + 1, true, i === 4, false);
+  }
+
+  // Rules summary
+  const rules = [
+    'Roll 5 dice each. Bid totals across both hands.',
+    'Raise the bid or CALL the bluff.',
+    '5 rounds  |  bounties climb each hand.',
+    'Sheriff changes personality every game.'
+  ];
+  rules.forEach((r, i) => {
+    ctx.fillStyle = '#8a6a40';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(r, W / 2, 280 + i * 20);
+  });
+
+  // Best score
+  const best = parseInt(localStorage.getItem('snake_eyes_best') || '0');
+  if (best > 0) {
+    ctx.fillStyle = '#C8A04A';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('BEST: $' + best, W / 2, 366);
+  }
+
+  // Play button
+  const pb = BTN.play;
+  roundRect(pb.x, pb.y, pb.w, pb.h, 12, '#2a6000', '#7aD000');
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('PLAY', pb.x + pb.w / 2, pb.y + pb.h / 2 + 6);
+
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  drawBg();
+
+  const pWins = roundWins.filter(w => w === 'player').length;
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 32px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(pWins >= 3 ? 'WINNER!' : 'BUSTED!', W / 2, 120);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '14px Georgia, serif';
+  ctx.fillText(`You won ${pWins} of 5 rounds`, W / 2, 150);
+
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.fillText('$' + playerScore, W / 2, 200);
+
+  const best = parseInt(localStorage.getItem('snake_eyes_best') || '0');
+  if (playerScore > best) {
+    localStorage.setItem('snake_eyes_best', playerScore);
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('NEW RECORD!', W / 2, 226);
+  } else {
+    ctx.fillStyle = '#8a6a40';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Best: $' + best, W / 2, 226);
+  }
+
+  // Round results
+  roundWins.forEach((w, i) => {
+    const rw = 130, rh = 28;
+    const rx = W / 2 - rw / 2, ry = 250 + i * 34;
+    roundRect(rx, ry, rw, rh, 8, w === 'player' ? '#1a3000' : '#200a0a', w === 'player' ? '#5aB000' : '#E74C3C');
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`R${i + 1}: ${ROUNDS[i].label}  |  ${w === 'player' ? '+$' + ROUNDS[i].bounty : 'lost'}`, W / 2, ry + 18);
+  });
+
+  // Play again
+  const ab = BTN.again;
+  roundRect(ab.x, ab.y, ab.w, ab.h, 12, '#2a1500', '#FFE066');
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('PLAY AGAIN', ab.x + ab.w / 2, ab.y + ab.h / 2 + 6);
+
+  // Share
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('tap to share', W / 2, 490);
+
+  ctx.restore();
+}
+
+function drawPlaying() {
+  ctx.save();
+  drawBg();
+  drawTableFelt();
+  drawHUD();
+
+  // Sheriff zone
+  drawSheriffPortrait(W / 2 - 140, 55, 60, 56);
+
+  // Sheriff dice label
+  ctx.fillStyle = '#7BA7BC';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText("SHERIFF'S DICE", W / 2 + 30, 67);
+
+  const isRolling = rollAnim > 0;
+  drawDiceRow(sheriffDice, W / 2 + 30, 95, 36, false, 0, null, isRolling);
+
+  // Player dice label
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('YOUR DICE', W / 2, 168);
+  drawDiceRow(playerDice, W / 2, 195, 40, true, 5, null, isRolling);
+
+  if (!isRolling) {
+    drawCurrentBid();
+    drawProbability();
+
+    if (sheriffThinking) {
+      drawSheriffThinking();
+    }
+
+    drawBidControls();
+    drawActionButtons();
+  }
+
+  ctx.restore();
+}
+
+function drawPopups(dt) {
+  ctx.save();
+  popups = popups.filter(p => p.life > 0);
+  popups.forEach(p => {
+    p.life -= dt * 1.2;
+    p.y += p.vy;
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x, p.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawMusicToggle() {
+  const mb = BTN.music;
+  ctx.save();
+  ctx.fillStyle = '#2a1500';
+  ctx.fillRect(mb.x, mb.y, mb.w, mb.h);
+  ctx.fillStyle = musicOn ? '#FFE066' : '#5a4030';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('♪', mb.x + mb.w / 2, mb.y + mb.h / 2 + 5);
+  ctx.restore();
+}
+
+// --- Feedback Overlay ---
+function drawFeedback() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.92)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 18px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('How did we do?', W / 2, 110);
+
+  ctx.fillStyle = '#C8A04A';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Snake Eyes  |  Rate this game', W / 2, 135);
+
+  // Stars
+  for (let i = 0; i < 5; i++) {
+    const fb = BTN.fbStar(i);
+    ctx.fillStyle = i < feedbackRating ? '#FFE066' : '#3a2040';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('★', fb.x + fb.w / 2, fb.y + fb.h * 0.75);
+  }
+
+  roundRect(BTN.fbSend.x, BTN.fbSend.y, BTN.fbSend.w, BTN.fbSend.h, 10, '#2a6000', '#7aD000');
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 14px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SEND', BTN.fbSend.x + BTN.fbSend.w / 2, BTN.fbSend.y + BTN.fbSend.h / 2 + 5);
+
+  roundRect(BTN.fbSkip.x, BTN.fbSkip.y, BTN.fbSkip.w, BTN.fbSkip.h, 8, '#1a0820', '#3a2060');
+  ctx.fillStyle = '#8a6a40';
+  ctx.font = '13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Skip', BTN.fbSkip.x + BTN.fbSkip.w / 2, BTN.fbSkip.y + BTN.fbSkip.h / 2 + 4);
+
+  ctx.restore();
+}
+
+function submitFeedback() {
+  if (feedbackRating === 0) return;
+  try {
+    fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      body: JSON.stringify({ game: 'Snake Eyes', rating: feedbackRating, message: '' }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (e) {}
+  feedbackVisible = false;
+  state = 'gameover';
+}
+
+// --- Main Loop ---
+let last = 0;
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - last) / 1000, 0.1);
+    last = ts;
+
+    if (rollAnim > 0) {
+      rollAnimTimer += dt;
+      if (rollAnimTimer > 0.05) {
+        rollAnimTimer = 0;
+      }
+      rollAnim = Math.max(0, rollAnim - dt * 1.5);
+    }
+
+    if (sheriffThinking && state === 'playing') {
+      sheriffThinkTimer -= dt;
+      if (sheriffThinkTimer <= 0) {
+        sheriffThinking = false;
+        sheriffTakeTurn();
+      }
+    }
+
+    if (state === 'reveal') {
+      revealTimer += dt;
+      if (revealTimer > 0.35 && revealStep < sheriffDice.length) {
+        revealStep++;
+        revealTimer = 0;
+        playRevealTick();
+        if (revealStep === sheriffDice.length && !revealResult) {
+          // Should not happen, result set before reveal state
+        }
+      }
+      if (revealResult) {
+        outcomeTimer += dt;
+      }
+    }
+
+    // Draw
+    if (feedbackVisible) {
+      drawFeedback();
+    } else if (state === 'title') {
+      drawTitle();
+    } else if (state === 'playing' || state === 'reveal') {
+      drawPlaying();
+      if (state === 'reveal') drawRevealScreen();
+    } else if (state === 'gameover') {
+      drawGameOver();
+    }
+
+    drawPopups(dt);
+    drawMusicToggle();
+  } catch (e) {
+    console.error(e);
+  }
+  requestAnimationFrame(loop);
+}
+
+// --- Input ---
+function getTap(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width, scaleY = H / rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY };
+}
+
+canvas.addEventListener('click', handleTap);
+canvas.addEventListener('touchstart', handleTap, { passive: false });
+
+function handleTap(e) {
+  const { x, y } = getTap(e);
+  ensureAudio();
+
+  if (inBtn(BTN.music, x, y)) { toggleMusic(); return; }
+
+  if (feedbackVisible) {
+    for (let i = 0; i < 5; i++) {
+      if (inBtn(BTN.fbStar(i), x, y)) { feedbackRating = i + 1; return; }
+    }
+    if (inBtn(BTN.fbSend, x, y)) { submitFeedback(); return; }
+    if (inBtn(BTN.fbSkip, x, y)) { feedbackVisible = false; state = 'gameover'; return; }
+    return;
+  }
+
+  if (state === 'title') {
+    if (inBtn(BTN.play, x, y)) startGame();
+    return;
+  }
+
+  if (state === 'gameover') {
+    if (inBtn(BTN.again, x, y)) {
+      startGame();
+      return;
+    }
+    // Share
+    if (y > 470 && y < 510) {
+      const best = localStorage.getItem('snake_eyes_best') || '0';
+      try { navigator.share({ title: 'Snake Eyes', text: `I won $${playerScore} in Snake Eyes! Can you beat $${best}? bobdavis.com/snake-eyes.html` }); } catch (e) {}
+    }
+    return;
+  }
+
+  if (state === 'reveal') {
+    if (revealResult && outcomeTimer > 1.5) {
+      if (round < 4) {
+        round++;
+        startRound();
+      } else {
+        feedbackVisible = true;
+        feedbackRating = 0;
+        feedbackMsg = '';
+      }
+    }
+    return;
+  }
+
+  if (state === 'playing' && !sheriffThinking && rollAnim <= 0) {
+    // Qty controls
+    const qm = BTN.qty.minus, qp = BTN.qty.plus;
+    if (inBtn(qm, x, y)) {
+      selectedQty = Math.max(1, selectedQty - 1);
+      playTone(330, 0.05, 'square', 0.06);
+      return;
+    }
+    if (inBtn(qp, x, y)) {
+      selectedQty = Math.min(10, selectedQty + 1);
+      playTone(392, 0.05, 'square', 0.06);
+      return;
+    }
+
+    // Face selectors (right side layout)
+    for (let i = 0; i < 6; i++) {
+      const fx = 210 + (i % 3) * 52;
+      const fy = 430 + Math.floor(i / 3) * 48;
+      if (x >= fx && x <= fx + 42 && y >= fy && y <= fy + 38) {
+        selectedFace = i + 1;
+        playTone(440 + i * 40, 0.06, 'square', 0.06);
+        return;
+      }
+    }
+
+    // Action buttons
+    if (turn === 'player') {
+      if (inBtn(BTN.bid, x, y)) { playerBid(); return; }
+      if (inBtn(BTN.call, x, y)) { playerCall(); return; }
+    }
+  }
+}
+
+// Keyboard
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    if (state === 'title') startGame();
+    else if (state === 'playing' && turn === 'player' && !sheriffThinking) playerBid();
+  }
+  if (e.code === 'Enter') {
+    if (state === 'reveal' && revealResult && outcomeTimer > 1.5) {
+      if (round < 4) { round++; startRound(); }
+      else { feedbackVisible = true; feedbackRating = 0; }
+    }
+  }
+});
+
+// --- Boot ---
+requestAnimationFrame(loop);
+
+// --- Test API ---
+window.__run = {
+  getState: () => state,
+  getRound: () => round,
+  getPlayerScore: () => playerScore,
+  getPlayerDice: () => [...playerDice],
+  getSheriffDice: () => [...sheriffDice],
+  getCurrentBid: () => ({ ...currentBid }),
+  getTurn: () => turn,
+  getLastBidder: () => lastBidder,
+  getRevealResult: () => revealResult ? { ...revealResult } : null,
+  getRoundWins: () => [...roundWins],
+  getPersonality: () => personality,
+  getPersonalityName: () => PERSONALITIES[personality].name,
+  isValidBid,
+  bidProbability: (bid, pd, total) => bidProbability(bid, pd, total),
+  countFace,
+  rollDice,
+  binomialGTE,
+  startGame,
+  startRound,
+  // Force state for testing
+  setDice: (pd, sd) => { playerDice = [...pd]; sheriffDice = [...sd]; },
+  setCurrentBid: (b) => { currentBid = { ...b }; },
+  setTurn: (t) => { turn = t; },
+  setLastBidder: (lb) => { lastBidder = lb; },
+  setRound: (r) => { round = r; },
+  setState: (s) => { state = s; },
+  setPersonality: (p) => { personality = p; },
+  playerBid: () => playerBid(),
+  playerCall: () => playerCall(),
+  sheriffTakeTurn: () => sheriffTakeTurn(),
+  sheriffMakeBid: (sd, cb, p, td, pdc) => sheriffMakeBid(sd, cb, p, td, pdc),
+  resolveRound: (c) => resolveRound(c),
+  PERSONALITIES,
+  ROUNDS
+};
+</script>
+</body>
+</html>

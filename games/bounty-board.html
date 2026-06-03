@@ -1,0 +1,1222 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bounty Board</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #050208; display: flex; justify-content: center; align-items: center;
+       height: 100vh; overflow: hidden; touch-action: none; font-family: Georgia, serif; }
+#wrap { position: relative; }
+canvas { display: block; background: #050208; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<script>
+const W = 360, H = 640;
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  wrap.style.width    = (W * scale) + 'px';
+  wrap.style.height   = (H * scale) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Web Audio Synth ───────────────────────────────────────
+let audioCtx = null;
+let musicNode = null;
+let musicEnabled = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playTone(freq, duration, type = 'sine', gainVal = 0.1) {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch (e) {}
+}
+
+function playWin() {
+  playTone(261.63, 0.1, 'triangle', 0.15); // C4
+  setTimeout(() => playTone(329.63, 0.1, 'triangle', 0.15), 100); // E4
+  setTimeout(() => playTone(392.00, 0.1, 'triangle', 0.15), 200); // G4
+  setTimeout(() => playTone(523.25, 0.3, 'sine', 0.2), 300); // C5
+}
+
+function playLose() {
+  playTone(220.00, 0.2, 'sawtooth', 0.15); // A3
+  setTimeout(() => playTone(196.00, 0.2, 'sawtooth', 0.15), 150); // G3
+  setTimeout(() => playTone(174.61, 0.4, 'sawtooth', 0.2), 300); // F3
+}
+
+function playClick() {
+  playTone(600, 0.04, 'triangle', 0.05);
+}
+
+function playDraft() {
+  playTone(440, 0.08, 'sine', 0.1);
+  setTimeout(() => playTone(554.37, 0.1, 'sine', 0.1), 80);
+}
+
+// ── Game Data Structures ──────────────────────────────────
+const DEPUTY_DEFS = [
+  { id: 'tex', name: 'Tex', role: 'Tracker', tracker: 8, combat: 4, negotiation: 3, color: '#F4C842' },
+  { id: 'billy', name: 'Billy', role: 'Gunfighter', tracker: 3, combat: 8, negotiation: 4, color: '#E74C3C' },
+  { id: 'preacher', name: 'Preacher', role: 'Negotiator', tracker: 4, combat: 3, negotiation: 8, color: '#C8A04A' }
+];
+
+const OUTLAW_FIRST = ["Red Eye", "Snake Eye", "Slippery", "Gunslinger", "Swindler", "Trigger", "Blackjack", "Mad Dog", "Wild", "Cunning", "Quiet", "Devious"];
+const OUTLAW_LAST = ["Randy", "Sally", "Sam", "Greg", "Tom", "Victor", "Vance", "Belle", "Cassidy", "Ringo", "Earp", "Dalton"];
+const SKILLS = ['tracker', 'combat', 'negotiation'];
+
+function generateOutlaw(roundNum) {
+  const f = OUTLAW_FIRST[Math.floor(Math.random() * OUTLAW_FIRST.length)];
+  const l = OUTLAW_LAST[Math.floor(Math.random() * OUTLAW_LAST.length)];
+  const skill = SKILLS[Math.floor(Math.random() * SKILLS.length)];
+  
+  // Danger scales slightly with round (3 to 9)
+  const baseMin = Math.min(6, 2 + Math.floor(roundNum / 1.5));
+  const baseMax = Math.min(9, 5 + Math.floor(roundNum / 1.2));
+  const danger = Math.floor(Math.random() * (baseMax - baseMin + 1)) + baseMin;
+  const bounty = danger * 100 + (Math.floor(Math.random() * 5) - 2) * 20;
+
+  return {
+    name: `${f} ${l}`,
+    skill,
+    danger,
+    bounty,
+    status: 'board', // 'board', 'drafted_player', 'drafted_marshal'
+    assignedDeputyId: null,
+    resolutionResult: null // 'success', 'fail'
+  };
+}
+
+// ── State variables ───────────────────────────────────────
+let state = 'title'; // 'title', 'drafting', 'wyatt_thinking', 'resolution', 'win', 'lose'
+let round = 1;
+let playerCash = 0;
+let marshalCash = 0;
+let bestScore = parseInt(localStorage.getItem('bounty_board_best') || '0', 10);
+let logMessage = '';
+
+let deputies = [];
+let boardOutlaws = [];
+let selectedOutlawIdx = -1;
+let draftingActive = true;
+let draftTurn = 'player'; // 'player', 'marshal'
+
+let particles = [];
+let popups = [];
+let bannerText = '';
+let activeTimer = 0;
+let pendingResolutions = [];
+let currentResolvingItem = null;
+let resolvingTimer = 0;
+
+// Feedback form variables
+let showFeedback = false;
+let feedbackRating = 5;
+let feedbackText = '';
+
+// Particle class
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 120;
+    this.vy = (Math.random() - 0.5) * 120 - 40;
+    this.color = color;
+    this.life = 1.0;
+    this.decay = Math.random() * 0.8 + 0.8;
+  }
+  update(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vy += 120 * dt; // gravity
+    this.life -= this.decay * dt;
+  }
+  draw(c) {
+    c.save();
+    c.globalAlpha = Math.max(0, this.life);
+    c.fillStyle = this.color;
+    c.beginPath();
+    c.arc(this.x, this.y, 3, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+  }
+}
+
+// Popup class for floating feedback text
+class Popup {
+  constructor(text, x, y, color = '#FFE066') {
+    this.text = text;
+    this.x = x;
+    this.y = y;
+    this.alpha = 1.0;
+    this.vy = -45;
+  }
+  update(dt) {
+    this.y += this.vy * dt;
+    this.alpha -= 1.1 * dt;
+  }
+  draw(c) {
+    c.save();
+    c.globalAlpha = Math.max(0, this.alpha);
+    c.fillStyle = this.color || '#FFE066';
+    c.font = 'bold 14px sans-serif';
+    c.textAlign = 'center';
+    c.fillText(this.text, this.x, this.y);
+    c.restore();
+  }
+}
+
+function spawnCaptureExplosion(x, y, color) {
+  for (let i = 0; i < 20; i++) {
+    particles.push(new Particle(x, y, color));
+  }
+}
+
+// ── Game Loop & Setup ─────────────────────────────────────
+function startGame() {
+  gtag('event', 'game_start', {game_name: 'Bounty Board'});
+  state = 'drafting';
+  round = 1;
+  playerCash = 0;
+  marshalCash = 0;
+  logMessage = 'Select an Outlaw card to begin drafting!';
+  bannerText = 'YOUR TURN';
+  selectedOutlawIdx = -1;
+  draftTurn = 'player';
+  
+  // Setup deputies
+  deputies = DEPUTY_DEFS.map(d => ({ ...d, state: 'active' })); // 'active', 'resting', 'spent'
+  
+  startNewRound();
+  initAudio();
+}
+
+function startNewRound() {
+  selectedOutlawIdx = -1;
+  draftTurn = 'player';
+  
+  // Update deputy states
+  deputies.forEach(d => {
+    if (d.state === 'spent') {
+      d.state = 'resting';
+    } else if (d.state === 'resting') {
+      d.state = 'active';
+    }
+  });
+
+  // Check if player has NO active deputies. If so, they must wait!
+  const activeCount = deputies.filter(d => d.state === 'active').length;
+  
+  // Generate 6 wanted posters
+  boardOutlaws = [];
+  for (let i = 0; i < 6; i++) {
+    boardOutlaws.push(generateOutlaw(round));
+  }
+  
+  if (activeCount === 0) {
+    logMessage = 'No active deputies! Passing drafting to Wyatt.';
+    bannerText = 'PASSING TURN';
+    draftTurn = 'marshal';
+    activeTimer = 1.0;
+  } else {
+    logMessage = 'Drafting Phase: select a Wanted Poster.';
+    bannerText = 'YOUR TURN';
+  }
+}
+
+function selectOutlaw(idx) {
+  if (state !== 'drafting' || draftTurn !== 'player') return;
+  if (boardOutlaws[idx].status !== 'board') return;
+  
+  playClick();
+  if (selectedOutlawIdx === idx) {
+    selectedOutlawIdx = -1;
+    logMessage = 'Select an Outlaw Wanted Poster.';
+  } else {
+    selectedOutlawIdx = idx;
+    logMessage = 'Select an active Deputy to assign.';
+  }
+}
+
+function assignDeputy(deputyId) {
+  if (state !== 'drafting' || draftTurn !== 'player' || selectedOutlawIdx === -1) return;
+  
+  const dep = deputies.find(d => d.id === deputyId);
+  if (!dep || dep.state !== 'active') return;
+  
+  playDraft();
+  
+  const outlaw = boardOutlaws[selectedOutlawIdx];
+  outlaw.status = 'drafted_player';
+  outlaw.assignedDeputyId = deputyId;
+  dep.state = 'spent';
+  
+  // Spawn card select particles
+  const cardX = 18 + (selectedOutlawIdx % 3) * 114 + 48;
+  const cardY = 155 + Math.floor(selectedOutlawIdx / 3) * 150 + 67;
+  spawnCaptureExplosion(cardX, cardY, dep.color);
+  popups.push(new Popup(`${dep.name} Assigned!`, cardX, cardY - 20, '#FFE066'));
+
+  selectedOutlawIdx = -1;
+  
+  // Check if board has outlaws left
+  const remaining = boardOutlaws.filter(o => o.status === 'board');
+  const playerActiveCount = deputies.filter(d => d.state === 'active').length;
+  
+  if (remaining.length === 0) {
+    startResolutionPhase();
+  } else {
+    // Marshal drafts next
+    draftTurn = 'marshal';
+    bannerText = 'WYATT THINKING...';
+    activeTimer = 1.2;
+    logMessage = 'Marshal Wyatt is scanning the Bounty Board...';
+  }
+}
+
+function marshalDraft() {
+  const remaining = boardOutlaws.filter(o => o.status === 'board');
+  if (remaining.length === 0) {
+    startResolutionPhase();
+    return;
+  }
+  
+  // Wyatt is smart: picks high bounty targets he can capture easily
+  let bestPick = null;
+  let maxWeight = -Infinity;
+  
+  remaining.forEach(outlaw => {
+    // Weight scales with bounty
+    let weight = outlaw.bounty;
+    // Plus bias for easier targets
+    weight += (10 - outlaw.danger) * 30;
+    
+    if (weight > maxWeight) {
+      maxWeight = weight;
+      bestPick = outlaw;
+    }
+  });
+  
+  if (bestPick) {
+    playDraft();
+    bestPick.status = 'drafted_marshal';
+    
+    const idx = boardOutlaws.indexOf(bestPick);
+    const cardX = 18 + (idx % 3) * 114 + 48;
+    const cardY = 155 + Math.floor(idx / 3) * 150 + 67;
+    spawnCaptureExplosion(cardX, cardY, '#E74C3C');
+    popups.push(new Popup(`Wyatt Claimed!`, cardX, cardY - 20, '#E74C3C'));
+    
+    logMessage = `Wyatt claimed ${bestPick.name} ($${bestPick.bounty})!`;
+  }
+  
+  // Return turn to player
+  const playerActiveCount = deputies.filter(d => d.state === 'active').length;
+  const stillRemaining = boardOutlaws.filter(o => o.status === 'board');
+  
+  if (stillRemaining.length === 0 || (playerActiveCount === 0 && stillRemaining.length > 0)) {
+    // If player has no deputies or no cards left, resolve!
+    if (playerActiveCount === 0 && stillRemaining.length > 0) {
+      // Wyatt drafts the rest or we proceed directly
+      // Let's resolve what is currently drafted!
+      startResolutionPhase();
+    } else {
+      startResolutionPhase();
+    }
+  } else {
+    draftTurn = 'player';
+    bannerText = 'YOUR TURN';
+  }
+}
+
+function startResolutionPhase() {
+  state = 'resolution';
+  bannerText = 'RESOLVING...';
+  logMessage = 'Resolution Phase: Calculating captures!';
+  
+  // Find all drafted outlaws
+  pendingResolutions = boardOutlaws.filter(o => o.status !== 'board');
+  resolvingTimer = 0.5;
+  currentResolvingItem = null;
+}
+
+function resolveNextItem() {
+  if (pendingResolutions.length === 0) {
+    // End of round check
+    if (round < 5) {
+      round++;
+      state = 'drafting';
+      startNewRound();
+    } else {
+      // Game over!
+      if (playerCash > marshalCash) {
+        state = 'win';
+        playWin();
+        if (playerCash > bestScore) {
+          bestScore = playerCash;
+          localStorage.setItem('bounty_board_best', bestScore);
+        }
+      } else {
+        state = 'lose';
+        playLose();
+      }
+    }
+    return;
+  }
+  
+  currentResolvingItem = pendingResolutions.shift();
+  resolvingTimer = 2.0; // 2 seconds animation time for each capture attempt
+  
+  const o = currentResolvingItem;
+  if (o.status === 'drafted_player') {
+    const dep = deputies.find(d => d.id === o.assignedDeputyId);
+    const skillVal = dep[o.skill];
+    const winPct = Math.max(10, Math.min(95, 50 + (skillVal - o.danger) * 10));
+    const roll = Math.floor(Math.random() * 100);
+    
+    if (roll < winPct) {
+      o.resolutionResult = 'success';
+      playerCash += o.bounty;
+      logMessage = `${dep.name} CAPTURED ${o.name} for $${o.bounty}!`;
+    } else {
+      o.resolutionResult = 'fail';
+      logMessage = `${o.name} ESCAPED from ${dep.name}!`;
+    }
+  } else {
+    // Wyatt's capture attempt: flat 65% chance
+    const roll = Math.floor(Math.random() * 100);
+    if (roll < 65) {
+      o.resolutionResult = 'success';
+      marshalCash += o.bounty;
+      logMessage = `Wyatt CAPTURED ${o.name} for $${o.bounty}!`;
+    } else {
+      o.resolutionResult = 'fail';
+      logMessage = `${o.name} ESCAPED from Wyatt!`;
+    }
+  }
+}
+
+// ── Touch & Click Handler ──────────────────────────────────
+function getMousePos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+function handleTap(e) {
+  const pos = getMousePos(e);
+  
+  // Feedback Modal Interaction Check
+  if (showFeedback) {
+    handleFeedbackTap(pos);
+    return;
+  }
+
+  if (state === 'title') {
+    startGame();
+    return;
+  }
+  
+  if (state === 'win' || state === 'lose') {
+    // Check buttons
+    if (pos.y >= 430 && pos.y <= 470 && pos.x >= 80 && pos.x <= 280) {
+      playClick();
+      startGame();
+    } else if (pos.y >= 490 && pos.y <= 530 && pos.x >= 80 && pos.x <= 280) {
+      playClick();
+      if (navigator.share) {
+        navigator.share({
+          title: 'Bounty Board',
+          text: `I earned $${playerCash} on Bounty Board! Can you beat Wyatt?`,
+          url: window.location.href
+        }).catch(() => {});
+      } else {
+        popups.push(new Popup('Link copied to share!', W / 2, 510, '#FFE066'));
+      }
+    } else if (pos.y >= 550 && pos.y <= 590 && pos.x >= 80 && pos.x <= 280) {
+      playClick();
+      showFeedback = true;
+    }
+    return;
+  }
+  
+  // Feedback button bottom right
+  if (pos.x >= W - 45 && pos.y >= H - 40 && pos.x <= W - 5 && pos.y <= H - 5) {
+    playClick();
+    showFeedback = true;
+    return;
+  }
+
+  // Audio Toggle Button Bottom Left
+  if (pos.x >= 5 && pos.y >= H - 40 && pos.x <= 45 && pos.y <= H - 5) {
+    musicEnabled = !musicEnabled;
+    playClick();
+    if (musicEnabled) {
+      initAudio();
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+    return;
+  }
+
+  if (state === 'drafting' && draftTurn === 'player') {
+    // Check wanted posters taps
+    for (let i = 0; i < 6; i++) {
+      const col = i % 3;
+      const row = Math.floor(i / 3);
+      const cardX = 18 + col * 114;
+      const cardY = 155 + row * 150;
+      
+      if (pos.x >= cardX && pos.x <= cardX + 96 && pos.y >= cardY && pos.y <= cardY + 138) {
+        selectOutlaw(i);
+        return;
+      }
+    }
+    
+    // Check deputy assignments taps (if outlaw is selected)
+    if (selectedOutlawIdx !== -1) {
+      for (let i = 0; i < 3; i++) {
+        const depX = 18 + i * 114;
+        const depY = 485;
+        if (pos.x >= depX && pos.x <= depX + 96 && pos.y >= depY && pos.y <= depY + 105) {
+          const dep = deputies[i];
+          if (dep.state === 'active') {
+            assignDeputy(dep.id);
+          } else {
+            playTone(180, 0.15, 'sawtooth', 0.1);
+            popups.push(new Popup(`${dep.name} is ${dep.state}!`, depX + 48, depY + 30, '#E74C3C'));
+          }
+          return;
+        }
+      }
+    }
+  }
+}
+
+function handleFeedbackTap(pos) {
+  // Check Star Rating buttons
+  for (let i = 1; i <= 5; i++) {
+    const starX = W / 2 - 90 + (i - 1) * 35;
+    if (pos.y >= 265 && pos.y <= 295 && pos.x >= starX - 12 && pos.x <= starX + 12) {
+      playClick();
+      feedbackRating = i;
+      return;
+    }
+  }
+
+  // Submit Button
+  if (pos.y >= 445 && pos.y <= 485 && pos.x >= W / 2 - 120 && pos.x <= W / 2 - 10) {
+    playClick();
+    submitFeedback();
+    showFeedback = false;
+  }
+  // Cancel Button
+  else if (pos.y >= 445 && pos.y <= 485 && pos.x >= W / 2 + 10 && pos.x <= W / 2 + 120) {
+    playClick();
+    showFeedback = false;
+  }
+}
+
+function submitFeedback() {
+  fetch(FEEDBACK_ENDPOINT, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      game: 'Bounty Board',
+      rating: feedbackRating,
+      message: feedbackText || 'No message provided',
+      score: playerCash
+    })
+  }).catch(() => {});
+  popups.push(new Popup('Feedback Sent!', W / 2, H / 2, '#FF9F43'));
+}
+
+canvas.addEventListener('mousedown', handleTap);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleTap(e); });
+
+// Handle typing for feedback text (simplified text input fallback since we're full canvas)
+window.addEventListener('keydown', (e) => {
+  if (showFeedback) {
+    if (e.key === 'Backspace') {
+      feedbackText = feedbackText.slice(0, -1);
+    } else if (e.key === 'Enter') {
+      submitFeedback();
+      showFeedback = false;
+    } else if (e.key.length === 1 && feedbackText.length < 40) {
+      feedbackText += e.key;
+    }
+  } else if (state === 'title' && e.key === ' ') {
+    startGame();
+  }
+});
+
+// ── Update and Rendering Loops ─────────────────────────────
+let lastTime = performance.now();
+
+function roundRect(c, x, y, w, h, r, fill = false, stroke = true) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+  if (fill) c.fill();
+  if (stroke) c.stroke();
+}
+
+function drawSilhouette(c, x, y, size, skill, outlineColor = '#FFE066') {
+  c.save();
+  c.fillStyle = '#1a0520';
+  c.strokeStyle = outlineColor;
+  c.lineWidth = 1.5;
+  
+  // Head
+  c.beginPath();
+  c.arc(x, y - size * 0.25, size * 0.25, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  
+  // Shoulder / Cloak
+  c.beginPath();
+  c.moveTo(x - size * 0.45, y + size * 0.4);
+  c.quadraticCurveTo(x - size * 0.4, y, x - size * 0.15, y - size * 0.05);
+  c.lineTo(x + size * 0.15, y - size * 0.05);
+  c.quadraticCurveTo(x + size * 0.4, y, x + size * 0.45, y + size * 0.4);
+  c.closePath();
+  c.fill();
+  c.stroke();
+
+  // Custom Hat style based on skill type
+  c.fillStyle = '#1a0520';
+  if (skill === 'tracker') {
+    // Cowboy hat
+    c.beginPath();
+    c.rect(x - size * 0.45, y - size * 0.42, size * 0.9, size * 0.08); // Brim
+    c.rect(x - size * 0.25, y - size * 0.65, size * 0.5, size * 0.24); // Crown
+    c.fill(); c.stroke();
+  } else if (skill === 'combat') {
+    // Bandana / Banded high hat
+    c.beginPath();
+    c.rect(x - size * 0.35, y - size * 0.4, size * 0.7, size * 0.08);
+    c.arc(x, y - size * 0.55, size * 0.25, Math.PI, 0); // Rounded crown
+    c.fill(); c.stroke();
+    // Eye patch glow
+    c.fillStyle = '#E74C3C';
+    c.beginPath();
+    c.arc(x - size * 0.08, y - size * 0.26, 2, 0, Math.PI * 2);
+    c.fill();
+  } else {
+    // Preacher / Bowler Hat
+    c.beginPath();
+    c.ellipse(x, y - size * 0.4, size * 0.35, size * 0.06, 0, 0, Math.PI * 2);
+    c.arc(x, y - size * 0.5, size * 0.18, Math.PI, 0);
+    c.fill(); c.stroke();
+  }
+  c.restore();
+}
+
+function update(time) {
+  const dt = Math.max(0, Math.min(0.1, (time - lastTime) / 1000));
+  lastTime = time;
+  
+  particles.forEach(p => p.update(dt));
+  popups.forEach(p => p.update(dt));
+  particles = particles.filter(p => p.life > 0);
+  popups = popups.filter(p => p.alpha > 0);
+  
+  // Timer driven states
+  if (activeTimer > 0) {
+    activeTimer -= dt;
+    if (activeTimer <= 0) {
+      if (state === 'drafting' && draftTurn === 'marshal') {
+        marshalDraft();
+      }
+    }
+  }
+  
+  if (state === 'resolution') {
+    if (currentResolvingItem === null) {
+      resolveNextItem();
+    } else {
+      resolvingTimer -= dt;
+      if (resolvingTimer <= 0) {
+        currentResolvingItem = null;
+      }
+    }
+  }
+  
+  draw();
+  requestAnimationFrame(update);
+}
+
+function draw() {
+  ctx.fillStyle = '#050208';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Background Gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#050208');
+  grad.addColorStop(0.3, '#100520');
+  grad.addColorStop(0.8, '#1a0a15');
+  grad.addColorStop(1, '#050208');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  
+  if (state === 'title') {
+    drawTitleScreen();
+  } else if (state === 'drafting' || state === 'resolution') {
+    drawGameplay();
+  } else if (state === 'win' || state === 'lose') {
+    drawGameOver();
+  }
+  
+  // Draw particles and floating text
+  particles.forEach(p => p.draw(ctx));
+  popups.forEach(p => p.draw(ctx));
+
+  // Feedback overlay
+  if (showFeedback) {
+    drawFeedbackModal();
+  }
+}
+
+function drawTitleScreen() {
+  ctx.save();
+  ctx.textAlign = 'center';
+  
+  // Large decorative Wanted card as logo
+  ctx.fillStyle = '#2a0d35';
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 2;
+  roundRect(ctx, W / 2 - 70, 80, 140, 185, 10, true, true);
+  
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 15px Georgia';
+  ctx.fillText('WANTED', W / 2, 110);
+  
+  drawSilhouette(ctx, W / 2, 190, 60, 'tracker', '#FFE066');
+  
+  ctx.font = 'bold 32px Georgia';
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('BOUNTY BOARD', W / 2, 310);
+  
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#C8B89A';
+  ctx.fillText('Draft Wanted Cards. Allocate your Posse.', W / 2, 345);
+  ctx.fillText('Out-earn Rival Marshal Wyatt in 5 Rounds.', W / 2, 365);
+  
+  // Buttons
+  ctx.strokeStyle = '#FFE066';
+  ctx.fillStyle = '#2a1a05';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, W / 2 - 90, 420, 180, 45, 6, true, true);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 16px Georgia';
+  ctx.fillText('DEAL CARDS', W / 2, 448);
+  
+  if (bestScore > 0) {
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = '#FF9F43';
+    ctx.fillText(`PERSONAL BEST: $${bestScore}`, W / 2, 510);
+  }
+  
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = '#8a7a6a';
+  ctx.fillText('TAP TO PLAY / SPACE TO START', W / 2, 550);
+  ctx.restore();
+}
+
+function drawGameplay() {
+  ctx.save();
+  
+  // 1. Header (Round & Scoreboard)
+  ctx.fillStyle = '#100520';
+  ctx.strokeStyle = 'rgba(255, 224, 102, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.fillRect(0, 0, W, 60);
+  ctx.strokeRect(0, 0, W, 60);
+  
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`ROUND ${round}/5`, 18, 35);
+  
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText(`YOU: $${playerCash}`, W / 2 - 35, 35);
+  
+  ctx.fillStyle = '#E74C3C';
+  ctx.fillText(`WYATT: $${marshalCash}`, W / 2 + 55, 35);
+  
+  // 2. Banner / Action Prompt
+  ctx.fillStyle = draftTurn === 'player' ? 'rgba(91, 199, 122, 0.1)' : 'rgba(231, 76, 60, 0.1)';
+  ctx.fillRect(0, 60, W, 40);
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.beginPath(); cLine(0, 60, W, 60); cLine(0, 100, W, 100); ctx.stroke();
+  
+  ctx.fillStyle = draftTurn === 'player' ? '#FFD700' : '#E74C3C';
+  ctx.font = 'bold 13px Georgia';
+  ctx.textAlign = 'center';
+  ctx.fillText(bannerText, W / 2, 85);
+  
+  // 3. Log / Instructions
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = 'italic 12px Georgia';
+  ctx.fillText(logMessage, W / 2, 130);
+  
+  // 4. Wanted Board Grid
+  for (let i = 0; i < 6; i++) {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const cardX = 18 + col * 114;
+    const cardY = 155 + row * 150;
+    
+    drawWantedCard(cardX, cardY, boardOutlaws[i], i === selectedOutlawIdx);
+  }
+  
+  // 5. Posse / Deputy allocation at the bottom
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('YOUR POSSE (ACTIVE DEPUTIES):', 18, 472);
+  
+  for (let i = 0; i < 3; i++) {
+    const depX = 18 + i * 114;
+    const depY = 485;
+    drawDeputyCard(depX, depY, deputies[i]);
+  }
+  
+  // Bottom action triggers UI info
+  drawFooterBar();
+  
+  // 6. Resolution Animation Overlay
+  if (state === 'resolution' && currentResolvingItem) {
+    drawResolutionModal();
+  }
+  
+  ctx.restore();
+}
+
+function cLine(x1, y1, x2, y2) {
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+}
+
+function drawWantedCard(x, y, outlaw, isSelected) {
+  ctx.save();
+  const w = 96, h = 138;
+  
+  // Background Card
+  ctx.fillStyle = outlaw.status === 'board' ? '#F5F0E0' : '#1a0f25';
+  ctx.strokeStyle = isSelected ? '#FFE066' : outlaw.status === 'board' ? '#8B7355' : 'rgba(255,224,102,0.1)';
+  ctx.lineWidth = isSelected ? 3 : 1.5;
+  roundRect(ctx, x, y, w, h, 6, true, true);
+  
+  // Inner glow if selected
+  if (isSelected) {
+    ctx.strokeStyle = 'rgba(255, 224, 102, 0.4)';
+    ctx.lineWidth = 1;
+    roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 4, false, true);
+  }
+  
+  if (outlaw.status === 'board') {
+    // Card Header
+    ctx.fillStyle = '#1a0520';
+    ctx.font = 'bold 10px Georgia';
+    ctx.textAlign = 'center';
+    ctx.fillText('WANTED', x + w / 2, y + 14);
+    
+    // Portrait
+    drawSilhouette(ctx, x + w / 2, y + 54, 38, outlaw.skill, '#8B7355');
+    
+    // Stats and Name
+    ctx.fillStyle = '#1a2a4a';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(outlaw.name.toUpperCase(), x + w / 2, y + 90);
+    
+    // Value
+    ctx.fillStyle = '#8B6914';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`$${outlaw.bounty}`, x + w / 2, y + 108);
+    
+    // Match skill type label
+    ctx.fillStyle = '#6b5a4a';
+    ctx.font = 'bold 8px sans-serif';
+    let typeLbl = 'TRACK';
+    if (outlaw.skill === 'combat') typeLbl = 'COMBAT';
+    if (outlaw.skill === 'negotiation') typeLbl = 'NEGOT';
+    ctx.fillText(`${typeLbl} • DNG ${outlaw.danger}`, x + w / 2, y + 125);
+  } else {
+    // Drafted Overlay State
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (outlaw.status === 'drafted_player') {
+      const dep = deputies.find(d => d.id === outlaw.assignedDeputyId);
+      ctx.fillStyle = dep.color;
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText(dep.name.toUpperCase(), x + w / 2, y + h / 2 - 10);
+      ctx.fillStyle = '#C8B89A';
+      ctx.fillText('ASSIGNED', x + w / 2, y + h / 2 + 10);
+    } else {
+      ctx.fillStyle = '#E74C3C';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText('WYATT', x + w / 2, y + h / 2 - 10);
+      ctx.fillStyle = '#C8B89A';
+      ctx.fillText('CLAIMED', x + w / 2, y + h / 2 + 10);
+    }
+  }
+  ctx.restore();
+}
+
+function drawDeputyCard(x, y, dep) {
+  ctx.save();
+  const w = 96, h = 105;
+  
+  const isSelected = selectedOutlawIdx !== -1;
+  const isResting = dep.state === 'resting';
+  const isSpent = dep.state === 'spent';
+  const isActive = dep.state === 'active';
+  
+  // Card base
+  ctx.fillStyle = isResting ? '#150f1a' : isSpent ? '#0c0512' : '#20102b';
+  ctx.strokeStyle = isActive ? dep.color : 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = isActive ? 1.5 : 1;
+  roundRect(ctx, x, y, w, h, 6, true, true);
+  
+  // Portrait
+  ctx.save();
+  if (isResting || isSpent) ctx.globalAlpha = 0.35;
+  drawSilhouette(ctx, x + w / 2, y + 36, 28, dep.role === 'Tracker' ? 'tracker' : dep.role === 'Gunfighter' ? 'combat' : 'negotiation', dep.color);
+  ctx.restore();
+  
+  // Title / Name
+  ctx.textAlign = 'center';
+  ctx.fillStyle = isActive ? '#E8DCC8' : '#7a6a5a';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(dep.name, x + w / 2, y + 62);
+  
+  // Show stats or probability calculations
+  if (isSelected && isActive) {
+    // Show capture probability percentages!
+    const outlaw = boardOutlaws[selectedOutlawIdx];
+    const skillVal = dep[outlaw.skill];
+    const pct = Math.max(10, Math.min(95, 50 + (skillVal - outlaw.danger) * 10));
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(`${pct}% WIN`, x + w / 2, y + 84);
+  } else {
+    // Show stats
+    ctx.fillStyle = '#C8B89A';
+    ctx.font = '8px sans-serif';
+    if (isResting) {
+      ctx.fillStyle = '#E74C3C';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText('RESTING', x + w / 2, y + 84);
+    } else if (isSpent) {
+      ctx.fillStyle = '#9a8a7a';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText('SPENT', x + w / 2, y + 84);
+    } else {
+      ctx.fillText(`TRK:${dep.tracker} CBT:${dep.combat} NEG:${dep.negotiation}`, x + w / 2, y + 84);
+    }
+  }
+  
+  ctx.restore();
+}
+
+function drawResolutionModal() {
+  const o = currentResolvingItem;
+  if (!o) return;
+  
+  ctx.save();
+  ctx.fillStyle = 'rgba(5, 2, 8, 0.9)';
+  ctx.fillRect(0, 0, W, H);
+  
+  ctx.strokeStyle = '#FFE066';
+  ctx.fillStyle = '#100520';
+  ctx.lineWidth = 2;
+  roundRect(ctx, 30, H / 2 - 130, 300, 240, 10, true, true);
+  
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('CAPTURING WANTED OUTLAW', W / 2, H / 2 - 100);
+  
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 20px Georgia';
+  ctx.fillText(o.name, W / 2, H / 2 - 70);
+  
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText(`BOUNTY: $${o.bounty}`, W / 2, H / 2 - 40);
+  
+  // Who is resolving?
+  if (o.status === 'drafted_player') {
+    const dep = deputies.find(d => d.id === o.assignedDeputyId);
+    ctx.fillStyle = dep.color;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(`DEPUTY: ${dep.name.toUpperCase()} (${dep.role})`, W / 2, H / 2 - 10);
+    
+    // Draw skill vs danger comparison
+    ctx.fillStyle = '#C8B89A';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(`${o.skill.toUpperCase()} SKILL ${dep[o.skill]} vs DANGER ${o.danger}`, W / 2, H / 2 + 15);
+  } else {
+    ctx.fillStyle = '#E74C3C';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('ASSIGNED: MARSHAL WYATT', W / 2, H / 2 - 10);
+    ctx.fillStyle = '#C8B89A';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(`WYATT SKILL CROWD VS DANGER ${o.danger}`, W / 2, H / 2 + 15);
+  }
+  
+  // Rolling loader
+  const pct = Math.min(1.0, (2.0 - resolvingTimer) / 1.5);
+  ctx.strokeStyle = '#444';
+  ctx.fillStyle = '#111';
+  roundRect(ctx, 60, H / 2 + 40, 240, 20, 4, true, true);
+  
+  const barColor = o.resolutionResult === 'success' ? '#FF9F43' : '#E74C3C';
+  ctx.fillStyle = pct < 1.0 ? '#FFE066' : barColor;
+  roundRect(ctx, 62, H / 2 + 42, 236 * pct, 16, 2, true, false);
+  
+  if (pct >= 1.0) {
+    ctx.fillStyle = barColor;
+    ctx.font = 'bold 22px Georgia';
+    const capText = o.resolutionResult === 'success' ? 'CAPTURED!' : 'ESCAPED';
+    ctx.fillText(capText, W / 2, H / 2 + 95);
+    
+    // Trigger effects on resolution completed trigger
+    if (resolvingTimer > 0.05 && resolvingTimer < 0.1) {
+      if (o.resolutionResult === 'success') {
+        spawnCaptureExplosion(W / 2, H / 2 + 50, barColor);
+        playWin();
+      } else {
+        playLose();
+      }
+    }
+  } else {
+    ctx.fillStyle = '#C8B89A';
+    ctx.font = 'italic 11px Georgia';
+    ctx.fillText('Rolling dice / tracking trail...', W / 2, H / 2 + 95);
+  }
+  
+  ctx.restore();
+}
+
+function drawFooterBar() {
+  ctx.save();
+  // Bottom toggle triggers
+  ctx.strokeStyle = 'rgba(255,224,102,0.1)';
+  ctx.beginPath(); cLine(0, H - 45, W, H - 45); ctx.stroke();
+  
+  // Music indicator
+  ctx.fillStyle = musicEnabled ? '#FFE066' : '#555';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(musicEnabled ? '♫ MUSIC ON' : '♫ MUSIC OFF', 18, H - 20);
+  
+  // Feedback link
+  ctx.fillStyle = '#C8B89A';
+  ctx.textAlign = 'right';
+  ctx.fillText('FEEDBACK ✎', W - 18, H - 20);
+  ctx.restore();
+}
+
+function drawGameOver() {
+  ctx.save();
+  ctx.textAlign = 'center';
+  
+  ctx.fillStyle = '#100520';
+  ctx.fillRect(0, 0, W, H);
+  
+  ctx.fillStyle = state === 'win' ? '#FFE066' : '#E74C3C';
+  ctx.font = 'bold 36px Georgia';
+  ctx.fillText(state === 'win' ? 'VICTORY!' : 'DEFEAT', W / 2, 140);
+  
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = '14px sans-serif';
+  const endMsg = state === 'win'
+    ? 'You out-earned Marshal Wyatt and captured the most outlaws!'
+    : 'Wyatt collected more bounties than your posse this time.';
+  wrapText(ctx, endMsg, W / 2, 180, 280, 20);
+  
+  // Score details
+  ctx.fillStyle = '#E8DCC8';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText(`YOUR BOUNTIES: $${playerCash}`, W / 2, 280);
+  ctx.fillStyle = '#E74C3C';
+  ctx.fillText(`MARSHAL WYATT: $${marshalCash}`, W / 2, 310);
+  
+  // New Best record check!
+  if (state === 'win' && playerCash >= bestScore) {
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillText('★ NEW RECORD ★', W / 2, 360);
+  }
+  
+  // Action Buttons
+  ctx.strokeStyle = '#FFE066';
+  ctx.lineWidth = 1.5;
+  
+  // Play again
+  ctx.fillStyle = '#2a1a05';
+  roundRect(ctx, 80, 430, 200, 40, 6, true, true);
+  ctx.fillStyle = '#FFE066';
+  ctx.font = 'bold 14px Georgia';
+  ctx.fillText('PLAY AGAIN', W / 2, 455);
+  
+  // Share Bounties
+  ctx.fillStyle = '#050208';
+  roundRect(ctx, 80, 490, 200, 40, 6, true, true);
+  ctx.fillStyle = '#FFE066';
+  ctx.fillText('SHARE RESULTS', W / 2, 515);
+  
+  // Feedback
+  ctx.fillStyle = '#0c0512';
+  roundRect(ctx, 80, 550, 200, 40, 6, true, true);
+  ctx.fillStyle = '#C8B89A';
+  ctx.fillText('LEAVE FEEDBACK', W / 2, 575);
+  
+  ctx.restore();
+}
+
+function drawFeedbackModal() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,2,8,0.92)';
+  ctx.fillRect(0,0,W,H);
+  
+  ctx.fillStyle = '#1a0a1a';
+  ctx.strokeStyle = '#FF9F43';
+  ctx.lineWidth = 2;
+  roundRect(ctx, 25, 120, 310, 395, 10, true, true);
+  
+  ctx.fillStyle = '#FF9F43';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 18px Georgia';
+  ctx.fillText('PLAYER FEEDBACK', W / 2, 160);
+  
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Help Bob make this game series better!', W / 2, 190);
+  
+  // Star rating
+  ctx.fillText('Rating:', W / 2, 235);
+  for (let i = 1; i <= 5; i++) {
+    const starX = W / 2 - 90 + (i - 1) * 35;
+    ctx.fillStyle = i <= feedbackRating ? '#FF9F43' : '#333';
+    ctx.font = '22px sans-serif';
+    ctx.fillText(i <= feedbackRating ? '★' : '☆', starX, 275);
+  }
+  
+  // Message input
+  ctx.fillStyle = '#C8B89A';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Message (Type keys, limit 40 chars):', W / 2, 320);
+  
+  ctx.fillStyle = '#111';
+  ctx.strokeStyle = '#555';
+  roundRect(ctx, 45, 335, 270, 75, 4, true, true);
+  
+  ctx.fillStyle = '#FFF';
+  ctx.font = 'italic 12px sans-serif';
+  wrapText(ctx, feedbackText || '(No message typed yet)', W / 2, 355, 250, 16);
+  
+  // Star buttons
+  ctx.fillStyle = '#221100';
+  ctx.strokeStyle = '#FF9F43';
+  roundRect(ctx, W / 2 - 120, 445, 110, 40, 6, true, true);
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('SUBMIT', W / 2 - 65, 470);
+  
+  ctx.fillStyle = '#150f15';
+  ctx.strokeStyle = '#555';
+  roundRect(ctx, W / 2 + 10, 445, 110, 40, 6, true, true);
+  ctx.fillStyle = '#C8B89A';
+  ctx.fillText('CANCEL', W / 2 + 65, 470);
+  
+  ctx.restore();
+}
+
+function wrapText(c, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(' ');
+  let line = '';
+  let currentY = y;
+  
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + words[n] + ' ';
+    const metrics = c.measureText(testLine);
+    const testWidth = metrics.width;
+    if (testWidth > maxWidth && n > 0) {
+      c.fillText(line, x, currentY);
+      line = words[n] + ' ';
+      currentY += lineHeight;
+    } else {
+      line = testLine;
+    }
+  }
+  c.fillText(line, x, currentY);
+}
+
+// ── State Hooks for Playwright Tests ────────────────────────
+window.__gameState = () => state;
+window.__getState = () => ({
+  state,
+  playerCash,
+  marshalCash,
+  round,
+  deputies: deputies.map(d => ({ id: d.id, name: d.name, state: d.state })),
+  boardOutlaws: boardOutlaws.map(o => ({ name: o.name, skill: o.skill, danger: o.danger, bounty: o.bounty, status: o.status, assignedDeputyId: o.assignedDeputyId, resolutionResult: o.resolutionResult })),
+  selectedOutlawIdx
+});
+
+requestAnimationFrame(update);
+</script>
+</body>
+</html>

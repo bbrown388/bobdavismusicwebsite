@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Gold Panner - Bob Davis</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; }
+canvas { display:block; touch-action:none; }
+#fb-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85);
+  justify-content:center; align-items:center; z-index:100;
+}
+#fb-overlay.show { display:flex; }
+#fb-box {
+  background:#1a0d35; border:2px solid #FFE066; border-radius:12px;
+  padding:24px; width:300px; font-family:Georgia,serif; color:#FFE066;
+}
+#fb-box h3 { margin-bottom:12px; font-size:18px; }
+#fb-box select, #fb-box textarea {
+  width:100%; margin-bottom:10px; padding:8px; border-radius:6px;
+  background:#2a1500; color:#FFE066; border:1px solid #FFE066; font-family:Georgia,serif;
+}
+#fb-box textarea { height:80px; resize:none; }
+#fb-row { display:flex; gap:10px; }
+#fb-row button {
+  flex:1; padding:10px; border-radius:8px; border:none; cursor:pointer;
+  font-family:Georgia,serif; font-size:14px; font-weight:bold;
+}
+#fb-send { background:#FFE066; color:#1a0d35; }
+#fb-cancel { background:#3a1f05; color:#FFE066; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fb-overlay">
+  <div id="fb-box">
+    <h3>Leave Feedback</h3>
+    <select id="fb-target">
+      <option value="general">General / next game</option>
+      <option value="Gold Panner" selected>Gold Panner</option>
+    </select>
+    <textarea id="fb-text" placeholder="What do you think?"></textarea>
+    <div id="fb-row">
+      <button id="fb-send">Send</button>
+      <button id="fb-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+const MUSIC_SRC = '';
+const FEEDBACK_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwdJq8jFwM31ZUwkyhRrVVJkk5wf8rOZARAArWFOMfaymVOnNmnmM7fOc_acsiM6dRVSg/exec';
+const W = 360, H = 640;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+let scale = 1;
+
+function resize() {
+  scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = scale * W + 'px';
+  canvas.style.height = scale * H + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Constants ─────────────────────────────────────────────
+const PAN_CX  = 180;
+const PAN_CY  = 390;
+const PAN_R   = 130;
+const PAN_RIM = 13;
+const MAX_TILT    = 0.65;
+const TILT_SMOOTH = 0.14;
+const GRAVITY     = 0.30;
+const DAMPING     = 0.955;
+const RESTITUTION = 0.30;
+
+// Particle types
+const T_GOLD   = 0;
+const T_GRAVEL = 1;
+const T_FOOLS  = 2;
+const T_MUD    = 3;
+
+const PCONF = [
+  { type:T_GOLD,   mass:4.0, r:4.0, fill:'#FFD700', rim:'#FF8800', name:'gold'        },
+  { type:T_GRAVEL, mass:1.6, r:5.5, fill:'#8B7355', rim:'#5B4325', name:'gravel'      },
+  { type:T_FOOLS,  mass:1.9, r:3.5, fill:'#C8A400', rim:'#986000', name:"fool's gold" },
+  { type:T_MUD,    mass:1.2, r:3.0, fill:'#4A3020', rim:'#2A1800', name:'mud'         },
+];
+
+const ROUNDS_CONF = [
+  { time:38, counts:[5, 16, 0, 0 ] },
+  { time:32, counts:[6, 12, 4, 6 ] },
+  { time:26, counts:[7, 10, 8, 8 ] },
+];
+const TOTAL_GOLD = ROUNDS_CONF.reduce((s, r) => s + r.counts[T_GOLD], 0); // 18
+
+const JUMPER_FIRST_DELAY = 10;
+const JUMPER_INTERVAL    = 13;
+const JUMPER_STEAL_TIME  = 2.0;
+const WIN_THRESHOLD      = 10;
+
+// ── State ─────────────────────────────────────────────────
+let state = 'title';
+let tilt = 0;
+let targetTilt = 0;
+let dragging = false;
+let dragStartX = 0;
+let tiltAtDragStart = 0;
+let round = 0;
+let timeLeft = 0;
+let particles = [];
+let totalGoldKept = 0;
+let totalGoldAvail = 0;
+let score = 0;
+let roundResult = null;
+let best = parseInt(localStorage.getItem('gold_panner_best') || '0', 10);
+let roundFlash = 0;
+
+let jumper = { active:false, x:0, y:0, side:1, timer:0, scared:false };
+let jumperNextAt = -999;
+
+let popups = [];
+
+// ── Audio ──────────────────────────────────────────────────
+const ac = new (window.AudioContext || window.webkitAudioContext)();
+
+function resumeAudio() {
+  if (ac.state === 'suspended') ac.resume();
+}
+
+function playTone(freq, dur, vol, type) {
+  vol  = vol  || 0.25;
+  type = type || 'sine';
+  try {
+    const osc = ac.createOscillator();
+    const g   = ac.createGain();
+    osc.connect(g); g.connect(ac.destination);
+    osc.frequency.value = freq;
+    osc.type = type;
+    const t = ac.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur);
+  } catch(e) {}
+}
+
+function playSplash() {
+  try {
+    const len = Math.floor(ac.sampleRate * 0.12);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d   = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src  = ac.createBufferSource();
+    const filt = ac.createBiquadFilter();
+    filt.type            = 'bandpass';
+    filt.frequency.value = 1100;
+    filt.Q.value         = 0.7;
+    const g = ac.createGain(); g.gain.value = 0.15;
+    src.buffer = buf;
+    src.connect(filt); filt.connect(g); g.connect(ac.destination);
+    src.start();
+  } catch(e) {}
+}
+
+function playGoldClink() {
+  playTone(1320, 0.22, 0.15, 'sine');
+  setTimeout(() => playTone(1760, 0.16, 0.10, 'sine'), 80);
+}
+
+function playJumperAlert() {
+  playTone(220, 0.25, 0.22, 'sawtooth');
+  setTimeout(() => playTone(185, 0.35, 0.18, 'sawtooth'), 150);
+}
+
+function playJumperScared() {
+  playTone(440, 0.10, 0.13, 'square');
+  setTimeout(() => playTone(660, 0.07, 0.09, 'square'), 60);
+}
+
+let creekSrc = null;
+let creekGain = null;
+
+function startCreek() {
+  if (creekSrc) return;
+  try {
+    const len = Math.floor(ac.sampleRate * 4);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d   = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    creekSrc  = ac.createBufferSource();
+    creekSrc.buffer = buf;
+    creekSrc.loop   = true;
+    const f1 = ac.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 500; f1.Q.value = 0.4;
+    const f2 = ac.createBiquadFilter(); f2.type = 'lowpass';  f2.frequency.value = 700;
+    creekGain = ac.createGain(); creekGain.gain.value = 0.07;
+    creekSrc.connect(f1); f1.connect(f2); f2.connect(creekGain); creekGain.connect(ac.destination);
+    creekSrc.start();
+  } catch(e) {}
+}
+
+function stopCreek() {
+  if (!creekSrc) return;
+  try {
+    creekGain.gain.linearRampToValueAtTime(0, ac.currentTime + 0.4);
+    const s = creekSrc; creekSrc = null; creekGain = null;
+    setTimeout(() => { try { s.stop(); } catch(e) {} }, 500);
+  } catch(e) {}
+}
+
+// ── Particles ──────────────────────────────────────────────
+function spawnParticles(roundIdx) {
+  particles = [];
+  const conf = ROUNDS_CONF[roundIdx];
+  totalGoldAvail += conf.counts[T_GOLD];
+  conf.counts.forEach(function(count, typeIdx) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist  = Math.random() * (PAN_R - PAN_RIM - PCONF[typeIdx].r - 10) * 0.85;
+      particles.push({
+        x:      PAN_CX + Math.cos(angle) * dist,
+        y:      PAN_CY + Math.sin(angle) * dist,
+        vx:     (Math.random() - 0.5) * 1.8,
+        vy:     (Math.random() - 0.5) * 1.8,
+        type:   typeIdx,
+        mass:   PCONF[typeIdx].mass,
+        r:      PCONF[typeIdx].r,
+        fill:   PCONF[typeIdx].fill,
+        rim:    PCONF[typeIdx].rim,
+        spilled:false,
+      });
+    }
+  });
+}
+
+function updateParticles() {
+  const sinT = Math.sin(tilt);
+  const boundary = PAN_R - PAN_RIM;
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (p.spilled) continue;
+
+    // Tilt-driven horizontal acceleration: lighter particles accelerate more
+    const ax = GRAVITY * sinT / p.mass;
+    // Gentle centering force keeps particles from piling statically at edge
+    const cax = (PAN_CX - p.x) * 0.00025;
+    const cay = (PAN_CY - p.y) * 0.00020;
+
+    p.vx = (p.vx + ax + cax) * DAMPING;
+    p.vy = (p.vy + cay)       * DAMPING;
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Pan boundary
+    const dx   = p.x - PAN_CX;
+    const dy   = p.y - PAN_CY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const edge = boundary - p.r;
+
+    if (dist > edge) {
+      const nx = dx / dist;
+      const ny = dy / dist;
+      // Spill: particle on downhill side with meaningful tilt
+      const downhill = dx * sinT > 0 && Math.abs(tilt) > 0.10;
+      if (downhill) {
+        p.spilled = true;
+        playSplash();
+        if (p.type === T_GOLD) {
+          addPopup(p.x, p.y, 'Gold lost!', '#E74C3C');
+        }
+      } else {
+        // Reflect off wall
+        const dot = p.vx * nx + p.vy * ny;
+        p.vx -= (1 + RESTITUTION) * dot * nx;
+        p.vy -= (1 + RESTITUTION) * dot * ny;
+        p.x   = PAN_CX + nx * (edge - 0.5);
+        p.y   = PAN_CY + ny * (edge - 0.5);
+      }
+    }
+  }
+
+  // Simple particle-particle separation (prevent full overlap, cheap O(n^2) acceptable for n<40)
+  for (let i = 0; i < particles.length; i++) {
+    if (particles[i].spilled) continue;
+    for (let j = i + 1; j < particles.length; j++) {
+      if (particles[j].spilled) continue;
+      const pi = particles[i], pj = particles[j];
+      const ddx  = pi.x - pj.x;
+      const ddy  = pi.y - pj.y;
+      const dist2 = ddx * ddx + ddy * ddy;
+      const minD  = pi.r + pj.r + 1;
+      if (dist2 < minD * minD) {
+        let nx, ny, d;
+        if (dist2 > 0.0001) {
+          d  = Math.sqrt(dist2);
+          nx = ddx / d; ny = ddy / d;
+        } else {
+          const angle = (i * 0.618 + j * 0.382) * Math.PI * 2;
+          nx = Math.cos(angle); ny = Math.sin(angle);
+          d  = 0;
+        }
+        const overlap = (minD - d) * 0.4;
+        pi.x += nx * overlap; pi.y += ny * overlap;
+        pj.x -= nx * overlap; pj.y -= ny * overlap;
+        // Small velocity exchange
+        const relV = (pi.vx - pj.vx) * nx + (pi.vy - pj.vy) * ny;
+        if (relV < 0) {
+          const imp = relV * 0.3;
+          pi.vx -= imp * nx; pi.vy -= imp * ny;
+          pj.vx += imp * nx; pj.vy += imp * ny;
+        }
+      }
+    }
+  }
+}
+
+// ── Claim Jumper ───────────────────────────────────────────
+function spawnJumper() {
+  const side = Math.random() < 0.5 ? -1 : 1;
+  jumper = {
+    active:  true,
+    x:       PAN_CX + side * (PAN_R + 22),
+    y:       PAN_CY + (Math.random() - 0.5) * 50,
+    side:    side,
+    timer:   0,
+    scared:  false,
+  };
+  playJumperAlert();
+}
+
+function scareJumper() {
+  if (!jumper.active || jumper.scared) return;
+  jumper.scared = true;
+  jumper.active = false;
+  playJumperScared();
+  addPopup(jumper.x, jumper.y - 30, 'Scat!', '#FF9F43');
+}
+
+function updateJumper(dt) {
+  if (!jumper.active) return;
+  jumper.timer += dt;
+  if (jumper.timer >= JUMPER_STEAL_TIME) {
+    // Steal a random gold particle
+    const golds = particles.filter(function(p) { return !p.spilled && p.type === T_GOLD; });
+    if (golds.length > 0) {
+      const victim = golds[Math.floor(Math.random() * golds.length)];
+      victim.spilled = true;
+      addPopup(jumper.x, jumper.y - 20, 'Stolen!', '#E74C3C');
+      playTone(160, 0.45, 0.28, 'sawtooth');
+    }
+    jumper.active = false;
+    jumperNextAt = timeLeft - JUMPER_INTERVAL;
+  }
+}
+
+// ── Popups ─────────────────────────────────────────────────
+function addPopup(x, y, text, color) {
+  popups.push({ x:x, y:y, text:text, color:color, life:1.0 });
+}
+
+function updatePopups(dt) {
+  for (let i = 0; i < popups.length; i++) popups[i].life -= dt * 1.1;
+  popups = popups.filter(function(p) { return p.life > 0; });
+}
+
+// ── Game flow ──────────────────────────────────────────────
+function startGame() {
+  state          = 'playing';
+  round          = 0;
+  totalGoldKept  = 0;
+  totalGoldAvail = 0;
+  score          = 0;
+  tilt           = 0;
+  targetTilt     = 0;
+  popups         = [];
+  roundResult    = null;
+  startRound();
+  startCreek();
+}
+
+function startRound() {
+  timeLeft      = ROUNDS_CONF[round].time;
+  particles     = [];
+  roundResult   = null;
+  jumper.active = false;
+  jumperNextAt  = timeLeft - JUMPER_FIRST_DELAY;
+  roundFlash    = 1.0;
+  spawnParticles(round);
+}
+
+function endRound() {
+  const alive      = particles.filter(function(p) { return !p.spilled; });
+  const goldKept   = alive.filter(function(p) { return p.type === T_GOLD;   }).length;
+  const foolsKept  = alive.filter(function(p) { return p.type === T_FOOLS;  }).length;
+  const gravelWash = particles.filter(function(p) { return p.spilled && p.type === T_GRAVEL; }).length;
+  const mudWash    = particles.filter(function(p) { return p.spilled && p.type === T_MUD;    }).length;
+
+  totalGoldKept += goldKept;
+  score         += goldKept * 15 + Math.floor((gravelWash + mudWash) * 1.5);
+
+  roundResult = {
+    kept:      goldKept,
+    available: ROUNDS_CONF[round].counts[T_GOLD],
+    foolsKept: foolsKept,
+    washed:    gravelWash + mudWash,
+  };
+
+  if (goldKept > 0) playGoldClink();
+
+  if (round < ROUNDS_CONF.length - 1) {
+    state = 'between';
+  } else {
+    if (totalGoldKept >= WIN_THRESHOLD) {
+      if (score > best) {
+        best = score;
+        localStorage.setItem('gold_panner_best', best);
+      }
+      state = 'win';
+    } else {
+      state = 'gameover';
+    }
+    stopCreek();
+  }
+}
+
+function advanceRound() {
+  round++;
+  state  = 'playing';
+  popups = [];
+  startRound();
+}
+
+function resetGame() {
+  state      = 'title';
+  tilt       = 0;
+  targetTilt = 0;
+  popups     = [];
+  particles  = [];
+  jumper.active = false;
+  stopCreek();
+}
+
+// ── Input ──────────────────────────────────────────────────
+canvas.addEventListener('pointerdown', function(e) {
+  resumeAudio();
+  const rect = canvas.getBoundingClientRect();
+  const cx   = (e.clientX - rect.left) / scale;
+  const cy   = (e.clientY - rect.top)  / scale;
+
+  // Claim jumper check (playing state)
+  if (state === 'playing' && jumper.active) {
+    if (Math.hypot(cx - jumper.x, cy - jumper.y) < 52) {
+      scareJumper();
+      return;
+    }
+  }
+
+  if (state === 'title' || state === 'between') {
+    if (state === 'title') startGame();
+    else advanceRound();
+    return;
+  }
+
+  if (state === 'playing') {
+    dragging       = true;
+    dragStartX     = cx;
+    tiltAtDragStart = tilt;
+  }
+});
+
+canvas.addEventListener('pointermove', function(e) {
+  if (!dragging || state !== 'playing') return;
+  const rect = canvas.getBoundingClientRect();
+  const cx   = (e.clientX - rect.left) / scale;
+  const dx   = cx - dragStartX;
+  targetTilt  = Math.max(-MAX_TILT, Math.min(MAX_TILT, tiltAtDragStart + dx / 115));
+});
+
+canvas.addEventListener('pointerup', function(e) {
+  dragging = false;
+  if (state !== 'win' && state !== 'gameover') return;
+  const rect = canvas.getBoundingClientRect();
+  const cy   = (e.clientY - rect.top) / scale;
+  // Share button zone
+  if (cy >= 390 && cy <= 430) {
+    const msg = 'Gold Panner: ' + score + ' pts (' + totalGoldKept + '/' + totalGoldAvail + ' gold kept) - Bob Davis Games';
+    if (navigator.share) navigator.share({ title:'Gold Panner', text:msg });
+    return;
+  }
+  // Feedback link zone
+  if (cy >= 608) {
+    document.getElementById('fb-overlay').classList.add('show');
+    return;
+  }
+  resetGame();
+});
+
+canvas.addEventListener('pointercancel', function() { dragging = false; });
+
+window.addEventListener('keydown', function(e) {
+  if (e.code === 'Space') {
+    if (state === 'title')   startGame();
+    else if (state === 'between') advanceRound();
+    else if (state === 'win' || state === 'gameover') resetGame();
+  }
+  if (state === 'playing') {
+    if (e.code === 'ArrowLeft')  targetTilt = Math.max(-MAX_TILT, targetTilt - 0.07);
+    if (e.code === 'ArrowRight') targetTilt = Math.min( MAX_TILT, targetTilt + 0.07);
+  }
+});
+
+// Feedback overlay
+document.getElementById('fb-cancel').onclick = function() {
+  document.getElementById('fb-overlay').classList.remove('show');
+};
+document.getElementById('fb-send').onclick = async function() {
+  const game = document.getElementById('fb-target').value;
+  const msg  = document.getElementById('fb-text').value.trim();
+  if (!msg) return;
+  try {
+    await fetch(FEEDBACK_ENDPOINT, {
+      method:'POST', mode:'no-cors',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ game:game, message:msg, source:'in-game' }),
+    });
+  } catch(ex) {}
+  document.getElementById('fb-overlay').classList.remove('show');
+  document.getElementById('fb-text').value = '';
+};
+
+// ── Draw helpers ───────────────────────────────────────────
+function pill(x, y, w, h, r, fill) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+function ctext(str, x, y, font, fill, align) {
+  ctx.save();
+  ctx.font      = font;
+  ctx.fillStyle = fill;
+  ctx.textAlign = align || 'center';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+
+// ── Background ─────────────────────────────────────────────
+function drawBG() {
+  ctx.save();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0,    '#050208');
+  bg.addColorStop(0.42, '#1a0d35');
+  bg.addColorStop(1,    '#2a1200');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Mountains silhouette
+  ctx.fillStyle = '#120820';
+  ctx.beginPath();
+  ctx.moveTo(0, 230);
+  ctx.lineTo(45, 155); ctx.lineTo(90, 195); ctx.lineTo(140, 138);
+  ctx.lineTo(195, 182); ctx.lineTo(250, 122); ctx.lineTo(305, 165);
+  ctx.lineTo(360, 200); ctx.lineTo(360, 640); ctx.lineTo(0, 640);
+  ctx.closePath(); ctx.fill();
+
+  // Stars (deterministic positions)
+  ctx.fillStyle = 'rgba(255,230,100,0.55)';
+  const sx = [0.08,0.22,0.41,0.60,0.78,0.93,0.15,0.50,0.70,0.88,0.33,0.55];
+  const sy = [0.04,0.09,0.03,0.07,0.02,0.06,0.14,0.12,0.10,0.16,0.05,0.15];
+  for (let i = 0; i < sx.length; i++) {
+    ctx.fillRect(sx[i]*W, sy[i]*H, 1.5, 1.5);
+  }
+  ctx.restore();
+}
+
+// ── Pan ────────────────────────────────────────────────────
+function drawPan() {
+  ctx.save();
+  const innerR = PAN_R - PAN_RIM;
+
+  // Outer rim
+  const rimGrad = ctx.createRadialGradient(PAN_CX - 22, PAN_CY - 22, 30, PAN_CX, PAN_CY, PAN_R);
+  rimGrad.addColorStop(0, '#4a3a28');
+  rimGrad.addColorStop(1, '#1a1008');
+  ctx.beginPath();
+  ctx.arc(PAN_CX, PAN_CY, PAN_R, 0, Math.PI * 2);
+  ctx.fillStyle = rimGrad;
+  ctx.fill();
+
+  // Inner basin
+  const waterOffset = Math.sin(tilt) * 18;
+  const waterGrad   = ctx.createRadialGradient(
+    PAN_CX + waterOffset, PAN_CY - 8, 8,
+    PAN_CX, PAN_CY, innerR
+  );
+  waterGrad.addColorStop(0,   '#233320');
+  waterGrad.addColorStop(0.55, '#172515');
+  waterGrad.addColorStop(1,    '#0d1a0d');
+  ctx.beginPath();
+  ctx.arc(PAN_CX, PAN_CY, innerR, 0, Math.PI * 2);
+  ctx.fillStyle = waterGrad;
+  ctx.fill();
+
+  // Water surface effects clipped to inner basin
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(PAN_CX, PAN_CY, innerR, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Tilted water surface shimmer
+  const shiftX = Math.sin(tilt) * 22;
+  const lineY  = PAN_CY - 12;
+  ctx.strokeStyle = 'rgba(100,200,140,0.18)';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(PAN_CX - innerR, lineY - shiftX);
+  ctx.lineTo(PAN_CX + innerR, lineY + shiftX);
+  ctx.stroke();
+
+  // Subtle highlight ellipse shifts with tilt
+  ctx.beginPath();
+  ctx.ellipse(
+    PAN_CX + Math.sin(tilt) * 12, PAN_CY - 22,
+    innerR * 0.55, innerR * 0.22,
+    tilt * 0.25, 0, Math.PI * 2
+  );
+  ctx.fillStyle = 'rgba(120,200,150,0.07)';
+  ctx.fill();
+
+  ctx.restore();
+
+  // Rim highlight arc (top edge)
+  ctx.strokeStyle = 'rgba(200,170,100,0.38)';
+  ctx.lineWidth   = 1.8;
+  ctx.beginPath();
+  ctx.arc(PAN_CX, PAN_CY, PAN_R - 1.5, -Math.PI * 0.85, Math.PI * 0.05);
+  ctx.stroke();
+
+  // Red warning glow on downhill edge when tilting hard
+  const tiltAbs = Math.abs(tilt);
+  if (tiltAbs > 0.22) {
+    const gs    = Math.sign(tilt);
+    const glowA = Math.min(1, (tiltAbs - 0.22) / (MAX_TILT - 0.22));
+    ctx.beginPath();
+    ctx.arc(PAN_CX, PAN_CY, PAN_R - 4,
+      -Math.PI * 0.28 * gs, Math.PI * 0.28 * gs, gs < 0);
+    ctx.strokeStyle = 'rgba(231,76,60,' + (glowA * 0.72) + ')';
+    ctx.lineWidth   = 4;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// ── Particles ──────────────────────────────────────────────
+function drawParticles() {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(PAN_CX, PAN_CY, PAN_R - PAN_RIM, 0, Math.PI * 2);
+  ctx.clip();
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (p.spilled) continue;
+    ctx.save();
+
+    // Drop shadow
+    ctx.beginPath();
+    ctx.arc(p.x + 1.5, p.y + 2.0, p.r + 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.38)';
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = p.fill;
+    ctx.fill();
+
+    // Specular highlight
+    ctx.beginPath();
+    ctx.arc(p.x - p.r * 0.28, p.y - p.r * 0.28, p.r * 0.42, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.fill();
+
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ── Claim Jumper ───────────────────────────────────────────
+function drawJumper() {
+  if (!jumper.active) return;
+  ctx.save();
+  const jx = jumper.x, jy = jumper.y;
+  const urgency = Math.min(1, jumper.timer / JUMPER_STEAL_TIME);
+  const pulse   = 0.65 + Math.sin(Date.now() * 0.016) * 0.35;
+
+  // Danger halo
+  ctx.beginPath();
+  ctx.arc(jx, jy, 28 + urgency * 10, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(231,76,60,' + (urgency * 0.22) + ')';
+  ctx.fill();
+
+  // Silhouette
+  ctx.fillStyle = 'rgba(26,15,32,' + pulse + ')';
+  // Hat brim
+  ctx.fillRect(jx - 11, jy - 38, 22, 4);
+  // Hat crown
+  ctx.fillRect(jx - 8,  jy - 52, 16, 15);
+  // Head
+  ctx.beginPath(); ctx.arc(jx, jy - 26, 8, 0, Math.PI * 2); ctx.fill();
+  // Body
+  ctx.fillRect(jx - 7, jy - 18, 14, 22);
+  // Reaching arm toward pan
+  ctx.fillRect(jx + (jumper.side > 0 ? 7 : -21), jy - 14, 14, 5);
+  // Legs
+  ctx.fillRect(jx - 7, jy + 4, 6, 16);
+  ctx.fillRect(jx + 1, jy + 4, 6, 16);
+
+  // THIEF label
+  ctx.fillStyle = 'rgba(231,76,60,' + pulse + ')';
+  ctx.font      = 'bold 11px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('THIEF!', jx, jy - 57);
+
+  // Countdown arc
+  const remaining = 1 - urgency;
+  ctx.beginPath();
+  ctx.arc(jx, jy, 23, -Math.PI / 2, -Math.PI / 2 + urgency * Math.PI * 2);
+  ctx.strokeStyle = 'rgba(231,76,60,' + (pulse * 0.85) + ')';
+  ctx.lineWidth   = 3;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ── HUD ────────────────────────────────────────────────────
+function drawHUD() {
+  ctx.save();
+
+  // Round indicator
+  pill(8, 8, 76, 26, 6, 'rgba(26,13,53,0.88)');
+  ctext('Round ' + (round + 1) + '/3', 46, 25.5, '13px Georgia, serif', '#FFE066');
+
+  // Timer
+  const tCol = timeLeft <= 8 ? '#E74C3C' : '#FFE066';
+  pill(W / 2 - 34, 8, 68, 26, 6, 'rgba(26,13,53,0.88)');
+  ctext(Math.ceil(timeLeft) + 's', W / 2, 25.5, 'bold 15px Georgia, serif', tCol);
+
+  // Gold count
+  const goldAlive = particles.filter(function(p) { return !p.spilled && p.type === T_GOLD; }).length;
+  const goldTotal = ROUNDS_CONF[round] ? ROUNDS_CONF[round].counts[T_GOLD] : 0;
+  pill(W - 82, 8, 74, 26, 6, 'rgba(26,13,53,0.88)');
+  ctext(goldAlive + '/' + goldTotal, W - 70, 25.5, '12px Georgia, serif', '#FFD700');
+  ctext('Au', W - 30, 25.5, '11px Georgia, serif', 'rgba(255,215,0,0.6)');
+
+  // Score
+  pill(W / 2 - 36, 40, 72, 22, 6, 'rgba(26,13,53,0.72)');
+  ctext(score + '', W / 2, 55.5, 'bold 13px Georgia, serif', '#FF9F43');
+
+  // Round flash
+  if (roundFlash > 0) {
+    roundFlash -= 0.022;
+    const a = Math.max(0, roundFlash);
+    ctx.globalAlpha = a;
+    ctext('Round ' + (round + 1), W / 2, 160, 'bold 32px Georgia, serif', '#FFE066');
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+// ── Tilt Gauge ─────────────────────────────────────────────
+function drawTiltGauge() {
+  ctx.save();
+  const gx = W / 2, gy = H - 26, gw = 160, gh = 14;
+
+  pill(gx - gw / 2, gy - gh / 2, gw, gh, gh / 2, 'rgba(26,13,53,0.85)');
+
+  // Center mark
+  ctx.fillStyle = 'rgba(255,230,100,0.28)';
+  ctx.fillRect(gx - 1, gy - gh / 2 + 2, 2, gh - 4);
+
+  // Indicator dot
+  const dotX   = gx + (tilt / MAX_TILT) * (gw / 2 - 9);
+  const dotCol = Math.abs(tilt) > 0.44 ? '#E74C3C' : '#FFD700';
+  ctx.beginPath();
+  ctx.arc(dotX, gy, 7, 0, Math.PI * 2);
+  ctx.fillStyle = dotCol;
+  ctx.fill();
+
+  // L / R labels
+  ctx.fillStyle = 'rgba(255,230,100,0.45)';
+  ctx.font      = '10px Georgia, serif';
+  ctx.textAlign = 'left';  ctx.fillText('L', gx - gw / 2 + 3,  gy + 4);
+  ctx.textAlign = 'right'; ctx.fillText('R', gx + gw / 2 - 3, gy + 4);
+
+  ctx.restore();
+}
+
+// ── Popups ─────────────────────────────────────────────────
+function drawPopups() {
+  ctx.save();
+  for (let i = 0; i < popups.length; i++) {
+    const p = popups[i];
+    const a = Math.min(1, p.life * 2);
+    ctx.globalAlpha = a;
+    ctx.font        = 'bold 13px Georgia, serif';
+    ctx.fillStyle   = p.color;
+    ctx.textAlign   = 'center';
+    ctx.fillText(p.text, p.x, p.y - (1 - p.life) * 42);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── Title Screen ───────────────────────────────────────────
+function drawTitle() {
+  ctx.save();
+  drawBG();
+
+  // Decorative nuggets
+  const nuggets = [
+    {x:90, y:310, r:7},  {x:250, y:325, r:5}, {x:170, y:475, r:8},
+    {x:120, y:490, r:4}, {x:240, y:460, r:6},
+  ];
+  for (const n of nuggets) {
+    ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(180,130,0,0.18)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#C8A400'; ctx.fill();
+    ctx.beginPath(); ctx.arc(n.x - n.r*0.3, n.y - n.r*0.3, n.r*0.4, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fill();
+  }
+
+  // Title
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,200,0,0.55)';
+  ctx.shadowBlur  = 22;
+  ctext('GOLD PANNER', W / 2, 112, 'bold 38px Georgia, serif', '#FFD700');
+  ctx.shadowBlur = 0;
+  ctx.restore();
+  ctext('Game 41', W / 2, 135, '14px Georgia, serif', 'rgba(255,230,100,0.65)');
+
+  // Legend strip
+  const legendY = 200;
+  pill(22, legendY - 16, W - 44, 90, 8, 'rgba(26,13,53,0.72)');
+
+  const types = [
+    { fill:'#FFD700', label:'Real gold',   sub:'Heavy - stays' },
+    { fill:'#C8A400', label:"Fool's gold", sub:'Lighter - washes' },
+    { fill:'#8B7355', label:'Gravel',      sub:'Wash it out' },
+  ];
+  types.forEach(function(t, i) {
+    const tx = 60 + i * 100, ty = legendY + 12;
+    ctx.beginPath(); ctx.arc(tx, ty, 7, 0, Math.PI * 2);
+    ctx.fillStyle = t.fill; ctx.fill();
+    ctext(t.label, tx, ty + 18, '10px Georgia, serif', 'rgba(255,230,100,0.85)');
+    ctext(t.sub,   tx, ty + 32, '9px Georgia, serif',  'rgba(255,200,100,0.55)');
+  });
+
+  // Instruction
+  ctext('Drag left/right to tilt the pan', W / 2, 318, '15px Georgia, serif', 'rgba(255,200,100,0.82)');
+  ctext('Wash away gravel, keep the gold', W / 2, 340, '15px Georgia, serif', 'rgba(255,200,100,0.82)');
+  ctext('Tap THIEF icons before they steal', W / 2, 362, '13px Georgia, serif', 'rgba(255,159,67,0.72)');
+  ctext('3 rounds - keep ' + WIN_THRESHOLD + '+ gold to win', W / 2, 388, '13px Georgia, serif', 'rgba(255,200,100,0.62)');
+
+  if (best > 0) {
+    pill(W / 2 - 50, 408, 100, 24, 6, 'rgba(26,13,53,0.72)');
+    ctext('Best: ' + best, W / 2, 424, '13px Georgia, serif', '#FF9F43');
+  }
+
+  const pulse = 0.6 + Math.sin(Date.now() * 0.004) * 0.4;
+  ctx.globalAlpha = pulse;
+  ctext('TAP TO START', W / 2, 580, 'bold 19px Georgia, serif', '#FFE066');
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ── Between Rounds ─────────────────────────────────────────
+function drawBetween() {
+  ctx.save();
+  drawBG();
+  drawPan();
+  drawParticles();
+
+  ctx.fillStyle = 'rgba(5,2,8,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctext('Round ' + (round + 1) + ' Complete', W / 2, 188, 'bold 26px Georgia, serif', '#FFD700');
+
+  if (roundResult) {
+    const kept = roundResult.kept, avail = roundResult.available;
+    ctext('Gold kept: ' + kept + ' / ' + avail, W / 2, 238, '17px Georgia, serif', '#FFE066');
+    if (roundResult.foolsKept > 0) {
+      ctext("Fool's gold kept: " + roundResult.foolsKept + " (0 pts)", W / 2, 265,
+        '14px Georgia, serif', '#C8A400');
+    }
+    ctext('Gravel washed: ' + roundResult.washed, W / 2, 290,
+      '14px Georgia, serif', 'rgba(100,200,140,0.82)');
+    ctext('Score: ' + score, W / 2, 335, 'bold 22px Georgia, serif', '#FF9F43');
+    ctext('Total gold kept: ' + totalGoldKept + ' / ' + totalGoldAvail,
+      W / 2, 365, '13px Georgia, serif', 'rgba(255,215,0,0.72)');
+  }
+
+  const pulse = 0.6 + Math.sin(Date.now() * 0.004) * 0.4;
+  ctx.globalAlpha = pulse;
+  ctext('TAP TO CONTINUE', W / 2, 580, 'bold 18px Georgia, serif', '#FFE066');
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── End Screen ─────────────────────────────────────────────
+function drawEnd(isWin) {
+  ctx.save();
+  drawBG();
+
+  ctx.fillStyle = 'rgba(5,2,8,0.78)';
+  ctx.fillRect(0, 0, W, H);
+
+  if (isWin) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,200,0,0.65)';
+    ctx.shadowBlur  = 18;
+    ctext('MOTHER LODE!', W / 2, 175, 'bold 36px Georgia, serif', '#FFD700');
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  } else {
+    ctext('PANNED OUT', W / 2, 175, 'bold 36px Georgia, serif', '#E74C3C');
+    ctext('Need ' + WIN_THRESHOLD + ' gold to win', W / 2, 202,
+      '14px Georgia, serif', 'rgba(231,76,60,0.72)');
+  }
+
+  ctext('Gold recovered: ' + totalGoldKept + ' / ' + totalGoldAvail,
+    W / 2, 238, '16px Georgia, serif', '#FFE066');
+  ctext('Score: ' + score, W / 2, 278, 'bold 28px Georgia, serif', '#FF9F43');
+
+  if (isWin && score >= best && score > 0) {
+    const pulse = 0.7 + Math.sin(Date.now() * 0.009) * 0.3;
+    ctx.globalAlpha = pulse;
+    ctext('NEW RECORD!', W / 2, 322, 'bold 22px Georgia, serif', '#FFD700');
+    ctx.globalAlpha = 1;
+  } else if (best > 0) {
+    ctext('Best: ' + best, W / 2, 322, '15px Georgia, serif', 'rgba(255,159,67,0.72)');
+  }
+
+  // Share button
+  pill(W / 2 - 68, 390, 136, 38, 8, '#2a1500');
+  ctx.strokeStyle = '#FFE066'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(W / 2 - 68, 390, 136, 38, 8); ctx.stroke();
+  ctext('Share', W / 2, 414, 'bold 16px Georgia, serif', '#FFE066');
+
+  const pulse2 = 0.6 + Math.sin(Date.now() * 0.004) * 0.4;
+  ctx.globalAlpha = pulse2;
+  ctext('TAP TO PLAY AGAIN', W / 2, 570, 'bold 17px Georgia, serif', '#FFE066');
+  ctx.globalAlpha = 1;
+
+  ctext('Leave feedback', W / 2, 612, '11px Georgia, serif', 'rgba(255,230,100,0.38)');
+  ctx.restore();
+}
+
+// ── Main Loop ──────────────────────────────────────────────
+let lastTs = 0;
+
+function loop(ts) {
+  try {
+    const dt = Math.min((ts - lastTs) / 1000, 0.05);
+    lastTs = ts;
+
+    if (state === 'playing') {
+      tilt     += (targetTilt - tilt) * TILT_SMOOTH;
+      timeLeft -= dt;
+      if (timeLeft <= 0) { timeLeft = 0; endRound(); }
+
+      updateParticles();
+      updateJumper(dt);
+      updatePopups(dt);
+
+      // Jumper spawn: rounds 1+ (index >= 1)
+      if (round >= 1 && !jumper.active && timeLeft < jumperNextAt && timeLeft > 2) {
+        spawnJumper();
+        jumperNextAt = timeLeft - JUMPER_INTERVAL;
+      }
+
+      // Early finish: all non-gold/non-fools particles washed
+      const heavyLeft = particles.filter(function(p) {
+        return !p.spilled && (p.type === T_GRAVEL || p.type === T_MUD);
+      }).length;
+      if (state === 'playing' && heavyLeft === 0 && timeLeft < ROUNDS_CONF[round].time - 2) {
+        timeLeft = 0; endRound();
+      }
+    }
+
+    if (state === 'title') {
+      drawTitle();
+    } else if (state === 'between') {
+      drawBetween();
+    } else if (state === 'win') {
+      drawEnd(true);
+    } else if (state === 'gameover') {
+      drawEnd(false);
+    } else if (state === 'playing') {
+      drawBG();
+      drawPan();
+      drawParticles();
+      drawJumper();
+      drawHUD();
+      drawTiltGauge();
+      drawPopups();
+    }
+  } catch(err) {
+    console.error('loop error:', err);
+  }
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
