@@ -1,0 +1,47 @@
+#!/bin/sh
+# Pre-commit guard for the PUBLIC site repo.
+# Rejects files that look internal, or that contain secrets.
+# Emergency override (use only if you are certain it is a false positive):
+#   git commit --no-verify
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+fail=0
+
+# 1) Internal / sensitive PATHS that must never live in a public repo.
+block_re='(^|/)\.env($|\.)|(^|/)CLAUDE\.md$|(^|/)autonomous/|(^|/)docs/game-dev-knowledge/|(^|/)test-[^/]*\.js$|(^|/)run-all-tests\.js$|(^|/)package(-lock)?\.json$|(^|/)node_modules/|(^|/)\.claude/|director-status\.json$|(^|/)state\.json$|feedback-inbox\.json$|\.(pem|key|pfx|p12)$|(^|/)id_rsa|(^|/)\.npmrc$'
+
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  if printf '%s\n' "$f" | grep -Eiq "$block_re"; then
+    echo "BLOCKED (internal/sensitive path): $f"
+    fail=1
+  fi
+done <<EOF
+$staged
+EOF
+
+# 2) High-confidence SECRET formats in staged content (binary blobs auto-skipped via -I).
+secret_re='[-]{5}BEGIN [A-Z ]*PRIVATE KEY[-]{5}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{50,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}'
+
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  if git show ":$f" 2>/dev/null | grep -EIq "$secret_re"; then
+    echo "BLOCKED (looks like a secret): $f"
+    fail=1
+  fi
+done <<EOF
+$staged
+EOF
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "Commit rejected by pre-commit guard. This repo is PUBLIC."
+  echo "If you are certain this is a false positive: git commit --no-verify"
+  exit 1
+fi
+
+exit 0
