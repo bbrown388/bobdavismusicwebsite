@@ -560,6 +560,9 @@ function render(d) {
         <div class="failed-summary">${f.summary || 'Failed with no summary recorded.'}</div>
         <div class="failed-when">dead-lettered ${timeAgo(f.failedAt)}${f.failedAt ? ' · ' + fmtLocal(f.failedAt) : ''}</div>
       </div>`).join('')}</div>` : '';
+  const degradedHtml = d.deployDegraded
+    ? `<div class="help-banner" style="border-color:var(--warning);border-left-color:var(--warning)"><strong style="color:var(--warning)">INFRA DEGRADED.</strong> ${d.deployDegraded}</div>`
+    : '';
 
   const modelTag = (m) => {
     if (!m) return '';
@@ -585,6 +588,7 @@ function render(d) {
   }).join('');
 
   document.getElementById('app').innerHTML = `
+    ${degradedHtml}
     ${helpHtml}
     ${errors.length ? `<div class="error-box">Recent error: ${errors[0].summary}</div>` : ''}
     <div class="status-row">
