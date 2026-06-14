@@ -563,6 +563,16 @@ function render(d) {
   const degradedHtml = d.deployDegraded
     ? `<div class="help-banner" style="border-color:var(--warning);border-left-color:var(--warning)"><strong style="color:var(--warning)">INFRA DEGRADED.</strong> ${d.deployDegraded}</div>`
     : '';
+  const advisoriesHtml = (d.advisories && d.advisories.length)
+    ? d.advisories.map(function(a) {
+        var color = a.severity === 'warning' ? 'var(--warning)' : 'var(--text-muted)';
+        return '<div class="help-banner" style="border-color:' + color + ';border-left-color:' + color + ';margin-bottom:8px">'
+          + '<strong style="color:' + color + ';text-transform:uppercase;letter-spacing:1px;font-size:11px">' + (a.severity || 'info') + '</strong> '
+          + (a.message || '')
+          + ' <span style="font-size:11px;color:var(--text-dim)">' + timeAgo(a.ts) + '</span>'
+          + '</div>';
+      }).join('')
+    : '';
 
   const modelTag = (m) => {
     if (!m) return '';
@@ -589,6 +599,7 @@ function render(d) {
 
   document.getElementById('app').innerHTML = `
     ${degradedHtml}
+    ${advisoriesHtml}
     ${helpHtml}
     ${errors.length ? `<div class="error-box">Recent error: ${errors[0].summary}</div>` : ''}
     <div class="status-row">
