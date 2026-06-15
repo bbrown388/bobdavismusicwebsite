@@ -191,11 +191,11 @@ p {
 
     <div class="video">
       <div class="video-title">Jokes &amp; Strokes</div>
-      <div class="video-meta">Premieres Saturday, June 20 at 4 PM</div>
+      <div class="video-meta" id="js-premiere-meta">Premieres Saturday, June 20 at 4 PM</div>
       <a class="premiere" href="https://youtu.be/32VukGwMA3g" target="_blank" rel="noopener">
         <div class="premiere-inner">
           <div class="play"></div>
-          <div class="when">Saturday, June 20 | 4 PM</div>
+          <div class="when" id="js-premiere-when">Saturday, June 20 | 4 PM</div>
           <div class="watch-cta">Watch on YouTube</div>
         </div>
       </a>
@@ -203,5 +203,19 @@ p {
   </section>
 
   <a class="home-link" href="/">Back to Bob Davis Music</a>
+
+  <script>
+    // Jokes & Strokes premieres Sat June 20, 2026, 4 PM Central (CDT = UTC-5 = 21:00 UTC).
+    // After that moment, drop the premiere timing and show it as available to watch.
+    (function () {
+      var premiere = new Date('2026-06-20T21:00:00Z');
+      if (new Date() >= premiere) {
+        var meta = document.getElementById('js-premiere-meta');
+        var when = document.getElementById('js-premiere-when');
+        if (meta) meta.textContent = 'Recorded live at Jokes & Strokes';
+        if (when) when.textContent = 'Now Streaming';
+      }
+    })();
+  </script>
 </body>
 </html>
