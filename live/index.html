@@ -23,7 +23,6 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   text-align: center;
   padding: 52px 24px;
 }
@@ -49,6 +48,82 @@ p {
   color: #C8B89A;
   margin-bottom: 36px;
 }
+.watch {
+  width: 100%;
+  max-width: 720px;
+  margin: 16px 0 44px;
+}
+.watch h2 {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #9a6838;
+  font-weight: normal;
+  margin-bottom: 24px;
+}
+.video {
+  margin-bottom: 36px;
+}
+.video:last-child { margin-bottom: 0; }
+.video-title {
+  font-size: 19px;
+  color: #FFD700;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.video-meta {
+  font-size: 13px;
+  color: #9a6838;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+.video-frame {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(220,80,40,0.25);
+  background: #000;
+}
+.video-frame iframe {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.premiere {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(220,80,40,0.25);
+  background: radial-gradient(circle at 50% 40%, rgba(40,16,10,0.9), #0d0608);
+  display: flex;
+}
+.premiere-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.premiere-inner .countdown {
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #e87a5a;
+  margin-bottom: 10px;
+}
+.premiere-inner .when {
+  font-size: clamp(18px, 5vw, 26px);
+  color: #FFD700;
+  letter-spacing: 1px;
+}
 .home-link {
   display: inline-flex;
   align-items: center;
@@ -70,6 +145,33 @@ p {
   <p class="label">Live</p>
   <h1>New Shows Coming Soon</h1>
   <p>No live dates on the calendar right now. Check back soon, or follow along on social for the next announcement.</p>
+
+  <section class="watch">
+    <h2>Watch</h2>
+
+    <div class="video">
+      <div class="video-title">Songwriter of the Year</div>
+      <div class="video-meta">Texas State Songwriters Competition</div>
+      <div class="video-frame">
+        <iframe src="https://www.youtube.com/embed/_pQbTKYkq7k?start=2745"
+          title="Bob Davis | Texas State Songwriters Competition"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen></iframe>
+      </div>
+    </div>
+
+    <div class="video">
+      <div class="video-title">Jokes &amp; Strokes</div>
+      <div class="video-meta">Premieres Saturday, June 20 at 4 PM</div>
+      <div class="video-frame">
+        <iframe src="https://www.youtube.com/embed/32VukGwMA3g"
+          title="Bob Davis | Jokes &amp; Strokes"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen></iframe>
+      </div>
+    </div>
+  </section>
+
   <a class="home-link" href="/">Back to Bob Davis Music</a>
 </body>
 </html>
