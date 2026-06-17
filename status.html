@@ -565,9 +565,13 @@ function render(d) {
     : '';
   const advisoriesHtml = (d.advisories && d.advisories.length)
     ? d.advisories.map(function(a) {
-        var color = a.severity === 'warning' ? 'var(--warning)' : 'var(--text-muted)';
-        return '<div class="help-banner" style="border-color:' + color + ';border-left-color:' + color + ';margin-bottom:8px">'
-          + '<strong style="color:' + color + ';text-transform:uppercase;letter-spacing:1px;font-size:11px">' + (a.severity || 'info') + '</strong> '
+        var color    = a.severity === 'warning' ? 'var(--warning)' : 'var(--text-muted)';
+        var ageMs    = a.ts ? (Date.now() - new Date(a.ts)) : 0;
+        var isStale  = ageMs > 4 * 60 * 60 * 1000;
+        var opacity  = isStale ? 'opacity:0.45;' : '';
+        var badge    = (isStale ? '[STALE] ' : '') + (a.severity || 'info');
+        return '<div class="help-banner" style="' + opacity + 'border-color:' + color + ';border-left-color:' + color + ';margin-bottom:8px">'
+          + '<strong style="color:' + color + ';text-transform:uppercase;letter-spacing:1px;font-size:11px">' + badge + '</strong> '
           + (a.message || '')
           + ' <span style="font-size:11px;color:var(--text-dim)">' + timeAgo(a.ts) + '</span>'
           + '</div>';
