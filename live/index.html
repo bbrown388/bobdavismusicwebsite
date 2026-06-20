@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -93,66 +93,6 @@ p {
   height: 100%;
   border: 0;
 }
-.premiere {
-  position: relative;
-  display: block;
-  width: 100%;
-  padding-bottom: 56.25%;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid rgba(220,80,40,0.25);
-  background: radial-gradient(circle at 50% 40%, rgba(40,16,10,0.9), #0d0608);
-  text-decoration: none;
-  transition: filter 0.15s, transform 0.1s;
-}
-.premiere:hover  { filter: brightness(1.15); }
-.premiere:active { transform: scale(0.99); }
-.premiere-inner .play {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  border: 1px solid rgba(220,80,40,0.5);
-  background: rgba(180,60,30,0.18);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-.premiere-inner .play::after {
-  content: "";
-  border-style: solid;
-  border-width: 9px 0 9px 15px;
-  border-color: transparent transparent transparent #e87a5a;
-  margin-left: 4px;
-}
-.premiere-inner .watch-cta {
-  font-size: 12px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #e87a5a;
-  margin-top: 12px;
-}
-.premiere-inner {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.premiere-inner .countdown {
-  font-size: 13px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #e87a5a;
-  margin-bottom: 10px;
-}
-.premiere-inner .when {
-  font-size: clamp(18px, 5vw, 26px);
-  color: #FFD700;
-  letter-spacing: 1px;
-}
 .home-link {
   display: inline-flex;
   align-items: center;
@@ -191,31 +131,16 @@ p {
 
     <div class="video">
       <div class="video-title">Jokes &amp; Strokes</div>
-      <div class="video-meta" id="js-premiere-meta">Premieres Saturday, June 20 at 4 PM</div>
-      <a class="premiere" href="https://youtu.be/32VukGwMA3g" target="_blank" rel="noopener">
-        <div class="premiere-inner">
-          <div class="play"></div>
-          <div class="when" id="js-premiere-when">Saturday, June 20 | 4 PM</div>
-          <div class="watch-cta">Watch on YouTube</div>
-        </div>
-      </a>
+      <div class="video-meta">Recorded live at Jokes &amp; Strokes</div>
+      <div class="video-frame">
+        <iframe src="https://www.youtube.com/embed/32VukGwMA3g?start=4380"
+          title="Bob Davis | Jokes &amp; Strokes"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen></iframe>
+      </div>
     </div>
   </section>
 
   <a class="home-link" href="/">Back to Bob Davis Music</a>
-
-  <script>
-    // Jokes & Strokes premieres Sat June 20, 2026, 4 PM Central (CDT = UTC-5 = 21:00 UTC).
-    // After that moment, drop the premiere timing and show it as available to watch.
-    (function () {
-      var premiere = new Date('2026-06-20T21:00:00Z');
-      if (new Date() >= premiere) {
-        var meta = document.getElementById('js-premiere-meta');
-        var when = document.getElementById('js-premiere-when');
-        if (meta) meta.textContent = 'Recorded live at Jokes & Strokes';
-        if (when) when.textContent = 'Now Streaming';
-      }
-    })();
-  </script>
 </body>
 </html>
