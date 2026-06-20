@@ -126,21 +126,21 @@ p {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 2;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: rgba(20,8,6,0.7);
-  border: 2px solid rgba(255,255,255,0.85);
+  width: 68px;
+  height: 48px;
+  border-radius: 13px;
+  background: rgba(207,32,32,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+.video-link:hover .play { background: rgba(229,40,40,0.97); }
 .video-link .play::after {
   content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-45%, -50%);
   border-style: solid;
-  border-width: 11px 0 11px 18px;
+  border-width: 9px 0 9px 16px;
   border-color: transparent transparent transparent #fff;
+  margin-left: 3px;
 }
 .video-badge {
   position: absolute;
@@ -152,6 +152,18 @@ p {
   font-size: 12px;
   letter-spacing: 0.5px;
   padding: 4px 9px;
+  border-radius: 6px;
+}
+.video-ext {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  background: rgba(0,0,0,0.72);
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
   border-radius: 6px;
 }
 .upcoming {
@@ -321,7 +333,8 @@ p {
       <div class="video-title">Jokes &amp; Strokes</div>
       <div class="video-meta">Recorded live at Jokes &amp; Strokes</div>
       <a class="video-link" href="https://youtu.be/32VukGwMA3g?t=4380" target="_blank" rel="noopener" onclick="trackLink('jokes_strokes_youtube')">
-        <img class="video-thumb" src="/images/jokes-strokes-thumb.jpg" alt="Jokes and Strokes Talent Show, watch Bob Davis on YouTube" loading="lazy">
+        <img class="video-thumb" src="/images/jokes-strokes-thumb.jpg" alt="Bob Davis performing at the Jokes and Strokes Talent Show, watch on YouTube" loading="lazy">
+        <span class="video-ext">YouTube &#8599;</span>
         <span class="play"></span>
         <span class="video-badge">Bob's set | 1:13:00</span>
       </a>
