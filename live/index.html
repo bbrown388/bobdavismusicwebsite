@@ -53,7 +53,8 @@ p {
   max-width: 720px;
   margin: 16px 0 44px;
 }
-.watch h2 {
+.watch h2,
+.upcoming h2 {
   font-size: 11px;
   letter-spacing: 3px;
   text-transform: uppercase;
@@ -101,44 +102,57 @@ p {
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgba(220,80,40,0.25);
-  background: radial-gradient(circle at 50% 40%, rgba(40,16,10,0.9), #0d0608);
   text-decoration: none;
   transition: filter 0.15s, transform 0.1s;
 }
-.video-link:hover  { filter: brightness(1.15); }
+.video-link:hover  { filter: brightness(1.08); }
 .video-link:active { transform: scale(0.99); }
-.video-link-inner {
+.video-thumb {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
-.video-link-inner .play {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  border: 1px solid rgba(220,80,40,0.5);
-  background: rgba(180,60,30,0.18);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-.video-link-inner .play::after {
+.video-link::after {
   content: "";
-  border-style: solid;
-  border-width: 9px 0 9px 15px;
-  border-color: transparent transparent transparent #e87a5a;
-  margin-left: 4px;
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 45%, rgba(0,0,0,0.12), rgba(0,0,0,0.5));
 }
-.video-link-cta {
+.video-link .play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(20,8,6,0.7);
+  border: 2px solid rgba(255,255,255,0.85);
+}
+.video-link .play::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-45%, -50%);
+  border-style: solid;
+  border-width: 11px 0 11px 18px;
+  border-color: transparent transparent transparent #fff;
+}
+.video-badge {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  z-index: 2;
+  background: rgba(0,0,0,0.82);
+  color: #fff;
   font-size: 12px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #e87a5a;
+  letter-spacing: 0.5px;
+  padding: 4px 9px;
+  border-radius: 6px;
 }
 .upcoming {
   width: 100%;
@@ -150,6 +164,26 @@ p {
   border: 1px solid rgba(220,80,40,0.3);
   background: radial-gradient(circle at 50% 28%, rgba(48,18,12,0.95), #0d0608);
   padding: 30px 26px;
+}
+.show-name {
+  font-size: 22px;
+  color: #FFD700;
+  letter-spacing: 1px;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+.show-tag {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #e87a5a;
+  margin-bottom: 18px;
+}
+.show-desc {
+  font-size: 14px;
+  color: #C8B89A;
+  line-height: 1.6;
+  margin: 16px 0;
 }
 .show-date {
   font-size: 17px;
@@ -168,12 +202,18 @@ p {
   line-height: 1.6;
   margin-bottom: 4px;
 }
+.show-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 22px;
+}
 .show-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-top: 20px;
-  padding: 11px 24px;
+  padding: 11px 22px;
   border-radius: 10px;
   font-size: 14px;
   text-decoration: none;
@@ -181,6 +221,11 @@ p {
   border: 1px solid rgba(220,80,40,0.4);
   color: #e87a5a;
   transition: filter 0.15s, transform 0.1s;
+}
+.show-cta.alt {
+  background: rgba(255,215,0,0.10);
+  border-color: rgba(255,215,0,0.4);
+  color: #FFD700;
 }
 .show-cta:hover  { filter: brightness(1.12); }
 .show-cta:active { transform: scale(0.97); }
@@ -236,19 +281,25 @@ p {
   <div class="hero">
     <img src="/images/bob-live-intrinsic.jpg" alt="Bob Davis performing live on stage at Intrinsic Brewery" loading="lazy">
   </div>
-  <h1>Texas State Songwriter Championship</h1>
-  <p>Bob qualified for the Season 12 Finale. Twelve songwriters battle for the championship title, and the audience helps decide. Come make history.</p>
+  <h1>Live Shows</h1>
+  <p>Catch Bob Davis live. Here are the upcoming dates, with more on the way.</p>
 
   <section class="upcoming">
+    <h2>Upcoming Shows</h2>
     <div class="show">
-      <a class="show-flyer" href="https://facebook.com/events/s/finale-season-12-texas-state-s/1674104297007993/" target="_blank" rel="noopener">
+      <div class="show-name">Texas State Songwriter Championship</div>
+      <div class="show-tag">Finale | Season 12</div>
+      <a class="show-flyer" href="https://facebook.com/events/s/finale-season-12-texas-state-s/1674104297007993/" target="_blank" rel="noopener" onclick="trackLink('championship_flyer_fb')">
         <img src="/images/championship-finale.jpg" alt="Texas State Songwriter Championship, Finale Season 12, Sunday January 17 2027, 3 to 6 PM, Community Hall Inc, Robstown TX" loading="lazy">
       </a>
+      <div class="show-desc">Bob qualified for the Season 12 Finale. Twelve songwriters battle for the championship title, and the audience helps decide. Come make history.</div>
       <div class="show-date">Sunday, January 17, 2027 | 3 to 6 PM</div>
       <div class="show-venue">Community Hall Inc. | 4576 CR-42, Robstown, TX</div>
       <div class="show-meta">Hosted by Texas Brew Radio | Sponsored by 97.5 KFTX Real Country</div>
-      <div class="show-meta">Tickets by donation</div>
-      <a class="show-cta" href="https://facebook.com/events/s/finale-season-12-texas-state-s/1674104297007993/" target="_blank" rel="noopener">Event Details &amp; RSVP</a>
+      <div class="show-actions">
+        <a class="show-cta" href="https://facebook.com/events/s/finale-season-12-texas-state-s/1674104297007993/" target="_blank" rel="noopener" onclick="trackLink('championship_event_details_fb')">Event Details</a>
+        <a class="show-cta alt" href="https://texasstatesongwriters.com/event/6639912/769367559/finale-season-12-texas-state-songwriters-championship" target="_blank" rel="noopener" onclick="trackLink('championship_tickets_web')">Tickets &amp; Donation</a>
+      </div>
     </div>
   </section>
 
@@ -269,15 +320,23 @@ p {
     <div class="video">
       <div class="video-title">Jokes &amp; Strokes</div>
       <div class="video-meta">Recorded live at Jokes &amp; Strokes</div>
-      <a class="video-link" href="https://youtu.be/32VukGwMA3g?t=4380" target="_blank" rel="noopener">
-        <div class="video-link-inner">
-          <div class="play"></div>
-          <div class="video-link-cta">Watch on YouTube</div>
-        </div>
+      <a class="video-link" href="https://youtu.be/32VukGwMA3g?t=4380" target="_blank" rel="noopener" onclick="trackLink('jokes_strokes_youtube')">
+        <img class="video-thumb" src="/images/jokes-strokes-thumb.jpg" alt="Jokes and Strokes Talent Show, watch Bob Davis on YouTube" loading="lazy">
+        <span class="play"></span>
+        <span class="video-badge">Bob's set | 1:13:00</span>
       </a>
     </div>
   </section>
 
   <a class="home-link" href="/">Back to Bob Davis Music</a>
+
+  <script>
+    // Per-action click tracking into GA4 (gtag loaded in <head>). Fires before the
+    // new tab opens; guarded so an adblocked gtag never breaks navigation.
+    function trackLink(id) {
+      try { if (typeof gtag === 'function') gtag('event', 'live_link_click', { link_id: id }); }
+      catch (e) {}
+    }
+  </script>
 </body>
 </html>
