@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bob Davis | Live Shows</title>
-<meta name="description" content="Bob Davis live shows. New dates coming soon.">
+<meta name="description" content="Bob Davis live shows. Next up: the Texas State Songwriter Championship Finale, January 17, 2027, at Community Hall Inc.">
 <!-- Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
 <script>
@@ -93,6 +93,127 @@ p {
   height: 100%;
   border: 0;
 }
+.video-link {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding-bottom: 56.25%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(220,80,40,0.25);
+  background: radial-gradient(circle at 50% 40%, rgba(40,16,10,0.9), #0d0608);
+  text-decoration: none;
+  transition: filter 0.15s, transform 0.1s;
+}
+.video-link:hover  { filter: brightness(1.15); }
+.video-link:active { transform: scale(0.99); }
+.video-link-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.video-link-inner .play {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid rgba(220,80,40,0.5);
+  background: rgba(180,60,30,0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.video-link-inner .play::after {
+  content: "";
+  border-style: solid;
+  border-width: 9px 0 9px 15px;
+  border-color: transparent transparent transparent #e87a5a;
+  margin-left: 4px;
+}
+.video-link-cta {
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #e87a5a;
+}
+.upcoming {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 0 44px;
+}
+.show {
+  border-radius: 14px;
+  border: 1px solid rgba(220,80,40,0.3);
+  background: radial-gradient(circle at 50% 28%, rgba(48,18,12,0.95), #0d0608);
+  padding: 30px 26px;
+}
+.show-date {
+  font-size: 17px;
+  color: #E8DCC8;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.show-venue {
+  font-size: 14px;
+  color: #C8B89A;
+  margin-bottom: 16px;
+}
+.show-meta {
+  font-size: 12.5px;
+  color: #9a6838;
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+.show-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 11px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  text-decoration: none;
+  background: rgba(180,60,30,0.16);
+  border: 1px solid rgba(220,80,40,0.4);
+  color: #e87a5a;
+  transition: filter 0.15s, transform 0.1s;
+}
+.show-cta:hover  { filter: brightness(1.12); }
+.show-cta:active { transform: scale(0.97); }
+.hero {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto 32px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(220,80,40,0.25);
+}
+.hero img {
+  display: block;
+  width: 100%;
+  height: 300px;
+  object-fit: cover;
+  object-position: center 42%;
+}
+.show-flyer {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  border: 1px solid rgba(220,80,40,0.2);
+  transition: filter 0.15s, transform 0.1s;
+}
+.show-flyer:hover  { filter: brightness(1.08); }
+.show-flyer:active { transform: scale(0.99); }
+.show-flyer img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
 .home-link {
   display: inline-flex;
   align-items: center;
@@ -112,8 +233,24 @@ p {
 </head>
 <body>
   <p class="label">Live</p>
-  <h1>New Shows Coming Soon</h1>
-  <p>No live dates on the calendar right now. Check back soon, or follow along on social for the next announcement.</p>
+  <div class="hero">
+    <img src="/images/bob-live-intrinsic.jpg" alt="Bob Davis performing live on stage at Intrinsic Brewery" loading="lazy">
+  </div>
+  <h1>Texas State Songwriter Championship</h1>
+  <p>Bob qualified for the Season 12 Finale. Twelve songwriters battle for the championship title, and the audience helps decide. Come make history.</p>
+
+  <section class="upcoming">
+    <div class="show">
+      <a class="show-flyer" href="https://facebook.com/events/s/finale-season-12-texas-state-s/1674104297007993/" target="_blank" rel="noopener">
+        <img src="/images/championship-finale.jpg" alt="Texas State Songwriter Championship, Finale Season 12, Sunday January 17 2027, 3 to 6 PM, Community Hall Inc, Robstown TX" loading="lazy">
+      </a>
+      <div class="show-date">Sunday, January 17, 2027 | 3 to 6 PM</div>
+      <div class="show-venue">Community Hall Inc. | 4576 CR-42, Robstown, TX</div>
+      <div class="show-meta">Hosted by Texas Brew Radio | Sponsored by 97.5 KFTX Real Country</div>
+      <div class="show-meta">Tickets by donation</div>
+      <a class="show-cta" href="https://facebook.com/events/s/finale-season-12-texas-state-s/1674104297007993/" target="_blank" rel="noopener">Event Details &amp; RSVP</a>
+    </div>
+  </section>
 
   <section class="watch">
     <h2>Watch</h2>
@@ -132,12 +269,12 @@ p {
     <div class="video">
       <div class="video-title">Jokes &amp; Strokes</div>
       <div class="video-meta">Recorded live at Jokes &amp; Strokes</div>
-      <div class="video-frame">
-        <iframe src="https://www.youtube.com/embed/32VukGwMA3g?start=4380"
-          title="Bob Davis | Jokes &amp; Strokes"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen></iframe>
-      </div>
+      <a class="video-link" href="https://youtu.be/32VukGwMA3g?t=4380" target="_blank" rel="noopener">
+        <div class="video-link-inner">
+          <div class="play"></div>
+          <div class="video-link-cta">Watch on YouTube</div>
+        </div>
+      </a>
     </div>
   </section>
 
