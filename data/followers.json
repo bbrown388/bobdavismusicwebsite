@@ -1,6 +1,6 @@
 {
   "updated": "2026-07-31",
-  "note": "All three counts are public and readable via a real browser (headless curl gets IP/bot-gated, a real browser does not). Refreshable on a schedule.",
+  "note": "Auto-refreshed daily by follower-updater (headless browser). Do not hand-edit.",
   "platforms": {
     "tiktok": 1997,
     "instagram": 88,
