@@ -1,9 +1,9 @@
 {
   "updated": "2026-07-31",
-  "note": "TikTok is scraped live from the public profile. instagram/facebook are null until real counts are provided (their accounts are not publicly readable).",
+  "note": "All three counts are public and readable via a real browser (headless curl gets IP/bot-gated, a real browser does not). Refreshable on a schedule.",
   "platforms": {
     "tiktok": 1997,
-    "instagram": null,
-    "facebook": null
+    "instagram": 88,
+    "facebook": 212
   }
 }
