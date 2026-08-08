@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0; url=/">
   <title>Bob Davis Music</title>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
@@ -12,7 +11,20 @@
     gtag('js', new Date());
     gtag('config', 'G-X1W0TNHM51');
   </script>
-  <script>window.location.replace('/');</script>
+  <script>
+    // GitHub Pages paths are case sensitive, but Windows is not, so a repo
+    // cannot hold both /TCMA2026/ and /tcma2026/. The QR on the TCMA picks
+    // encodes the UPPERCASE URL (uppercase packs into QR alphanumeric mode:
+    // 29 modules instead of 33), so catch that case here and send it to the
+    // real page. Everything else still falls through to the homepage.
+    (function () {
+      var path = location.pathname.replace(/\/+$/, '').toLowerCase();
+      var known = { '/tcma2026': '/tcma2026/' };
+      location.replace(known[path] || '/');
+    })();
+  </script>
 </head>
-<body></body>
+<body>
+  <noscript><a href="/">Bob Davis Music</a></noscript>
+</body>
 </html>
