@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /tcma2026/
+Disallow: /TCMA2026/
+
