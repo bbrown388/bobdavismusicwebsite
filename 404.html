@@ -18,9 +18,12 @@
     // 29 modules instead of 33), so catch that case here and send it to the
     // real page. Everything else still falls through to the homepage.
     (function () {
-      var path = location.pathname.replace(/\/+$/, '').toLowerCase();
-      var known = { '/tcma2026': '/tcma2026/' };
-      location.replace(known[path] || '/');
+      var raw = location.pathname.replace(/\/+$/, '');
+      var target = { '/tcma2026': '/tcma2026/' }[raw.toLowerCase()];
+      // Only redirect when the ONLY problem is letter case. If the lowercase
+      // path 404s too the page is not deployed, and bouncing there again would
+      // loop forever, so fall through to the homepage instead.
+      location.replace(target && raw !== raw.toLowerCase() ? target : '/');
     })();
   </script>
 </head>
