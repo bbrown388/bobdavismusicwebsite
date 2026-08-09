@@ -547,6 +547,16 @@ footer {
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
   gtag('config', 'G-X1W0TNHM51');
+</script>
+<script>
+  // Wake the fan-capture API as early as possible. It sleeps when idle and a
+  // cold start runs 30-60s, so the request goes out here, in <head>, rather
+  // than waiting for the rest of the page. no-cors because we do not need the
+  // response, only the wake, and it keeps a CORS error off the console.
+  try {
+    fetch('https://gigsync-xa69.onrender.com/health',
+          { mode: 'no-cors', cache: 'no-store' }).catch(function () {});
+  } catch (e) {}
 </script></head>
 <body>
 
@@ -727,10 +737,6 @@ footer {
 
     // The API sleeps when idle (Render). Wake it while they are still typing so
     // the submit does not eat a cold start.
-    // no-cors: we do not need the response, only the request, and this keeps
-    // a CORS console error off the page when the origin is not allowlisted.
-    try { fetch(API + '/health', { mode: 'no-cors', cache: 'no-store' }).catch(function () {}); } catch (e) {}
-
     function say(msg, kind) {
       note.textContent = msg;
       note.className = 'fan-note' + (kind ? ' ' + kind : '');
@@ -749,6 +755,11 @@ footer {
       btn.disabled = true;
       btn.textContent = 'Joining...';
       say('');
+      // The API sleeps when idle. If it is cold this takes tens of seconds, and
+      // an unexplained spinner reads as broken, so explain it rather than hide it.
+      var slow = setTimeout(function () {
+        say('Still going. The server was asleep, this can take a few seconds.');
+      }, 2500);
 
       fetch(API + '/p/' + SLUG + '/fan-subscribe', {
         method: 'POST',
@@ -757,6 +768,7 @@ footer {
       })
         .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
         .then(function (res) {
+          clearTimeout(slow);
           if (res.s === 429) { say('Too many tries. Give it a minute.', 'err'); return reset(); }
           if (res.s >= 400)  { say('That email does not look right.', 'err'); return reset(); }
           if (res.d && res.d.capped)  { say('The list is full right now.', 'err'); return reset(); }
@@ -773,6 +785,7 @@ footer {
           gtag('event', 'fan_signup');
         })
         .catch(function () {
+          clearTimeout(slow);
           say('Could not reach the server. Try again in a moment.', 'err');
           reset();
         });
