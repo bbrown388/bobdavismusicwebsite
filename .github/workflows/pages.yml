@@ -8,6 +8,12 @@ name: Deploy site and staging preview
 #
 # main is PR-protected, so nothing reaches the live paths without Bob merging.
 # A push to staging redeploys only the preview.
+#
+# /preview/ exists ONLY while staging is ahead of main, i.e. while something is
+# genuinely waiting on review. Merge the PR and the next deploy drops the directory,
+# so there is no stale public copy of the site sitting at a second URL between
+# reviews. Deployments replace the whole artifact, so omitting the directory is
+# what removes it.
 
 on:
   push:
@@ -37,8 +43,32 @@ jobs:
         with:
           ref: main
           path: site
+          fetch-depth: 0          # need history to compare against staging
+
+      - name: Is anything actually in review?
+        id: review
+        run: |
+          set -e
+          cd site
+          git fetch --quiet origin staging || true
+          if git rev-parse --verify --quiet origin/staging > /dev/null; then
+            # Commits staging has that main does not. Zero covers both "identical"
+            # and "staging is behind main", which is the state right after a merge --
+            # in neither case is there anything to review, and in the second case a
+            # preview would show content OLDER than the live site.
+            ahead=$(git rev-list --count origin/main..origin/staging)
+          else
+            ahead=0
+          fi
+          echo "ahead=$ahead" >> "$GITHUB_OUTPUT"
+          if [ "$ahead" = "0" ]; then
+            echo "nothing in review; /preview/ will not be published"
+          else
+            echo "$ahead commit(s) in review; publishing /preview/"
+          fi
 
       - name: Check out staging (the preview)
+        if: steps.review.outputs.ahead != '0'
         uses: actions/checkout@v4
         with:
           ref: staging
@@ -48,14 +78,15 @@ jobs:
       - name: Assemble
         run: |
           set -e
-          # Copy staging in under /preview/. If the staging branch is missing or
-          # empty the site still deploys; the preview is a bonus, never a gate.
-          if [ -d staging-src ]; then
+          # Copy staging in under /preview/, but only when the step above found work
+          # in review. If the staging branch is missing or empty the site still
+          # deploys; the preview is a bonus, never a gate.
+          if [ "${{ steps.review.outputs.ahead }}" != "0" ] && [ -d staging-src ]; then
             mkdir -p site/preview
             rsync -a --delete --exclude '.git' --exclude 'CNAME' staging-src/ site/preview/
             echo "preview assembled from staging"
           else
-            echo "no staging branch; deploying main only"
+            echo "nothing in review; deploying main only, no /preview/"
           fi
 
           # .nojekyll must exist or Pages ignores files starting with an
