@@ -1,0 +1,87 @@
+name: Deploy site and staging preview
+
+# Pages is set to build from GitHub Actions rather than straight from a branch,
+# so this workflow IS the deployment. Two jobs in one:
+#
+#   /          <- main, byte for byte what was served before
+#   /preview/  <- the staging branch, rendered, for approval before merge
+#
+# main is PR-protected, so nothing reaches the live paths without Bob merging.
+# A push to staging redeploys only the preview.
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; queue instead of cancelling so a staging push
+# cannot abort a main deploy midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out main (the live site)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: site
+
+      - name: Check out staging (the preview)
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          path: staging-src
+        continue-on-error: true
+
+      - name: Assemble
+        run: |
+          set -e
+          # Copy staging in under /preview/. If the staging branch is missing or
+          # empty the site still deploys; the preview is a bonus, never a gate.
+          if [ -d staging-src ]; then
+            mkdir -p site/preview
+            rsync -a --delete --exclude '.git' --exclude 'CNAME' staging-src/ site/preview/
+            echo "preview assembled from staging"
+          else
+            echo "no staging branch; deploying main only"
+          fi
+
+          # .nojekyll must exist or Pages ignores files starting with an
+          # underscore. It is committed on main, but the preview needs its own.
+          touch site/.nojekyll
+          [ -d site/preview ] && touch site/preview/.nojekyll || true
+
+          # Keep the preview out of search results. main's robots.txt is the
+          # live one; append rather than replace so existing rules survive.
+          if [ -f site/robots.txt ]; then
+            grep -q '^Disallow: /preview/' site/robots.txt || printf '\nDisallow: /preview/\n' >> site/robots.txt
+          else
+            printf 'User-agent: *\nDisallow: /preview/\n' > site/robots.txt
+          fi
+
+          echo "--- deploying ---"
+          ls site | head -20
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
