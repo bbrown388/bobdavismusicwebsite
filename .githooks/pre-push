@@ -20,6 +20,17 @@ if [ ! -f "$LOCK" ] && [ "$DIRECTOR_SESSION" != "1" ]; then
   exit 0
 fi
 
+# A session is running, but is it working on THIS repo? The runner records the
+# target in state.json. A gigsync session has no business blocking a hand push
+# to the site, and blocking it would just train everyone to use --no-verify.
+STATE="${DIRECTOR_STATE:-/c/Users/bobbr/Claude/autonomous/state.json}"
+[ -f "$STATE" ] || STATE="C:/Users/bobbr/Claude/autonomous/state.json"
+if [ -f "$STATE" ] && [ "$DIRECTOR_SESSION" != "1" ]; then
+  if ! grep -q '"currentProject"[[:space:]]*:[[:space:]]*"bob-davis-music"' "$STATE"; then
+    exit 0
+  fi
+fi
+
 blocked=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
