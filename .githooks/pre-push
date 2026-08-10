@@ -1,0 +1,48 @@
+#!/bin/sh
+# Pre-push guard for the PUBLIC site repo.
+#
+# bobdavismusic.com is shared publicly, so autonomous director sessions must
+# never publish to it directly. They stage on `staging`; Bob reviews the Vercel
+# preview and merges to main himself.
+#
+# The guard fires when a director session is active, detected by the runner's
+# lock file. Bob pushing main by hand, with no session running, is unaffected.
+#
+# Emergency override (be certain):  git push --no-verify
+
+# DIRECTOR_LOCK overrides the path so this hook can be tested without a real
+# session running.
+LOCK="${DIRECTOR_LOCK:-/c/Users/bobbr/Claude/autonomous/run.lock}"
+[ -f "$LOCK" ] || [ -n "$DIRECTOR_LOCK" ] || LOCK="C:/Users/bobbr/Claude/autonomous/run.lock"
+
+# DIRECTOR_SESSION=1 lets a session self-identify even if the lock moves.
+if [ ! -f "$LOCK" ] && [ "$DIRECTOR_SESSION" != "1" ]; then
+  exit 0
+fi
+
+blocked=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      blocked=1
+      ;;
+  esac
+done
+
+if [ "$blocked" -eq 1 ]; then
+  cat >&2 <<'MSG'
+
+  BLOCKED: a director session may not push this repo's live branch.
+
+  bobdavismusic.com is public and every change needs Bob's approval first.
+  Push to the staging branch instead:
+
+      git push origin HEAD:staging
+
+  Bob reviews the Vercel preview, then merges staging into main himself.
+
+MSG
+  exit 1
+fi
+
+exit 0
