@@ -623,8 +623,12 @@ footer {
 
 <script>
 // Follower counts: understated, right-aligned on each social button.
-// Reads data/followers.json (updated by a scheduled job); shows a number only
-// where a real value exists, so a platform without data just looks like a plain link.
+// Reads the counts from the bobdavismusic-data repo, not from this one. The daily
+// updater is automation and this repo requires a pull request for main, so its data
+// lives in an unprotected repo and is fetched at runtime. GitHub Pages serves it with
+// Access-Control-Allow-Origin: *, so the cross-origin read is allowed.
+// A number renders only where a real value exists, so a platform without data just
+// looks like a plain link.
 (function () {
   function fmt(n) { return Number(n).toLocaleString('en-US'); }
   function apply(p) {
@@ -634,8 +638,10 @@ footer {
       if (el && p[k] != null && p[k] !== '' && !isNaN(p[k])) el.textContent = fmt(p[k]);
     });
   }
-  apply({ tiktok: 1997 }); // last-known fallback so the count shows even if the fetch fails
-  fetch('data/followers.json', { cache: 'no-store' })
+  // Last-known values, so the counts still render if the cross-origin fetch fails.
+  // Refresh these occasionally; they are a floor, not the source of truth.
+  apply({ tiktok: 2165, instagram: 164, facebook: 218 });
+  fetch('https://bbrown388.github.io/bobdavismusic-data/data/followers.json', { cache: 'no-store' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) { if (d && d.platforms) apply(d.platforms); })
     .catch(function () {});
