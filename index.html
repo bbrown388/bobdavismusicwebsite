@@ -640,9 +640,12 @@ footer {
       if (el && p[k] != null && p[k] !== '' && !isNaN(p[k])) el.textContent = fmt(p[k]);
     });
   }
-  // Last-known values, so the counts still render if the cross-origin fetch fails.
-  // Refresh these occasionally; they are a floor, not the source of truth.
-  apply({ tiktok: 2165, instagram: 164, facebook: 218 });
+  // No hardcoded fallback on purpose. It used to seed last-known numbers here, which
+  // meant every visitor saw stale counts for a moment on EVERY load before the fetch
+  // corrected them, and saw them permanently if the fetch failed. A wrong number is
+  // worse than no number, so if the feed is unreachable the spans stay empty and each
+  // button is simply a plain link. notify/check-followers-feed.ps1 watches the feed and
+  // pings if it stops serving, since this degradation is deliberately silent on the page.
   fetch('https://bbrown388.github.io/bobdavismusic-data/data/followers.json', { cache: 'no-store' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) { if (d && d.platforms) apply(d.platforms); })
