@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Merch — Bob Davis Music</title>
-<meta name="description" content="Bob Davis merch — hats, tees, and more.">
+<title>Merch | Bob Davis Music</title>
+<meta name="description" content="Bob Davis merch, hats, tees, and more.">
 <meta property="og:title" content="Bob Davis Merch">
 <meta property="og:description" content="Hats, tees, and more from Texas country artist Bob Davis.">
 <meta property="og:url" content="https://bobdavismusic.com/merch.html">
@@ -857,7 +857,7 @@ const _cards = {};
 function renderProducts(products) {
   const grid = document.getElementById('product-grid');
   if (!products.length) {
-    grid.innerHTML = '<p class="status-msg">No products yet — check back soon.</p>';
+    grid.innerHTML = '<p class="status-msg">No products yet, check back soon.</p>';
     return;
   }
   if (products.length === 1) grid.classList.add('single');
@@ -905,7 +905,7 @@ function buildCard(p) {
     ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
-  // Thumbnail strip — cap at 6, show overflow count
+  // Thumbnail strip, cap at 6, show overflow count
   const MAX_THUMBS = 6;
   const visibleImgs = allImages.slice(0, MAX_THUMBS);
   const extraImgs = allImages.length - MAX_THUMBS;
@@ -920,7 +920,7 @@ function buildCard(p) {
       </div>`
     : '';
 
-  // Color pill buttons — show first 5, collapse rest
+  // Color pill buttons, show first 5, collapse rest
   const MAX_COLORS = 5;
   let colorHtml = '';
   if (colorOpt && !isDefault) {
@@ -1041,7 +1041,7 @@ function selectOpt(btn, sid, skipImageSwap) {
     if (lbl) lbl.textContent = optVal;
   }
 
-  // Color changed — swap image and refresh size availability
+  // Color changed, swap image and refresh size availability
   if (colorOpt && optName === colorOpt.name) {
     if (!skipImageSwap && btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt || '');
     if (sizeOpt) {
@@ -1104,7 +1104,7 @@ function selectThumb(btn, sid) {
         if (cb.classList.contains('color-hidden')) {
           showMoreColors(sid);
         }
-        selectOpt(cb, sid, true); // skipImageSwap — already swapped above
+        selectOpt(cb, sid, true); // skipImageSwap: already swapped above
         break;
       }
     }
@@ -1255,7 +1255,7 @@ function updateCartUI(cart) {
     if (cu.protocol === 'https:') {
       document.getElementById('checkout-btn').href = cart.checkoutUrl;
     }
-  } catch { /* invalid URL — leave href as '#' */ }
+  } catch { /* invalid URL, leave href as '#' */ }
 
   const emptyEl = document.getElementById('cart-empty');
   const footerEl = document.getElementById('cart-footer');
@@ -1275,7 +1275,7 @@ function updateCartUI(cart) {
 
   itemsEl.innerHTML = lines.map(line => {
     const m = line.merchandise;
-    const label = m.title !== 'Default Title' ? ` — ${esc(m.title)}` : '';
+    const label = m.title !== 'Default Title' ? ` - ${esc(m.title)}` : '';
     return `
       <div class="cart-item">
         <div class="cart-item-info">
