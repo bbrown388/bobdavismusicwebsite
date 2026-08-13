@@ -69,6 +69,7 @@ body {
   border: 1px solid rgba(255,215,0,0.15);
   border-radius: 12px;
   padding: 18px;
+  min-width: 0;          /* same reason as .img-thumbs: let the grid track shrink */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -308,15 +309,95 @@ body {
   padding-bottom: 14px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-.cart-item-info { flex: 1; }
+/* Thumbnail. Printful shoots on white, so the tile reads as a white card on the dark
+   drawer; the border keeps it from bleeding into the background at its edges. */
+.cart-item-img {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,215,0,0.12);
+}
+.cart-item-info { flex: 1; min-width: 0; }
 .cart-item-name {
   font-size: 14px;
   color: #E8DCC8;
   margin-bottom: 4px;
   line-height: 1.3;
 }
+/* Chosen variant, one chip per option, so "Color Navy" and "Size S/M" read as facts
+   rather than as Shopify's slash-joined "Navy / S/M" blob. */
+.cart-item-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-bottom: 8px;
+}
+.cart-item-opt {
+  font-size: 11px;
+  color: #C8B89A;
+  background: rgba(255,215,0,0.07);
+  border: 1px solid rgba(255,215,0,0.14);
+  border-radius: 4px;
+  padding: 2px 7px;
+  line-height: 1.5;
+}
+.cart-item-opt em {
+  font-style: normal;
+  color: #907860;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-size: 9px;
+  margin-right: 4px;
+}
+.cart-item-qty {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255,215,0,0.2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.cart-item-qty button {
+  background: none;
+  border: none;
+  color: #C8B89A;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  line-height: 1;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.cart-item-qty button:hover:not(:disabled) { background: rgba(255,215,0,0.14); color: #FFD700; }
+.cart-item-qty button:disabled { opacity: 0.35; cursor: default; }
+.cart-item-qty span {
+  font-size: 13px;
+  color: #E8DCC8;
+  min-width: 26px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cart-item-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  align-self: stretch;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .cart-item-price {
-  font-size: 12px;
+  font-size: 13px;
+  color: #C8B89A;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Unit price, shown only when it is not already obvious from the line total. */
+.cart-item-each {
+  display: block;
+  font-size: 10px;
   color: #907860;
   font-style: italic;
 }
@@ -331,6 +412,14 @@ body {
   flex-shrink: 0;
 }
 .cart-item-remove:hover { color: #907860; }
+.cart-items.busy { opacity: 0.55; pointer-events: none; }
+.cart-note {
+  font-size: 11px;
+  color: #907860;
+  font-style: italic;
+  text-align: right;
+  margin-top: -8px;
+}
 
 .cart-footer {
   padding-top: 20px;
@@ -376,7 +465,12 @@ footer {
 }
 
 /* ── Image thumbnail gallery ──────── */
+/* min-width: 0 is load-bearing. A grid/flex item defaults to min-width: auto, which is
+   its min-content width, so this strip refused to shrink below the full row of thumbs
+   and forced the card's grid track to ~451px on a 375px phone -- the whole page scrolled
+   sideways. Allowing it to shrink is what lets overflow-x: auto actually scroll. */
 .img-thumbs {
+  min-width: 0;
   display: flex;
   gap: 6px;
   overflow-x: auto;
@@ -684,13 +778,43 @@ footer {
     border-bottom-color: rgba(139,105,20,0.15);
   }
 
+  .cart-item-img {
+    background: rgba(255,255,255,0.6);
+    border-color: rgba(139,105,20,0.25);
+  }
+
   .cart-item-name {
     color: #1e0e06;
   }
 
-  .cart-item-price {
-    color: #7a5030;
+  .cart-item-opt {
+    color: #5a3400;
+    background: rgba(139,105,20,0.09);
+    border-color: rgba(139,105,20,0.22);
   }
+
+  .cart-item-opt em { color: #9a6838; }
+
+  .cart-item-qty {
+    border-color: rgba(139,105,20,0.3);
+  }
+
+  .cart-item-qty button { color: #6a4000; }
+
+  .cart-item-qty button:hover:not(:disabled) {
+    background: rgba(139,105,20,0.16);
+    color: #4a2c00;
+  }
+
+  .cart-item-qty span { color: #1e0e06; }
+
+  .cart-item-price {
+    color: #3d2010;
+  }
+
+  .cart-item-each { color: #7a5030; }
+
+  .cart-note { color: #7a5030; }
 
   .cart-item-remove {
     color: #b09070;
@@ -779,6 +903,7 @@ footer {
   <p class="cart-empty" id="cart-empty">Your cart is empty.</p>
   <div class="cart-footer" id="cart-footer" hidden>
     <div class="cart-subtotal" id="cart-subtotal"></div>
+    <p class="cart-note">Shipping and tax calculated at checkout.</p>
     <a class="checkout-btn" id="checkout-btn" href="#" onclick="trackCheckout()">Checkout</a>
   </div>
 </div>
@@ -1107,6 +1232,23 @@ function selectVariant(btn, sid) {
   if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
 }
 
+// Click a pill by option name/value, wherever it lives. Colour and size are rendered
+// into two separate containers, so this looks in both rather than assuming one.
+function applyOptByValue(sid, name, value) {
+  for (const id of [`cthumbs-${sid}`, `spicker-${sid}`]) {
+    for (const b of document.getElementById(id)?.querySelectorAll('.size-btn') || []) {
+      if (b.dataset.opt !== name || b.dataset.val !== value) continue;
+      if (b.classList.contains('active')) return true;   // already there, nothing to do
+      if (b.disabled) return false;                      // out of stock; a shopper could
+                                                         // not pick it either, so don't
+      if (b.classList.contains('color-hidden')) showMoreColors(sid);
+      selectOpt(b, sid, true);                           // image already swapped above
+      return true;
+    }
+  }
+  return false;
+}
+
 function selectThumb(btn, sid) {
   document.getElementById(`ithumbs-${sid}`)
     ?.querySelectorAll('.img-thumb')
@@ -1114,21 +1256,75 @@ function selectThumb(btn, sid) {
   btn.classList.add('active');
   swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt, true);
 
-  // Auto-select color whose variant image matches this thumbnail
+  // Picking a photo should also pick the thing in the photo. This used to scan the
+  // colour pills only, so hats followed the gallery but the can cooler -- whose only
+  // option is Size -- did not. Resolve the variants that OWN this image instead, and
+  // apply their options whatever those options are called.
+  const card   = _cards[sid];
   const imgUrl = btn.dataset.imgUrl;
-  const colorContainer = document.getElementById(`cthumbs-${sid}`);
-  if (colorContainer && imgUrl) {
-    for (const cb of colorContainer.querySelectorAll('.size-btn[data-img-url]')) {
-      if (cb.dataset.imgUrl === imgUrl && !cb.classList.contains('active')) {
-        // Reveal if hidden behind collapse
-        if (cb.classList.contains('color-hidden')) {
-          showMoreColors(sid);
+  if (!card || !imgUrl) return;
+
+  let owners = card.variants.filter(v => v.image?.url === imgUrl);
+
+  // Shopify marks exactly ONE image per variant as that variant's featured image, so a
+  // product shot from a second angle arrives attached to nothing -- the can cooler's
+  // "front" photos are plainly a slim and a regular koozie, but the API does not say so.
+  // Printful names its files after the variant, so fall back to reading the filename.
+  // Only an unambiguous match counts, because guessing wrong would silently change what
+  // the shopper is about to buy.
+  if (!owners.length) {
+    const file = imgUrl.split('/').pop().split('?')[0].toLowerCase();
+    const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const inferred = [];
+    for (const opt of card.options || []) {
+      // Longest match wins so that "Black/ White" beats a bare "Black" on the same file.
+      const hit = (opt.values || [])
+        .filter(v => { const s = slug(v); return s && new RegExp(`(^|-)${s}(-|\\.|$)`).test(file); })
+        .sort((a, b) => slug(b).length - slug(a).length)[0];
+      if (hit) inferred.push({ name: opt.name, value: hit });
+    }
+    if (inferred.length) {
+      // Trust it only if it actually names a real variant.
+      const v = card.variants.find(v =>
+        inferred.every(i => v.selectedOptions?.some(o => o.name === i.name && o.value === i.value)));
+      if (v) owners = [v];
+    }
+  }
+
+  // Images tied to no variant even after that (lifestyle and back-of-garment shots) say
+  // nothing about the selection, so they just change the picture. Same for the flat
+  // variant-button fallback, which carries its own image on the button.
+  if (!owners.length) {
+    for (const vb of document.getElementById(`vbtns-${sid}`)?.querySelectorAll('.variant-btn') || []) {
+      if (vb.dataset.imgUrl === imgUrl && !vb.classList.contains('active')) {
+        vb.closest('.variant-buttons').querySelectorAll('.variant-btn')
+          .forEach(b => b.classList.remove('active'));
+        vb.classList.add('active');
+        const addBtn = document.getElementById(`add-${sid}`);
+        if (addBtn) {
+          addBtn.dataset.vid = vb.dataset.vid;
+          if (vb.dataset.price) addBtn.dataset.price = vb.dataset.price;
         }
-        selectOpt(cb, sid, true); // skipImageSwap: already swapped above
         break;
       }
     }
+    return;
   }
+
+  // Apply only the options every owner agrees on. One photo usually covers every SIZE
+  // of a colour, and in that case it tells you the colour and nothing about the size --
+  // so overwriting the shopper's chosen size off the back of it would be wrong.
+  const names = [...new Set(owners.flatMap(v => (v.selectedOptions || []).map(o => o.name)))];
+  const agreed = [];
+  for (const n of names) {
+    const vals = new Set(owners.map(v => v.selectedOptions?.find(o => o.name === n)?.value));
+    if (vals.size === 1) agreed.push({ name: n, value: [...vals][0] });
+  }
+
+  // Colour first: choosing it re-checks which sizes are still in stock, and running
+  // that check after the size was set would test it against the previous colour.
+  agreed.sort((a, b) => (/^colou?r$/i.test(a.name) ? 0 : 1) - (/^colou?r$/i.test(b.name) ? 0 : 1));
+  for (const o of agreed) applyOptByValue(sid, o.name, o.value);
 }
 
 function expandDesc(sid) {
@@ -1179,10 +1375,13 @@ const CART_FIELDS = `
     edges {
       node {
         id quantity
+        cost { totalAmount { amount currencyCode } }
         merchandise {
           ... on ProductVariant {
             id title
-            product { title }
+            image { url altText }
+            selectedOptions { name value }
+            product { title featuredImage { url altText } }
             priceV2 { amount currencyCode }
           }
         }
@@ -1214,6 +1413,26 @@ async function removeLineFromCart(lineId) {
       cartLinesRemove(cartId: $cartId, lineIds: $lineIds) { cart { ${CART_FIELDS} } }
     }`, { cartId, lineIds: [lineId] });
   return data.cartLinesRemove.cart;
+}
+
+async function setLineQty(lineId, quantity) {
+  // Dropping to zero is a removal, not a zero-quantity line.
+  if (quantity < 1) return removeLineFromCart(lineId);
+  const data = await shopify(`
+    mutation($cartId: ID!, $lines: [CartLineUpdateInput!]!) {
+      cartLinesUpdate(cartId: $cartId, lines: $lines) { cart { ${CART_FIELDS} } }
+    }`, { cartId, lines: [{ id: lineId, quantity }] });
+  return data.cartLinesUpdate.cart;
+}
+
+// Shopify's CDN resizes on request, so ask for the size actually being displayed
+// instead of pulling a 2000px product shot into a 56px tile.
+function cdnThumb(url, px) {
+  try {
+    const u = new URL(url);
+    u.searchParams.set('width', px);
+    return u.toString();
+  } catch { return url; }
 }
 
 async function handleAdd(btn) {
@@ -1258,9 +1477,32 @@ async function handleAdd(btn) {
   }
 }
 
+// Each click re-renders the whole list from the server's reply, so a second click
+// landing mid-flight would act on buttons that are about to be replaced. Freeze the
+// list until the response arrives rather than trying to reconcile the two.
+let cartBusy = false;
+async function mutateCart(fn) {
+  if (cartBusy) return;
+  cartBusy = true;
+  const itemsEl = document.getElementById('cart-items');
+  itemsEl.classList.add('busy');
+  try {
+    const cart = await fn();
+    if (cart) updateCartUI(cart);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    cartBusy = false;
+    itemsEl.classList.remove('busy');
+  }
+}
+
 async function removeLine(lineId) {
-  try { updateCartUI(await removeLineFromCart(lineId)); }
-  catch (err) { console.error(err); }
+  return mutateCart(() => removeLineFromCart(lineId));
+}
+
+async function changeQty(lineId, quantity) {
+  return mutateCart(() => setLineQty(lineId, quantity));
 }
 
 function updateCartUI(cart) {
@@ -1295,19 +1537,47 @@ function updateCartUI(cart) {
 
   itemsEl.innerHTML = lines.map(line => {
     const m = line.merchandise;
-    const label = m.title !== 'Default Title' ? ` - ${esc(m.title)}` : '';
+    // Variants without their own photo fall back to the product's featured image, so a
+    // line never renders as an empty tile.
+    const img = m.image || m.product.featuredImage;
+    // selectedOptions is the same information as m.title but already broken apart.
+    // m.title arrives slash-joined ("Navy / S/M"), and reads as "Default Title" on
+    // single-variant products, which should show nothing at all.
+    const opts = (m.selectedOptions || []).filter(o => o.value && o.value !== 'Default Title');
+    const unit  = fmt(m.priceV2.amount, m.priceV2.currencyCode);
+    const total = line.cost?.totalAmount
+      ? fmt(line.cost.totalAmount.amount, line.cost.totalAmount.currencyCode)
+      : fmt(m.priceV2.amount * line.quantity, m.priceV2.currencyCode);
     return `
       <div class="cart-item">
+        ${img ? `<img class="cart-item-img" src="${esc(cdnThumb(img.url, 112))}"
+             alt="${esc(img.altText || m.product.title)}" loading="lazy">` : ''}
         <div class="cart-item-info">
-          <div class="cart-item-name">${esc(m.product.title)}${label}</div>
-          <div class="cart-item-price">Qty ${line.quantity} &times; ${fmt(m.priceV2.amount, m.priceV2.currencyCode)}</div>
+          <div class="cart-item-name">${esc(m.product.title)}</div>
+          ${opts.length ? `<div class="cart-item-opts">${opts.map(o =>
+            `<span class="cart-item-opt"><em>${esc(o.name)}</em>${esc(o.value)}</span>`).join('')}</div>` : ''}
+          <div class="cart-item-qty">
+            <button data-line-id="${esc(line.id)}" data-qty="${line.quantity - 1}"
+                    aria-label="Decrease quantity of ${esc(m.product.title)}">&minus;</button>
+            <span aria-live="polite">${line.quantity}</span>
+            <button data-line-id="${esc(line.id)}" data-qty="${line.quantity + 1}"
+                    aria-label="Increase quantity of ${esc(m.product.title)}">+</button>
+          </div>
         </div>
-        <button class="cart-item-remove" data-line-id="${esc(line.id)}" aria-label="Remove">&#10005;</button>
+        <div class="cart-item-right">
+          <button class="cart-item-remove" data-line-id="${esc(line.id)}"
+                  aria-label="Remove ${esc(m.product.title)}">&#10005;</button>
+          <div class="cart-item-price">${total}${
+            line.quantity > 1 ? `<span class="cart-item-each">${unit} each</span>` : ''}</div>
+        </div>
       </div>`;
   }).join('');
+
   itemsEl.onclick = e => {
-    const btn = e.target.closest('.cart-item-remove');
-    if (btn) removeLine(btn.dataset.lineId);
+    const rm = e.target.closest('.cart-item-remove');
+    if (rm) return removeLine(rm.dataset.lineId);
+    const q = e.target.closest('[data-qty]');
+    if (q) return changeQty(q.dataset.lineId, parseInt(q.dataset.qty, 10));
   };
 }
 
