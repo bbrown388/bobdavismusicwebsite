@@ -1107,6 +1107,23 @@ function selectVariant(btn, sid) {
   if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
 }
 
+// Click a pill by option name/value, wherever it lives. Colour and size are rendered
+// into two separate containers, so this looks in both rather than assuming one.
+function applyOptByValue(sid, name, value) {
+  for (const id of [`cthumbs-${sid}`, `spicker-${sid}`]) {
+    for (const b of document.getElementById(id)?.querySelectorAll('.size-btn') || []) {
+      if (b.dataset.opt !== name || b.dataset.val !== value) continue;
+      if (b.classList.contains('active')) return true;   // already there, nothing to do
+      if (b.disabled) return false;                      // out of stock; a shopper could
+                                                         // not pick it either, so don't
+      if (b.classList.contains('color-hidden')) showMoreColors(sid);
+      selectOpt(b, sid, true);                           // image already swapped above
+      return true;
+    }
+  }
+  return false;
+}
+
 function selectThumb(btn, sid) {
   document.getElementById(`ithumbs-${sid}`)
     ?.querySelectorAll('.img-thumb')
@@ -1114,21 +1131,75 @@ function selectThumb(btn, sid) {
   btn.classList.add('active');
   swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt, true);
 
-  // Auto-select color whose variant image matches this thumbnail
+  // Picking a photo should also pick the thing in the photo. This used to scan the
+  // colour pills only, so hats followed the gallery but the can cooler -- whose only
+  // option is Size -- did not. Resolve the variants that OWN this image instead, and
+  // apply their options whatever those options are called.
+  const card   = _cards[sid];
   const imgUrl = btn.dataset.imgUrl;
-  const colorContainer = document.getElementById(`cthumbs-${sid}`);
-  if (colorContainer && imgUrl) {
-    for (const cb of colorContainer.querySelectorAll('.size-btn[data-img-url]')) {
-      if (cb.dataset.imgUrl === imgUrl && !cb.classList.contains('active')) {
-        // Reveal if hidden behind collapse
-        if (cb.classList.contains('color-hidden')) {
-          showMoreColors(sid);
+  if (!card || !imgUrl) return;
+
+  let owners = card.variants.filter(v => v.image?.url === imgUrl);
+
+  // Shopify marks exactly ONE image per variant as that variant's featured image, so a
+  // product shot from a second angle arrives attached to nothing -- the can cooler's
+  // "front" photos are plainly a slim and a regular koozie, but the API does not say so.
+  // Printful names its files after the variant, so fall back to reading the filename.
+  // Only an unambiguous match counts, because guessing wrong would silently change what
+  // the shopper is about to buy.
+  if (!owners.length) {
+    const file = imgUrl.split('/').pop().split('?')[0].toLowerCase();
+    const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const inferred = [];
+    for (const opt of card.options || []) {
+      // Longest match wins so that "Black/ White" beats a bare "Black" on the same file.
+      const hit = (opt.values || [])
+        .filter(v => { const s = slug(v); return s && new RegExp(`(^|-)${s}(-|\\.|$)`).test(file); })
+        .sort((a, b) => slug(b).length - slug(a).length)[0];
+      if (hit) inferred.push({ name: opt.name, value: hit });
+    }
+    if (inferred.length) {
+      // Trust it only if it actually names a real variant.
+      const v = card.variants.find(v =>
+        inferred.every(i => v.selectedOptions?.some(o => o.name === i.name && o.value === i.value)));
+      if (v) owners = [v];
+    }
+  }
+
+  // Images tied to no variant even after that (lifestyle and back-of-garment shots) say
+  // nothing about the selection, so they just change the picture. Same for the flat
+  // variant-button fallback, which carries its own image on the button.
+  if (!owners.length) {
+    for (const vb of document.getElementById(`vbtns-${sid}`)?.querySelectorAll('.variant-btn') || []) {
+      if (vb.dataset.imgUrl === imgUrl && !vb.classList.contains('active')) {
+        vb.closest('.variant-buttons').querySelectorAll('.variant-btn')
+          .forEach(b => b.classList.remove('active'));
+        vb.classList.add('active');
+        const addBtn = document.getElementById(`add-${sid}`);
+        if (addBtn) {
+          addBtn.dataset.vid = vb.dataset.vid;
+          if (vb.dataset.price) addBtn.dataset.price = vb.dataset.price;
         }
-        selectOpt(cb, sid, true); // skipImageSwap: already swapped above
         break;
       }
     }
+    return;
   }
+
+  // Apply only the options every owner agrees on. One photo usually covers every SIZE
+  // of a colour, and in that case it tells you the colour and nothing about the size --
+  // so overwriting the shopper's chosen size off the back of it would be wrong.
+  const names = [...new Set(owners.flatMap(v => (v.selectedOptions || []).map(o => o.name)))];
+  const agreed = [];
+  for (const n of names) {
+    const vals = new Set(owners.map(v => v.selectedOptions?.find(o => o.name === n)?.value));
+    if (vals.size === 1) agreed.push({ name: n, value: [...vals][0] });
+  }
+
+  // Colour first: choosing it re-checks which sizes are still in stock, and running
+  // that check after the size was set would test it against the previous colour.
+  agreed.sort((a, b) => (/^colou?r$/i.test(a.name) ? 0 : 1) - (/^colou?r$/i.test(b.name) ? 0 : 1));
+  for (const o of agreed) applyOptByValue(sid, o.name, o.value);
 }
 
 function expandDesc(sid) {
