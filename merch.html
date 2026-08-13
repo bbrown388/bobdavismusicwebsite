@@ -93,7 +93,11 @@ body {
 .product-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* contain, not cover. The wrapper is a 4/3 landscape box, so cover crops the top and
+     bottom off anything tall -- a 22oz bottle lost its cap and its base. Caps survived
+     because they are wide. Printful shoots on plain backgrounds, so letterboxing a tall
+     product reads as intentional where a decapitated bottle does not. */
+  object-fit: contain;
   display: block;
   transition: opacity 0.15s ease;
 }
@@ -1041,9 +1045,25 @@ function selectOpt(btn, sid, skipImageSwap) {
     if (lbl) lbl.textContent = optVal;
   }
 
-  // Color changed, swap image and refresh size availability
+  // Swap to the selected VARIANT's own image, whichever option changed. This used to
+  // fire only when the changed option was named "Color", so the can cooler -- whose only
+  // option is Size (Slim/Regular 12 oz), each with its own photo -- never switched
+  // pictures. Resolving the variant is also more accurate than trusting the colour pill,
+  // since the variant image is the authoritative one for the exact combination chosen.
+  if (!skipImageSwap) {
+    const sel = card.selected;
+    const match = card.variants.find(v =>
+      (v.selectedOptions || []).every(o => sel[o.name] === undefined || sel[o.name] === o.value)
+      && (v.selectedOptions || []).length === Object.keys(sel).length
+    ) || card.variants.find(v =>
+      (v.selectedOptions || []).some(o => o.name === optName && o.value === optVal)
+    );
+    const url = match?.image?.url || btn.dataset.imgUrl;
+    if (url) swapMainImage(sid, url, match?.image?.altText || btn.dataset.imgAlt || '');
+  }
+
+  // Colour additionally refreshes which sizes are still available in that colour.
   if (colorOpt && optName === colorOpt.name) {
-    if (!skipImageSwap && btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt || '');
     if (sizeOpt) {
       const selectedColor = card.selected[colorOpt.name];
       const selectedSize  = card.selected[sizeOpt.name];
