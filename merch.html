@@ -1701,14 +1701,6 @@ function warmQueue(sid, card, queue) {
   schedule();
 }
 
-/* Now that a colour is on screen, its other photos are one click away on the rail, so
-   this is the point at which they are worth fetching at full size, and not before. */
-function warmCurrentGallery(sid) {
-  const card = _cards[sid];
-  if (!card || !card.images?.length) return;
-  warmQueue(sid, card, card.images.map(im => [im.url, 1000]));
-}
-
 /* Hovering a colour pill is a strong signal and precedes the click by a few hundred ms,
    which is enough to have the full-size photo decoded before it is needed. */
 function warmColor(sid, value) {
@@ -1812,8 +1804,12 @@ function refreshGallery(sid) {
   document.getElementById('viewall-' + sid)?.remove();
   wrap.insertAdjacentHTML('beforeend', thumbsMarkup(imgs, sid, pick?.url));
 
-  // This colour's remaining photos are now one click away, so warm them at full size.
-  warmCurrentGallery(sid);
+  /* Re-warm the whole neighbourhood, not just this colour's photos. Changing colour moves
+     what is one click away: on a cap, "the other embroidery at THIS colour" only becomes
+     adjacent once this colour is selected, and warming the current gallery alone left it
+     cold. warmOtherColors already covers the current gallery as its first tier, and the
+     _warmed set means everything reached before is skipped rather than refetched. */
+  warmOtherColors(sid);
 }
 
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
