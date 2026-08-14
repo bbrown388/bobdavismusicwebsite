@@ -1324,10 +1324,17 @@ async function loadProducts() {
     const data = json.data;
     const fresh = data.products.edges.map(e => e.node);
     writeCatalog(fresh);
-    // Do not repaint over a product page the shopper already opened from cache.
-    const onProduct = /^#\/product\//.test(location.hash || '');
     _products = mergeProducts(fresh);
-    if (!onProduct) renderProducts(_products);
+
+    /* Skip the repaint ONLY when there is already something on screen to preserve, i.e.
+       a product page drawn from cache. Testing the hash alone was wrong: on a cold load
+       of a direct product link there is no cached render, so skipping meant nothing was
+       ever drawn and route() never ran, because route() is only called from
+       renderProducts. The page sat on skeletons forever. Loading the grid first seeded
+       the cache, which is why the same link worked on a second visit. */
+    const alreadyDrawn = !!document.querySelector('.product-card, .pdp');
+    const onProduct = /^#\/product\//.test(location.hash || '');
+    if (!(alreadyDrawn && onProduct)) renderProducts(_products);
   } catch (err) {
     console.error(err);
     // A cached render is better than an error screen when the network is the problem.
@@ -1583,10 +1590,11 @@ function thumbsMarkup(imgs, sid, activeUrl) {
      a 3x screen and costs about 3KB. data-img-url keeps the ORIGINAL url, because every
      comparison in the page matches on that. */
   return `<div class="img-thumbs pdp-thumbs" id="ithumbs-${sid}">
-      ${imgs.map(img => `<button class="img-thumb${img.url === activeUrl ? ' active' : ''}"
+      ${imgs.map((img, n) => `<button class="img-thumb${img.url === activeUrl ? ' active' : ''}"
         data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
         onclick="selectThumb(this,'${sid}')">
-        <img src="${esc(cdnThumb(img.url, 150))}" alt="${esc(img.altText)}" loading="lazy">
+        <img src="${esc(cdnThumb(img.url, 150))}" alt="${esc(img.altText)}"
+             ${n < 8 ? '' : 'loading="lazy"'}>
       </button>`).join('')}
     </div>
     <button class="pdp-viewall" id="viewall-${sid}" onclick="openLightbox('${sid}')">View all ${imgs.length} photos</button>`;
