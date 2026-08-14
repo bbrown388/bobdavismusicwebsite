@@ -104,11 +104,24 @@ body {
   padding: 40px 20px 100px;
 }
 
+/* One back control, and its arrow always means "up exactly one level": to the grid from a
+   product, to the home page from the grid. There used to be two arrows on a product page,
+   the page-level one going home and a second one going to the grid, and the topmost was
+   the one that skipped a level. Reading "back" and landing on the home page was the result.
+   The 1180px matches the grid and product containers so it lines up with the content
+   instead of floating; it was 480px from when this page was a narrow card list. */
 .back-nav {
   width: 100%;
-  max-width: 480px;
+  max-width: 1180px;
   margin-bottom: 28px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
 }
+/* The product page is 1080 wide against the grid's 1180, so the bar has to follow the view
+   it sits above, otherwise the back link hangs 50px to the left of the product it belongs to. */
+.back-nav.on-product { max-width: 1080px; }
 
 .back-link {
   font-size: 13px;
@@ -119,6 +132,18 @@ body {
   transition: color 0.15s;
 }
 .back-link:hover { color: #FFD700; }
+
+/* Deliberately arrow-free and quieter, so the only thing that looks like "back" is the
+   back link. This is a jump to a different section, not a step up the current path. */
+.home-link {
+  font-size: 12px;
+  color: #6f5b48;
+  text-decoration: none;
+  letter-spacing: 1px;
+  font-style: italic;
+  transition: color 0.15s;
+}
+.home-link:hover { color: #FFD700; }
 
 .section-label {
   font-size: 11px;
@@ -292,16 +317,6 @@ body {
 .pdp { width: 100%; max-width: 1080px; margin: 0 auto; min-width: 0; }
 .pdp-cols > *, .pdp-gallery, .pdp-info { min-width: 0; }
 .pdp-thumbs { max-width: 100%; }
-.pdp-back {
-  background: none;
-  border: none;
-  color: #C9A227;
-  font-family: Georgia, serif;
-  font-size: 14px;
-  cursor: pointer;
-  padding: 0 0 18px;
-}
-.pdp-back:hover { text-decoration: underline; }
 .pdp-cols {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
@@ -971,7 +986,8 @@ footer {
     background-size: 400% 100%;
   }
 
-  .pdp-back, .pdp-viewall { color: #9a6838; }
+  .pdp-viewall { color: #9a6838; }
+  .home-link { color: #a8815c; }
   .pdp-title { color: #1e0e06; }
   .pdp-price { color: #5a3400; }
   .pdp-ship { color: #7a5030; }
@@ -1223,7 +1239,8 @@ footer {
 </script></head>
 <body>
 
-<nav class="back-nav">
+<!-- Default is the grid's version, which is also the right thing if scripting never runs. -->
+<nav class="back-nav" id="back-nav">
   <a class="back-link" href="index.html">&#8592; Bob Davis</a>
 </nav>
 
@@ -1923,6 +1940,22 @@ let _products = [];
    Hash router so a product is linkable and the back button works, without needing a
    file per product (products come from Shopify at runtime, so static pages are out).
    Category filters keep using a bare #hats hash; products use #/product/<id>. */
+/* Keeps the single back control pointed one level up from wherever the router just landed.
+   Real anchors rather than buttons so middle click, ctrl+click and the keyboard all behave;
+   the click handler only intercepts the plain left click to keep it a hash transition
+   instead of a page load. */
+function updateBackNav(onProduct) {
+  const nav = document.getElementById('back-nav');
+  if (!nav) return;
+  nav.classList.toggle('on-product', !!onProduct);
+  nav.innerHTML = onProduct
+    ? '<a class="back-link" href="merch.html" '
+      + 'onclick="if(!event.metaKey&&!event.ctrlKey&&event.button===0){event.preventDefault();location.hash=\'\';}">'
+      + '&#8592; All merch</a>'
+      + '<a class="home-link" href="index.html">Bob Davis home</a>'
+    : '<a class="back-link" href="index.html">&#8592; Bob Davis</a>';
+}
+
 function route() {
   const m = (location.hash || '').match(/^#\/product\/(.+)$/);
   if (m) showProduct(decodeURIComponent(m[1]));
@@ -1938,6 +1971,7 @@ function showProduct(id) {
   view.hidden = false;
   view.innerHTML = buildProductPage(p, _pendingPreselect);
   _pendingPreselect = null;
+  updateBackNav(true);
   window.scrollTo(0, 0);
   warmOtherColors(safeId(p.id));
   gtag('event', 'view_item', {
@@ -1951,6 +1985,7 @@ function showGrid() {
   const view = document.getElementById('product-view');
   view.hidden = true;
   view.innerHTML = '';
+  updateBackNav(false);
   document.getElementById('grid-view').hidden = false;
   const cat = (location.hash || '').replace('#', '');
   applyFilter(CATEGORIES.some(c => c.key === cat) || cat === 'other' ? cat : 'all', true);
@@ -2005,6 +2040,16 @@ function buildGridCard(p) {
   const count = colorOpt ? [...new Set(variants.map(v =>
     v.selectedOptions?.find(o => o.name === colorOpt.name)?.value).filter(Boolean))].length : 0;
 
+  /* The merged caps carry a second axis, thread colour, which the swatches cannot show:
+     they are deduped per garment colour, so both embroideries collapse into one dot. One
+     swatch per COMBINATION would mean 26 tiles on a card meant to be scanned, and would
+     read as 26 unrelated colourways rather than 13 caps in 2 threads, on top of doubling
+     the images each card loads. Naming the axis in the line that already exists costs one
+     line of text and no requests. */
+  const embOpt = (p.options || []).find(o => /^embroidery$/i.test(o.name));
+  const embNote = embOpt && embOpt.values.length > 1
+    ? `${embOpt.values.map(v => v.toLowerCase()).join(' or ')} embroidery` : '';
+
   return `
     <div class="product-card" id="card-${sid}" data-cat="${categoryOf(p)}"
          onclick="openProduct('${sid}')" role="link" tabindex="0"
@@ -2017,7 +2062,9 @@ function buildGridCard(p) {
       <div class="product-name">${esc(p.title)}</div>
       <div class="product-price">${price}${!available ? ' <span class="g-sold">Sold out</span>' : ''}</div>
       ${swatches}
-      ${count > 1 ? `<div class="g-count">${count} colors</div>` : ''}
+      ${count > 1 || embNote
+        ? `<div class="g-count">${count > 1 ? `${count} colors` : ''}${count > 1 && embNote ? ' &middot; ' : ''}${embNote}</div>`
+        : ''}
     </div>`;
 }
 
@@ -2311,7 +2358,6 @@ function buildProductPage(p, preselect, heroUrl) {
 
   return `
     <article class="pdp" id="pdp-${sid}">
-      <button class="pdp-back" onclick="location.hash=''">&#8592; All merch</button>
       <div class="pdp-cols">
         <div class="pdp-gallery">
           <div class="product-img-wrap pdp-hero">${mainImgHtml}</div>
