@@ -7,6 +7,7 @@
      the first paint rather than adding to it. -->
 <link rel="preconnect" href="https://6anqxb-rt.myshopify.com" crossorigin>
 <link rel="preconnect" href="https://cdn.shopify.com" crossorigin>
+<link rel="preconnect" href="https://bbrown388.github.io" crossorigin>
 <link rel="dns-prefetch" href="https://cdn.shopify.com">
 
 <script>
@@ -53,6 +54,32 @@ window.__catalogRequest = fetch(GQL, {
   body: JSON.stringify({ query: CATALOG_QUERY }),
 }).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
   .catch(err => ({ __error: err }));
+
+/* Canonical mockup order, fetched in parallel with the catalogue so it costs no extra
+   time. Printful stores each colour's photos in the order its mockups were generated,
+   which varied per colour, so Navy opened on a different kind of shot than Black. This
+   map pins every photo to a fixed position. Regenerate it with tools/merch-mockup-order
+   in the Claude working folder.
+
+   Deliberately soft: any failure resolves to an empty map and the gallery falls back to
+   its built-in sort. Same if Printful regenerates mockups, since the new filenames simply
+   will not appear here. Wrong order is a blemish, a blank shop is not. */
+window.ORDER_KEY = 'bd_image_order_v1';
+
+/* Seed synchronously from the last visit, because the first paint on a repeat visit is
+   drawn from the cached catalogue before any await, and it has to use the same order the
+   repaint will. */
+try { window.IMAGE_ORDER = JSON.parse(localStorage.getItem(window.ORDER_KEY)) || {}; }
+catch { window.IMAGE_ORDER = {}; }
+
+window.__imageOrder = Promise.race([
+  fetch('https://bbrown388.github.io/bobdavismusic-data/merch/image-order.json')
+    .then(r => r.ok ? r.json() : null)
+    .then(j => (j && j.order) || null)
+    .catch(() => null),
+  // A slow data host must never hold up the shop. Null means "keep what we already have".
+  new Promise(res => setTimeout(() => res(null), 2500)),
+]);
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1316,6 +1343,19 @@ async function loadProducts() {
     try { renderProducts(mergeProducts(cached)); } catch { /* fall through to the network */ }
     window.__renderSource = 'network';
   }
+  /* Settle the canonical image order before the network repaint. Both fetches were started
+     together in the head, so awaiting them one after the other costs the slower of the two,
+     not the sum. */
+  const orderBefore = JSON.stringify(window.IMAGE_ORDER || {});
+  try {
+    const freshOrder = await (window.__imageOrder || Promise.resolve(null));
+    if (freshOrder) {
+      window.IMAGE_ORDER = freshOrder;
+      try { localStorage.setItem(window.ORDER_KEY, JSON.stringify(freshOrder)); } catch {}
+    }
+  } catch {}
+  const orderChanged = JSON.stringify(window.IMAGE_ORDER || {}) !== orderBefore;
+
   try {
     // Await the request the head already started, rather than issuing a second one.
     const json = await (window.__catalogRequest || shopify(CATALOG_QUERY).then(d => ({ data: d })));
@@ -1334,7 +1374,9 @@ async function loadProducts() {
        the cache, which is why the same link worked on a second visit. */
     const alreadyDrawn = !!document.querySelector('.product-card, .pdp');
     const onProduct = /^#\/product\//.test(location.hash || '');
-    if (!(alreadyDrawn && onProduct)) renderProducts(_products);
+    // orderChanged forces the repaint on the first visit after the order map changes,
+    // otherwise that visit would keep a gallery drawn from cache in the stale order.
+    if (!(alreadyDrawn && onProduct) || orderChanged) renderProducts(_products);
   } catch (err) {
     console.error(err);
     // A cached render is better than an error screen when the network is the problem.
@@ -1552,10 +1594,21 @@ function canonicalOrder(p, colorValues) {
      order, which differs per colour. Area at least pins the primary mockup to first, so
      every colour opens on the same kind of shot.
 
-     It cannot order the same-size, same-angle photos among themselves. Nothing in the
-     Storefront API distinguishes them, so that ordering has to be fixed at the source by
-     selecting mockups in a consistent order per colour in Printful. */
+     It cannot order the same-size, same-angle photos among themselves, because nothing in
+     the Storefront API distinguishes them. That is what the map below is for; these keys
+     are the fallback for anything the map does not cover. */
+  /* Primary key, when we have it, is the canonical position from image-order.json, which
+     identifies each photo by what it actually shows rather than by its metadata. That is
+     the only thing able to separate same-angle, same-size shots. Images missing from the
+     map sort after the mapped ones and then fall through to the keys below, so a partial
+     or stale map degrades instead of breaking. */
+  const fixed = window.IMAGE_ORDER || {};
+  const pinned = im => {
+    const r = fixed[im.url.split('/').pop().split('?')[0]];
+    return r === undefined ? 99 : r;
+  };
   return im => [
+    pinned(im),
     angles.indexOf(angleOf(im.url, colorValues)),
     (im.width || 0) * (im.height || 0),
     colorValues.indexOf(colorOfImage(im.url, colorValues)),
@@ -1588,7 +1641,7 @@ function galleryFor(p, options, selected) {
     const key = canonicalOrder(p, colorOpt.values);
     imgs = imgs.slice().sort((a, b) => {
       const ka = key(a), kb = key(b);
-      return (ka[0] - kb[0]) || (ka[1] - kb[1]) || (ka[2] - kb[2]);
+      return (ka[0] - kb[0]) || (ka[1] - kb[1]) || (ka[2] - kb[2]) || (ka[3] - kb[3]);
     });
   }
   return imgs;
