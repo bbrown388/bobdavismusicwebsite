@@ -49,18 +49,231 @@ body {
   margin-bottom: 28px;
 }
 
+/* ── Category filters ─────────────── */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 22px;
+  max-width: 1180px;
+}
+.filter-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,215,0,0.22);
+  color: #E8DCC8;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.filter-btn:hover { border-color: rgba(255,215,0,0.5); }
+.filter-btn.active {
+  background: rgba(255,215,0,0.14);
+  border-color: rgba(255,215,0,0.65);
+  color: #FFD700;
+}
+.filter-btn .count { opacity: 0.6; font-size: 12px; margin-left: 4px; }
+/* .product-card sets display:flex, which beats the browser default [hidden]{display:none}.
+   Without this the filter buttons set the attribute and nothing visibly happens. */
+.product-card[hidden] { display: none !important; }
+
+/* Lightbox filmstrip: the +N button used to open a single photo with no sign that the
+   rest existed. Show every image along the bottom so the count is visibly browsable. */
+.lb-strip {
+  position: absolute;
+  bottom: 46px;
+  display: flex;
+  gap: 6px;
+  max-width: 94vw;
+  overflow-x: auto;
+  padding: 4px;
+  scrollbar-width: thin;
+}
+.lb-strip button {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+}
+.lb-strip button.active { border-color: #FFD700; }
+.lb-strip img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; display: block; }
+
+/* ── Lightbox ─────────────────────── */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox.open { display: flex; }
+.lightbox img {
+  max-width: 92vw;
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.lb-close, .lb-prev, .lb-next {
+  position: absolute;
+  background: rgba(255,255,255,0.09);
+  border: 1px solid rgba(255,215,0,0.3);
+  color: #E8DCC8;
+  font-size: 26px;
+  line-height: 1;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.lb-close { top: 18px; right: 18px; font-size: 22px; }
+.lb-prev  { left: 14px; }
+.lb-next  { right: 14px; }
+.lb-count {
+  position: absolute;
+  bottom: 20px;
+  font-size: 13px;
+  color: rgba(232,220,200,0.75);
+  letter-spacing: 0.06em;
+}
+@media (max-width: 500px) {
+  .lb-prev, .lb-next { width: 40px; height: 40px; font-size: 20px; }
+}
+
+/* ── Product page ─────────────────── */
+/* body is a centred flex column, so a child with no width constraint sizes to its
+   content. The 13-thumbnail rail made #product-view 778px wide inside a 390px phone,
+   which is why overflow-x:auto never engaged and the whole page scrolled sideways.
+   Constrain the chain and let every track shrink below its content. */
+#grid-view, #product-view { width: 100%; min-width: 0; }
+.pdp { width: 100%; max-width: 1080px; margin: 0 auto; min-width: 0; }
+.pdp-cols > *, .pdp-gallery, .pdp-info { min-width: 0; }
+.pdp-thumbs { max-width: 100%; }
+.pdp-back {
+  background: none;
+  border: none;
+  color: #C9A227;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 0 18px;
+}
+.pdp-back:hover { text-decoration: underline; }
+.pdp-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+.pdp-gallery { position: sticky; top: 24px; }
+.pdp-hero { aspect-ratio: 1 / 1; }
+.pdp-hero .product-img { cursor: zoom-in; }
+.pdp-thumbs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 2px 4px;
+  scrollbar-width: thin;
+}
+.pdp-viewall {
+  background: none;
+  border: none;
+  color: #C9A227;
+  font-family: Georgia, serif;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0 0;
+}
+.pdp-viewall:hover { text-decoration: underline; }
+.pdp-title {
+  font-size: 26px;
+  font-weight: normal;
+  letter-spacing: 0.02em;
+  margin: 0 0 8px;
+  color: #E8DCC8;
+}
+.pdp-price { font-size: 22px; color: #FFD700; margin-bottom: 6px; }
+.pdp-ship { font-size: 12.5px; color: #9a7a64; margin: 0 0 22px; font-style: italic; }
+.pdp-info .option-label { margin-top: 16px; }
+.pdp-add { margin-top: 26px; width: 100%; }
+.pdp-desc {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,215,0,0.14);
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: #b49a86;
+  text-align: left;
+}
+.pdp-desc ul { margin: 10px 0 0 18px; }
+.pdp-desc li { margin-bottom: 5px; }
+
+@media (max-width: 780px) {
+  /* minmax(0,1fr), not 1fr: a bare 1fr is minmax(auto,1fr) and refuses to shrink
+     below its content, which reintroduces the sideways scroll. */
+  .pdp-cols { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .pdp-gallery { position: static; }
+  .pdp-title { font-size: 22px; }
+}
+
+/* ── Grid card extras ─────────────── */
+.g-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  margin-top: 2px;
+}
+.g-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid rgba(255,215,0,0.3);
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.g-swatch:hover { border-color: #FFD700; transform: scale(1.12); }
+/* Printful shoots on white with the product filling roughly the middle half, so a
+   straight cover-crop of a 26px circle is mostly background and every colour ends up
+   looking like the same pale dot. Zoom into the centre so the swatch shows the product. */
+.g-swatch img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scale(1.9);
+}
+.g-count { font-size: 11px; color: #9a7a64; letter-spacing: 0.05em; }
+.g-sold { font-size: 12px; color: #9a7a64; font-style: italic; }
+.product-card { cursor: pointer; }
+
 /* ── Product grid ─────────────────── */
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-  gap: 20px;
+  /* 260px keeps two columns on a small phone in landscape and lets a desktop
+     window fill out to four. The old 480px cap made the whole shop render at
+     phone width no matter how big the screen was. */
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 24px;
   width: 100%;
-  max-width: 480px;
-  margin-bottom: 16px;
+  max-width: 1180px;
+  margin: 0 auto 16px;
 }
 .product-grid.single {
-  grid-template-columns: 1fr;
-  max-width: 260px;
+  grid-template-columns: minmax(0, 340px);
+  justify-content: center;
+  max-width: 100%;
 }
 
 /* ── Product card ─────────────────── */
@@ -88,7 +301,10 @@ body {
   position: relative;
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(255,255,255,0.07);
+  /* Printful photographs on white, and the images are letterboxed by object-fit:contain.
+     A white tile makes the bars blend into the photo instead of framing it in a
+     mismatched panel. */
+  background: #fff;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
 }
 .product-img {
@@ -100,6 +316,7 @@ body {
      product reads as intentional where a decapitated bottle does not. */
   object-fit: contain;
   display: block;
+  cursor: zoom-in;
   transition: opacity 0.15s ease;
 }
 .product-img.fading { opacity: 0; }
@@ -559,25 +776,6 @@ footer {
 }
 
 /* ── Product description ──────────── */
-.product-desc {
-  font-size: 12px;
-  color: #9a7a64;
-  line-height: 1.6;
-  text-align: center;
-  width: 100%;
-  margin: 0;
-}
-.desc-btn {
-  background: none;
-  border: none;
-  color: #907860;
-  font-family: Georgia, serif;
-  font-size: 12px;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 
 /* ── Option selected label ────────── */
 .opt-current {
@@ -586,25 +784,8 @@ footer {
 }
 
 /* ── Hidden color overflow ────────── */
-.color-hidden { display: none; }
 
 /* ── Thumbnail overflow count ─────── */
-.thumb-count {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 54px;
-  height: 54px;
-  flex-shrink: 0;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  color: #9a7a64;
-  font-size: 11px;
-  font-style: italic;
-  cursor: default;
-  user-select: none;
-}
 
 /* ── Focus indicators ─────────────── */
 .size-btn:focus-visible,
@@ -629,6 +810,29 @@ footer {
     color: #1e0e06;
   }
 
+  /* The filter pills were written for the dark theme: cream text on a near-transparent
+     white fill is invisible against the light background. */
+  .filter-btn {
+    background: rgba(255,255,255,0.55);
+    border-color: rgba(154,104,56,0.4);
+    color: #5a3400;
+  }
+  .filter-btn:hover { border-color: rgba(154,104,56,0.75); }
+  .filter-btn.active {
+    background: #5a3400;
+    border-color: #5a3400;
+    color: #F6ECD6;
+  }
+  .filter-btn .count { opacity: 0.75; }
+
+  .pdp-back, .pdp-viewall { color: #9a6838; }
+  .pdp-title { color: #1e0e06; }
+  .pdp-price { color: #5a3400; }
+  .pdp-ship { color: #7a5030; }
+  .pdp-desc { color: #4a2e18; border-top-color: rgba(154,104,56,0.25); }
+  .g-count, .g-sold { color: #7a5030; }
+  .g-swatch { border-color: rgba(154,104,56,0.45); }
+
   .back-link {
     color: #9a6838;
   }
@@ -652,7 +856,7 @@ footer {
   }
 
   .product-img-wrap {
-    background: rgba(139,105,20,0.08);
+    background: #fff;   /* match the white Printful shoots on, so contain does not letterbox */
   }
 
   .product-name {
@@ -848,18 +1052,11 @@ footer {
 
   .trust-line { color: #9a6838; }
 
-  .product-desc { color: #7a5030; }
-
-  .desc-btn { color: #8a5820; }
-
+  
+  
   .opt-current { color: #5a3400; }
 
-  .thumb-count {
-    background: rgba(0,0,0,0.04);
-    border-color: rgba(0,0,0,0.12);
-    color: #9a6838;
-  }
-
+  
   .size-btn:focus-visible,
   .img-thumb:focus-visible,
   .add-btn:focus-visible,
@@ -887,10 +1084,25 @@ footer {
 <p class="section-label">Merch</p>
 <p class="trust-line">Designed &amp; sold by Bob Davis &middot; Ships 3&ndash;5 business days</p>
 
-<div class="product-grid" id="product-grid">
-  <p class="status-msg">Loading...</p>
+<div id="grid-view">
+  <div class="filter-row" id="filter-row" hidden></div>
+  <div class="product-grid" id="product-grid">
+    <p class="status-msg">Loading...</p>
+  </div>
+  <p class="status-msg" id="empty-cat" hidden>Nothing in this category yet.</p>
 </div>
+
+<div id="product-view" hidden></div>
 <p class="error-msg" id="error-msg" hidden>Something went wrong loading the store. Try refreshing.</p>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+  <button class="lb-close" onclick="closeLightbox()" aria-label="Close">&#10005;</button>
+  <button class="lb-prev" onclick="stepLightbox(event,-1)" aria-label="Previous">&#8249;</button>
+  <img id="lb-img" src="" alt="">
+  <button class="lb-next" onclick="stepLightbox(event,1)" aria-label="Next">&#8250;</button>
+  <div class="lb-strip" id="lb-strip" onclick="event.stopPropagation()"></div>
+  <div class="lb-count" id="lb-count"></div>
+</div>
 
 <div class="cart-overlay" id="cart-overlay" onclick="closeCart()"></div>
 
@@ -950,11 +1162,11 @@ async function loadProducts() {
       products(first: 20, sortKey: CREATED_AT, reverse: true) {
         edges {
           node {
-            id title description
+            id title description productType tags
             priceRange { minVariantPrice { amount currencyCode } }
             options { name values }
-            images(first: 20) { edges { node { url altText } } }
-            variants(first: 30) {
+            images(first: 60) { edges { node { url altText } } }
+            variants(first: 100) {
               edges {
                 node {
                   id title availableForSale
@@ -968,12 +1180,276 @@ async function loadProducts() {
         }
       }
     }`);
-    renderProducts(data.products.edges.map(e => e.node));
+    renderProducts(mergeProducts(data.products.edges.map(e => e.node)));
   } catch (err) {
     console.error(err);
     document.getElementById('product-grid').innerHTML = '';
     document.getElementById('error-msg').hidden = false;
   }
+}
+
+/* Shopify hands back option values in whatever order Printful pushed them, which for
+   the tee is M, L, XL, 2XL, 3XL, 4XL, S -- small last. Sorting here rather than
+   fixing the data, because a Printful re-push would undo a manual fix in Shopify. */
+const SIZE_RANK = ['XS','S','S/M','M','L','L/XL','XL','XXL','2XL','XXXL','3XL','4XL','5XL','ONE SIZE'];
+function sizeRank(v) {
+  const i = SIZE_RANK.indexOf(String(v).trim().toUpperCase());
+  return i === -1 ? SIZE_RANK.length : i;   // unknown sizes sort to the end, order preserved
+}
+function sortSizes(values) {
+  return [...values].sort((a, b) => sizeRank(a) - sizeRank(b));
+}
+
+/* productType is set on only three of the seven products (EMBROIDERY, DRINKWARE, blank),
+   so it cannot be the sole source. Try it, then tags, then fall back to the title. */
+const CATEGORIES = [
+  { key: 'shirts',    label: 'Shirts',    test: s => /t-?shirt|tee|hoodie|sweat/.test(s) },
+  { key: 'hats',      label: 'Hats',      test: s => /cap|hat|trucker|beanie|snapback/.test(s) },
+  { key: 'drinkware', label: 'Drinkware', test: s => /bottle|tumbler|mug|glass|koozie|cooler|drinkware/.test(s) },
+];
+function categoryOf(p) {
+  const hay = [p.productType, (p.tags || []).join(' '), p.title].filter(Boolean).join(' ').toLowerCase();
+  return (CATEGORIES.find(c => c.test(hay)) || { key: 'other' }).key;
+}
+
+/* Printful cannot carry two embroidery thread colours in one product, so a single cap
+   design ships as two Shopify products. Merge them back together for display only.
+
+   This list is deliberately EXPLICIT: exact product titles, nothing inferred. Do not
+   replace it with pattern matching that guesses which products belong together -- two
+   caps sharing words in their titles are not necessarily the same design, and silently
+   merging the wrong pair would sell someone a hat they did not choose. */
+const MERGE_GROUPS = [
+  { title: 'BD Logo Trucker Cap', option: 'Embroidery', members: [
+      { product: 'BD Logo Trucker Cap - Black Embroidered', label: 'Black' },
+      { product: 'BD Logo Trucker Cap - Red Embroidered',   label: 'Red'   } ] },
+  { title: 'Bob Davis Trucker Cap', option: 'Embroidery', members: [
+      { product: 'Bob Davis Trucker Cap - Black Embroidered', label: 'Black' },
+      { product: 'Bob Davis Trucker Cap - Red Embroidered',   label: 'Red'   } ] },
+];
+
+/* Which variant a product opens on, in the grid and on its product page.
+
+   Without an entry the default is whichever variant Shopify happens to return first,
+   which Printful controls and reshuffles on a re-push. Keyed by exact product title,
+   same as MERGE_GROUPS, so a re-push cannot silently change what every visitor sees
+   first. Any option can be pinned, not just colour: the merged caps need an embroidery
+   thread colour as well. Values must match Shopify's option strings exactly, spacing
+   included ("Black/ White/ Black"). Anything that no longer exists is dropped rather
+   than breaking the page. */
+const DEFAULT_SELECTION = {
+  'BD Logo Trucker Cap':            { Embroidery: 'Black', Color: 'Black/ White/ Black' },
+  'Bob Davis Trucker Cap':          { Embroidery: 'Red',   Color: 'Black' },
+  '2 Dolla Bill T-Shirt':           { Color: 'Black' },
+  'Copper Vacuum Insulated Bottle': { Color: 'Red' },
+  'BD Logo Structured Twill Cap':   { Color: 'Red' },
+};
+
+function defaultSelectionFor(p, options) {
+  const want = DEFAULT_SELECTION[p.title];
+  if (!want) return null;
+  const ok = {};
+  for (const [name, value] of Object.entries(want)) {
+    const opt = options.find(o => o.name.toLowerCase() === name.toLowerCase());
+    if (opt && opt.values.includes(value)) ok[opt.name] = value;
+  }
+  return Object.keys(ok).length ? ok : null;
+}
+
+function mergeProducts(products) {
+  const byTitle = new Map(products.map(p => [p.title, p]));
+  const consumed = new Set();
+  const merged = [];
+
+  for (const g of MERGE_GROUPS) {
+    const found = g.members.filter(m => byTitle.has(m.product));
+    if (found.length < 2) continue;            // nothing to merge, leave them alone
+    found.forEach(m => consumed.add(m.product));
+
+    const parts = found.map(m => ({ label: m.label, p: byTitle.get(m.product) }));
+    const base  = parts[0].p;
+
+    // Stamp the embroidery colour onto every variant so the existing variant matcher,
+    // which compares the full selectedOptions set, resolves the right one.
+    const variants = parts.flatMap(({ label, p }) =>
+      p.variants.edges.map(e => ({
+        ...e.node,
+        selectedOptions: [...(e.node.selectedOptions || []), { name: g.option, value: label }],
+      })));
+
+    // Union the child options, keeping each option's first-seen value order.
+    const optMap = new Map();
+    parts.forEach(({ p }) => (p.options || []).forEach(o => {
+      const cur = optMap.get(o.name) || [];
+      optMap.set(o.name, [...cur, ...o.values.filter(v => !cur.includes(v))]);
+    }));
+
+    merged.push({
+      ...base,
+      title: g.title,
+      options: [{ name: g.option, values: parts.map(x => x.label) },
+                ...[...optMap].map(([name, values]) => ({ name, values }))],
+      variants: { edges: variants.map(node => ({ node })) },
+      // Tag each photo with the embroidery it belongs to. Without this the gallery
+      // shows both thread colours at once and switching embroidery only changes the
+      // hero image while the thumbnails keep showing the other design.
+      images: { edges: parts.flatMap(({ label, p }) =>
+        p.images.edges.map(e => ({ node: { ...e.node, emb: label } }))) },
+      priceRange: base.priceRange,
+    });
+  }
+
+  const rest = products.filter(p => !consumed.has(p.title));
+  return [...merged, ...rest];
+}
+
+/* ── Gallery filtering ────────────────────────────────────
+   Colour is the primary thing a shopper is choosing, so the gallery should show that
+   colour and nothing else. Printful names every file after its variant, which is the
+   only link between a photo and a colour the Storefront API gives us. */
+const _slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+function colorOfImage(url, values) {
+  const file = String(url || '').split('/').pop().split('?')[0].toLowerCase();
+  // Longest match wins, so "Black/ White" beats a bare "Black" on the same filename.
+  return values
+    .filter(v => { const s = _slug(v); return s && new RegExp(`(^|-)${s}(-|\\.|$)`).test(file); })
+    .sort((a, b) => _slug(b).length - _slug(a).length)[0] || null;
+}
+
+/* The camera angle a photo shows, derived by stripping the colour and Printful's trailing
+   hash off the filename. Everything left ("front", "back", "front-2", "front-and-back")
+   is stable across colours, which is what lets the gallery keep its order. */
+function angleOf(url, colorValues) {
+  let f = String(url || '').split('/').pop().split('?')[0].toLowerCase().replace(/\.[a-z0-9]+$/, '');
+  f = f.replace(/-[0-9a-f]{8,}$/, '');
+  const c = colorOfImage(url, colorValues);
+  if (c) f = f.replace(new RegExp(`(^|-)${_slug(c)}(-|$)`), '$1');
+  return f;
+}
+
+/* Order every colour's photos the same way, so changing colour looks like the shirt was
+   recoloured rather than the gallery being reshuffled. Sorts by camera angle first,
+   using the order those angles first appear across the whole product, then by the
+   product's own colour order. The second key is what keeps the trucker caps (one photo
+   per colour, all the same angle) in a consistent order across embroidery colours. */
+function canonicalOrder(p, colorValues) {
+  const angles = [], all = (p.images?.edges || []).map(e => e.node);
+  all.forEach(im => { const a = angleOf(im.url, colorValues); if (!angles.includes(a)) angles.push(a); });
+  return im => [
+    angles.indexOf(angleOf(im.url, colorValues)),
+    colorValues.indexOf(colorOfImage(im.url, colorValues)),
+  ];
+}
+
+/* Narrow the gallery to the current selection, most specific first. Each filter is
+   skipped when it would empty the gallery: a product whose filenames do not encode the
+   colour keeps all its photos rather than showing none. */
+function galleryFor(p, options, selected) {
+  let imgs = (p.images?.edges || []).map(e => e.node);
+
+  const embOpt = options.find(o => /^embroidery$/i.test(o.name));
+  if (embOpt && selected[embOpt.name]) {
+    const hit = imgs.filter(im => im.emb === selected[embOpt.name]);
+    if (hit.length) imgs = hit;
+  }
+
+  /* Only narrow by colour when it still leaves something to browse. The trucker caps
+     have exactly one photo per colour, so filtering there would replace a 13-image
+     gallery with a single shot and no way to see the others. Products shot from several
+     angles per colour (the tee has four, the twill cap six) do filter. */
+  const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
+  if (colorOpt && selected[colorOpt.name]) {
+    const hit = imgs.filter(im => colorOfImage(im.url, colorOpt.values) === selected[colorOpt.name]);
+    if (hit.length > 1) imgs = hit;
+  }
+
+  if (colorOpt) {
+    const key = canonicalOrder(p, colorOpt.values);
+    imgs = imgs.slice().sort((a, b) => {
+      const ka = key(a), kb = key(b);
+      return (ka[0] - kb[0]) || (ka[1] - kb[1]);
+    });
+  }
+  return imgs;
+}
+
+function thumbsMarkup(imgs, sid, activeUrl) {
+  if (imgs.length < 2) return '';
+  return `<div class="img-thumbs pdp-thumbs" id="ithumbs-${sid}">
+      ${imgs.map(img => `<button class="img-thumb${img.url === activeUrl ? ' active' : ''}"
+        data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
+        onclick="selectThumb(this,'${sid}')">
+        <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
+      </button>`).join('')}
+    </div>
+    <button class="pdp-viewall" id="viewall-${sid}" onclick="openLightbox('${sid}')">View all ${imgs.length} photos</button>`;
+}
+
+/* Show the nth photo of the current gallery, updating the hero and the active thumb. */
+function jumpGalleryTo(sid, n) {
+  const card = _cards[sid];
+  const imgs = card?.images || [];
+  if (!imgs.length) return;
+  const pick = imgs[Math.min(Math.max(0, n), imgs.length - 1)];
+  const hero = document.getElementById('img-' + sid);
+  if (hero && pick) { hero.src = pick.url; hero.alt = pick.altText || ''; }
+  document.querySelectorAll('#ithumbs-' + sid + ' .img-thumb').forEach(b =>
+    b.classList.toggle('active', b.dataset.imgUrl === pick.url));
+}
+
+/* Re-point the gallery after a colour change, without rebuilding the whole page and
+   throwing away the shopper's scroll position.
+
+   Holds the shopper's place in the gallery: if they were looking at the third photo,
+   they stay on the third photo of the new colour. Because every colour is ordered the
+   same way, that is the same camera angle, so the page reads as the garment changing
+   colour rather than the gallery jumping somewhere else. */
+function refreshGallery(sid) {
+  const card = _cards[sid];
+  if (!card) return;
+  const heroEl = document.getElementById('img-' + sid);
+  const rail = document.getElementById('ithumbs-' + sid);
+  const wrap = rail?.parentElement;
+
+  const wasAt = rail
+    ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
+    : 0;
+
+  const imgs = galleryFor(card.product, card.options, card.selected);
+  card.images = imgs;
+  if (!imgs.length || !wrap) return;
+
+  /* Two different right answers depending on whether the gallery narrowed.
+
+     When it did (the tee: four Sage photos replace four Black ones) the content changed
+     under the shopper, so holding their position keeps them on the same camera angle.
+
+     When it did not, the rail still holds every colour -- the trucker caps have one
+     photo per colour, so filtering would leave a gallery of one. Holding position there
+     means picking a colour changes nothing at all, which is what it did. Jump to the
+     chosen colour's photo instead. */
+  const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
+  const chosen = colorOpt && card.selected[colorOpt.name];
+  let at = Math.min(wasAt, imgs.length - 1);
+  if (chosen) {
+    const colorOf = im => colorOfImage(im.url, colorOpt.values);
+    const mixed = imgs.some(im => colorOf(im) && colorOf(im) !== chosen);
+    if (mixed) {
+      const i = imgs.findIndex(im => colorOf(im) === chosen);
+      if (i >= 0) at = i;
+    }
+  }
+
+  const pick = imgs[at];
+  if (heroEl && pick) {
+    heroEl.src = pick.url;
+    heroEl.alt = pick.altText || '';
+  }
+
+  rail.remove();
+  document.getElementById('viewall-' + sid)?.remove();
+  wrap.insertAdjacentHTML('beforeend', thumbsMarkup(imgs, sid, pick?.url));
 }
 
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
@@ -989,8 +1465,11 @@ function renderProducts(products) {
     grid.innerHTML = '<p class="status-msg">No products yet, check back soon.</p>';
     return;
   }
+  _products = products;
   if (products.length === 1) grid.classList.add('single');
-  grid.innerHTML = products.map(buildCard).join('');
+  grid.innerHTML = products.map(buildGridCard).join('');
+  buildFilters(products);
+  route();
   gtag('event', 'view_item_list', {
     item_list_name: 'Merch',
     items: products.map(p => ({
@@ -1002,7 +1481,228 @@ function renderProducts(products) {
   });
 }
 
-function buildCard(p) {
+let _products = [];
+
+/* ── Routing ──────────────────────────────────────────────
+   Hash router so a product is linkable and the back button works, without needing a
+   file per product (products come from Shopify at runtime, so static pages are out).
+   Category filters keep using a bare #hats hash; products use #/product/<id>. */
+function route() {
+  const m = (location.hash || '').match(/^#\/product\/(.+)$/);
+  if (m) showProduct(decodeURIComponent(m[1]));
+  else showGrid();
+}
+window.addEventListener('hashchange', route);
+
+function showProduct(id) {
+  const p = _products.find(x => safeId(x.id) === id || x.id === id);
+  if (!p) { location.hash = ''; return; }
+  document.getElementById('grid-view').hidden = true;
+  const view = document.getElementById('product-view');
+  view.hidden = false;
+  view.innerHTML = buildProductPage(p, _pendingPreselect);
+  _pendingPreselect = null;
+  window.scrollTo(0, 0);
+  gtag('event', 'view_item', {
+    items: [{ item_id: p.id, item_name: p.title,
+      price: parseFloat(p.priceRange.minVariantPrice.amount),
+      currency: p.priceRange.minVariantPrice.currencyCode }]
+  });
+}
+
+function showGrid() {
+  const view = document.getElementById('product-view');
+  view.hidden = true;
+  view.innerHTML = '';
+  document.getElementById('grid-view').hidden = false;
+  const cat = (location.hash || '').replace('#', '');
+  applyFilter(CATEGORIES.some(c => c.key === cat) || cat === 'other' ? cat : 'all', true);
+}
+
+/* Clicking a colour swatch in the grid should land on that colour, not the default.
+   Held in a variable rather than the URL: the hash stays a clean product link, and the
+   preselect is a one-shot hint consumed by the next render. */
+let _pendingPreselect = null;
+function openProduct(id, preselect) {
+  _pendingPreselect = preselect || null;
+  location.hash = '#/product/' + encodeURIComponent(id);
+}
+
+/* Grid cards carry image, name, price and colour swatches only. Everything else moved
+   to the product page: cramming a gallery, a description and three option pickers into
+   a 260px card is what made the old grid unreadable. */
+function buildGridCard(p) {
+  const sid = safeId(p.id);
+  const variants = p.variants.edges.map(e => e.node);
+  const options = p.options || [];
+  const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
+  const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
+  const available = variants.some(v => v.availableForSale);
+  // Grid hero follows the same default, so the card and its product page agree.
+  const want = defaultSelectionFor(p, options);
+  const heroVariant = want
+    ? variants.find(v => Object.entries(want).every(([n, val]) =>
+        v.selectedOptions?.some(o => o.name === n && o.value === val))) || variants[0]
+    : variants[0];
+  const hero = heroVariant?.image || p.images.edges[0]?.node || null;
+
+  // One swatch per colour, using that colour's own photo. Baymard's finding is that
+  // hiding swatches behind a "+N more" on list items is a common mobile failure, so
+  // show them all -- they are small, and the row wraps.
+  let swatches = '';
+  if (colorOpt) {
+    const seen = new Map();
+    variants.forEach(v => {
+      const val = v.selectedOptions?.find(o => o.name === colorOpt.name)?.value;
+      if (val && !seen.has(val) && v.image?.url) seen.set(val, v);
+    });
+    if (seen.size > 1) {
+      swatches = `<div class="g-swatches">${[...seen].map(([val, v]) =>
+        `<button class="g-swatch" title="${esc(val)}" aria-label="${esc(val)}"
+           onclick="event.stopPropagation();openProduct('${sid}',{${esc(JSON.stringify(colorOpt.name))}:${esc(JSON.stringify(val))}})">
+           <img src="${esc(v.image.url)}" alt="" loading="lazy"></button>`).join('')}
+        </div>`;
+    }
+  }
+
+  const count = colorOpt ? [...new Set(variants.map(v =>
+    v.selectedOptions?.find(o => o.name === colorOpt.name)?.value).filter(Boolean))].length : 0;
+
+  return `
+    <div class="product-card" id="card-${sid}" data-cat="${categoryOf(p)}"
+         onclick="openProduct('${sid}')" role="link" tabindex="0"
+         onkeydown="if(event.key==='Enter')openProduct('${sid}')">
+      <div class="product-img-wrap">
+        ${hero ? `<img class="product-img" src="${esc(hero.url)}" alt="${esc(hero.altText || p.title)}" loading="lazy">`
+               : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`}
+      </div>
+      <div class="product-name">${esc(p.title)}</div>
+      <div class="product-price">${price}${!available ? ' <span class="g-sold">Sold out</span>' : ''}</div>
+      ${swatches}
+      ${count > 1 ? `<div class="g-count">${count} colors</div>` : ''}
+    </div>`;
+}
+
+/* Only render a filter row when it earns its place: at least two categories present. */
+function buildFilters(products) {
+  const row = document.getElementById('filter-row');
+  const counts = {};
+  products.forEach(p => { const c = categoryOf(p); counts[c] = (counts[c] || 0) + 1; });
+  const present = CATEGORIES.filter(c => counts[c.key]);
+  if (counts.other) present.push({ key: 'other', label: 'Other' });
+  if (present.length < 2) { row.hidden = true; return; }
+
+  row.hidden = false;
+  row.innerHTML = [{ key: 'all', label: 'All' }, ...present].map(c => {
+    const n = c.key === 'all' ? products.length : counts[c.key];
+    return `<button class="filter-btn" data-cat="${c.key}" onclick="applyFilter('${c.key}')">
+      ${c.label}<span class="count">${n}</span></button>`;
+  }).join('');
+
+  const fromHash = (location.hash || '').replace('#', '');
+  applyFilter(present.some(c => c.key === fromHash) ? fromHash : 'all', true);
+}
+
+function applyFilter(cat, skipHash) {
+  document.querySelectorAll('.filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.cat === cat));
+  let shown = 0;
+  document.querySelectorAll('.product-card').forEach(card => {
+    const hit = cat === 'all' || card.dataset.cat === cat;
+    card.hidden = !hit;
+    if (hit) shown++;
+  });
+  document.getElementById('empty-cat').hidden = shown > 0;
+  if (!skipHash) history.replaceState(null, '', cat === 'all' ? location.pathname : '#' + cat);
+}
+
+/* Switching embroidery colour swaps to a different underlying Shopify product, which
+   can carry a different set of cap colours. Rebuild the card rather than patching it,
+   so an unavailable colour can never stay selected from the previous design. */
+function selectEmbroidery(sid, val) {
+  const card = _cards[sid];
+  if (!card || !card.product) return;
+  // Must target the product page, not the grid card. They previously shared an id, so
+  // this replaced the hidden grid card and left two product pages in the document.
+  const el = document.getElementById('pdp-' + sid);
+  if (!el) return;
+  /* Carry the shopper's colour across. Switching thread colour used to snap the cap back
+     to its default colour, which reads as losing your place rather than restitching the
+     hat you were looking at. Embroidery is listed first so that if this colour does not
+     exist in the other design, the relaxing match in buildProductPage drops the colour
+     and keeps the thread choice, never the reverse. */
+  const keep = { Embroidery: val };
+  for (const [k, v] of Object.entries(card.selected)) if (k !== 'Embroidery') keep[k] = v;
+
+  // Hold the shopper's place in the gallery across the rebuild, same as a colour change.
+  const rail = document.getElementById('ithumbs-' + sid);
+  const wasAt = rail
+    ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
+    : 0;
+
+  el.outerHTML = buildProductPage(card.product, keep);
+  jumpGalleryTo(sid, wasAt);
+}
+
+/* ── Lightbox ─────────────────────── */
+let _lb = { imgs: [], i: 0 };
+
+function openLightbox(sid) {
+  const card = _cards[sid];
+  if (!card || !card.images || !card.images.length) return;
+  const current = document.getElementById('img-' + sid)?.getAttribute('src');
+  const at = card.images.findIndex(im => im.url === current);
+  _lb = { imgs: card.images, i: at === -1 ? 0 : at };
+  paintLightbox();
+  document.getElementById('lightbox').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function paintLightbox() {
+  const im = _lb.imgs[_lb.i];
+  const el = document.getElementById('lb-img');
+  el.src = im.url;
+  el.alt = im.altText || '';
+  document.getElementById('lb-count').textContent = `${_lb.i + 1} / ${_lb.imgs.length}`;
+
+  /* Rebuild on the actual image set, not its length. Comparing counts meant switching to
+     a colour with the same number of photos kept the previous colour's thumbnails, so the
+     strip showed one colour while the large image showed another. */
+  const strip = document.getElementById('lb-strip');
+  const key = _lb.imgs.map(i => i.url).join('|');
+  if (strip.dataset.key !== key) {
+    strip.dataset.key = key;
+    strip.innerHTML = _lb.imgs.map((img, n) =>
+      `<button onclick="jumpLightbox(${n})"><img src="${esc(img.url)}" alt="" loading="lazy"></button>`).join('');
+  }
+  [...strip.children].forEach((b, n) => b.classList.toggle('active', n === _lb.i));
+  strip.children[_lb.i]?.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+function jumpLightbox(n) { _lb.i = n; paintLightbox(); }
+
+function stepLightbox(e, d) {
+  if (e) e.stopPropagation();
+  if (!_lb.imgs.length) return;
+  _lb.i = (_lb.i + d + _lb.imgs.length) % _lb.imgs.length;
+  paintLightbox();
+}
+
+function closeLightbox(e) {
+  // Clicking the image itself should not close it, only the backdrop or the X.
+  if (e && e.target && e.target.id === 'lb-img') return;
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('lightbox')?.classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') stepLightbox(null, -1);
+  if (e.key === 'ArrowRight') stepLightbox(null, 1);
+});
+
+function buildProductPage(p, preselect) {
   const sid = safeId(p.id);
   const variants = p.variants.edges.map(e => e.node);
   const options = p.options || [];
@@ -1011,46 +1711,60 @@ function buildCard(p) {
   const firstVariant = variants[0];
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
   const sizeOpt  = options.find(o => /^size$/i.test(o.name));
+  const embOpt   = options.find(o => /^embroidery$/i.test(o.name));
   const isDefault = variants.length === 1 && variants[0].title === 'Default Title';
 
-  // Seed defaults from Printful's chosen default variant (firstVariant)
-  const initSelected = {};
-  if (!isDefault && firstVariant?.selectedOptions) {
-    firstVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
-  }
-  const mainImg = firstVariant?.image || null;
-  // Thumbnail list: put the selected image first so it appears leftmost
-  const allImages = (() => {
-    const imgs = (p.images?.edges || []).map(e => e.node);
-    if (mainImg) {
-      const idx = imgs.findIndex(img => img.url === mainImg.url);
-      if (idx > 0) imgs.unshift(imgs.splice(idx, 1)[0]);
+  // Seed defaults from Printful's chosen default variant, then apply any override
+  // (used when switching embroidery colour, which rebuilds the card).
+  /* Match as much of the request as the product actually offers, dropping constraints
+     from the end until something matches. Order matters: the caller puts the option it
+     cares most about first, so switching embroidery keeps the thread colour even when
+     the cap colour does not exist in the other design. */
+  let seedVariant = null;
+  const wanted = preselect || defaultSelectionFor(p, options);
+  if (wanted) {
+    const entries = Object.entries(wanted);
+    for (let n = entries.length; n > 0 && !seedVariant; n--) {
+      const subset = entries.slice(0, n);
+      seedVariant = variants.find(v =>
+        subset.every(([name, val]) => v.selectedOptions?.some(o => o.name === name && o.value === val)));
     }
-    return imgs;
-  })();
-  _cards[sid] = { variants, options, selected: initSelected };
+  }
+  seedVariant = seedVariant || firstVariant;
+  const initSelected = {};
+  if (!isDefault && seedVariant?.selectedOptions) {
+    seedVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
+  }
+  const mainImg = seedVariant?.image || null;
+  // Thumbnail list: put the selected image first so it appears leftmost
+  const allImages = galleryFor(p, options, initSelected);
+  _cards[sid] = { variants, options, selected: initSelected, images: allImages, product: p };
 
   const mainImgHtml = mainImg
-    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}">`
+    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}"
+         onclick="openLightbox('${sid}')" title="Click to enlarge">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
-  // Thumbnail strip, cap at 6, show overflow count
-  const MAX_THUMBS = 6;
-  const visibleImgs = allImages.slice(0, MAX_THUMBS);
-  const extraImgs = allImages.length - MAX_THUMBS;
-  const thumbsHtml = allImages.length > 1
-    ? `<div class="img-thumbs" id="ithumbs-${sid}">
-        ${visibleImgs.map((img) => `<button class="img-thumb${img.url === mainImg?.url ? ' active' : ''}"
-          data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
-          onclick="selectThumb(this,'${sid}')">
-          <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
-        </button>`).join('')}
-        ${extraImgs > 0 ? `<div class="thumb-count">+${extraImgs}</div>` : ''}
-      </div>`
-    : '';
+  /* Every thumbnail for the current selection, no truncation. Baymard: truncating a
+     gallery with no signpost makes users assume the visible thumbnails are all there is,
+     which is exactly what the old "+22" badge did. */
+  const thumbsHtml = thumbsMarkup(allImages, sid, mainImg?.url);
 
-  // Color pill buttons, show first 5, collapse rest
-  const MAX_COLORS = 5;
+  // Embroidery colour, only present on merged cap designs (see MERGE_GROUPS).
+  let embHtml = '';
+  if (embOpt && embOpt.values.length > 1) {
+    const initEmb = initSelected[embOpt.name];
+    embHtml = `<div class="option-label">Embroidery: <span class="opt-current" id="elabel-${sid}">${esc(initEmb)}</span></div>
+      <div class="size-picker" id="epicker-${sid}">
+        ${embOpt.values.map(ev => `<button class="size-btn${ev === initEmb ? ' active' : ''}"
+          data-opt="${esc(embOpt.name)}" data-val="${esc(ev)}"
+          onclick="selectEmbroidery('${sid}','${esc(ev)}')">${esc(ev)}</button>`).join('')}
+      </div>`;
+  }
+
+  /* Every colour, in the product's own order. The old card truncated to five behind a
+     "+N more"; Baymard flags hidden swatches as a common reason shoppers never find a
+     variant, and a product page has the room. */
   let colorHtml = '';
   if (colorOpt && !isDefault) {
     const seen = new Map();
@@ -1060,26 +1774,15 @@ function buildCard(p) {
     });
     if (seen.size > 1) {
       const initColor = initSelected[colorOpt.name];
-      // Selected color first (leftmost), then the rest in option display order
-      const restColors = colorOpt.values.filter(v => seen.has(v) && v !== initColor);
-      const colorEntries = (initColor && seen.has(initColor))
-        ? [[initColor, seen.get(initColor)], ...restColors.map(v => [v, seen.get(v)])]
-        : colorOpt.values.filter(v => seen.has(v)).map(v => [v, seen.get(v)]);
-      const visibleColors = colorEntries.slice(0, MAX_COLORS);
-      const hiddenColors  = colorEntries.slice(MAX_COLORS);
-      const renderBtn = ([val, v], hidden) => `<button
-        class="size-btn${val === initColor ? ' active' : ''}${hidden ? ' color-hidden' : ''}"
+      const colorEntries = colorOpt.values.filter(v => seen.has(v)).map(v => [v, seen.get(v)]);
+      const renderBtn = ([val, v]) => `<button
+        class="size-btn${val === initColor ? ' active' : ''}"
         data-opt="${esc(colorOpt.name)}" data-val="${esc(val)}"
         data-img-url="${esc(v.image?.url)}" data-img-alt="${esc(v.image?.altText)}"
         onclick="selectOpt(this,'${sid}')">${esc(val)}</button>`;
-      const moreBtn = hiddenColors.length > 0
-        ? `<button class="size-btn more-btn" onclick="showMoreColors('${sid}')">+${hiddenColors.length} more</button>`
-        : '';
       colorHtml = `<div class="option-label">Color: <span class="opt-current" id="clabel-${sid}">${esc(initColor)}</span></div>
         <div class="size-picker" id="cthumbs-${sid}">
-          ${visibleColors.map(e => renderBtn(e, false)).join('')}
-          ${hiddenColors.map(e => renderBtn(e, true)).join('')}
-          ${moreBtn}
+          ${colorEntries.map(renderBtn).join('')}
         </div>`;
     }
   }
@@ -1091,7 +1794,7 @@ function buildCard(p) {
     const initSize  = initSelected[sizeOpt.name];
     sizeHtml = `<div class="option-label">Size: <span class="opt-current" id="slabel-${sid}">${esc(initSize)}</span></div>
       <div class="size-picker" id="spicker-${sid}">
-        ${sizeOpt.values.map(sv => {
+        ${sortSizes(sizeOpt.values).map(sv => {
           const ok = variants.some(v => {
             const hasSize  = v.selectedOptions?.some(o => o.name === sizeOpt.name && o.value === sv);
             const hasColor = !colorOpt || !initColor || v.selectedOptions?.some(o => o.name === colorOpt.name && o.value === initColor);
@@ -1115,34 +1818,54 @@ function buildCard(p) {
     </div>`;
   }
 
+  /* Full description, no truncation. It used to be cut at 100 characters because it was
+     competing for room in a 260px card. On a product page it has a column to itself.
+     Printful writes one long paragraph with bullet-ish fragments after a colon, so split
+     those onto their own lines rather than showing an unreadable wall. */
   const descHtml = (() => {
     if (!p.description) return '';
-    const MAX = 100;
-    const safe = esc(p.description);
-    if (safe.length <= MAX) return `<p class="product-desc">${safe}</p>`;
-    const cutIdx = safe.slice(0, MAX).search(/\s\S*$/);
-    const head = safe.slice(0, cutIdx > 0 ? cutIdx : MAX);
-    const tail = safe.slice(head.length);
-    return `<p class="product-desc" id="desc-${sid}">${head}<span id="desc-more-${sid}">&thinsp;&hellip;&thinsp;<button class="desc-btn" onclick="expandDesc('${sid}')">more</button></span><span id="desc-full-${sid}" hidden>${tail}</span></p>`;
+    /* Printful appends the same print-on-demand disclaimer to every product, unpunctuated,
+       so it runs on into the last spec bullet and ends with a stray "Size guide". Cut it:
+       it is identical on all seven products and says nothing about this one. */
+    const cleaned = String(p.description)
+      .replace(/This product is made especially for you[\s\S]*$/i, '')
+      .replace(/\s*Size guide\s*$/i, '')
+      .trim();
+    const parts = cleaned.split(/\s*•\s*|\s*\|\s*/).map(s => s.trim().replace(/[.\s]+$/, '')).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length < 3) return `<div class="pdp-desc"><p>${esc(cleaned)}</p></div>`;
+    const [intro, ...bullets] = parts;
+    return `<div class="pdp-desc">
+      <p>${esc(intro)}</p>
+      <ul>${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+    </div>`;
   })();
 
   return `
-    <div class="product-card">
-      <div class="product-img-wrap">${mainImgHtml}</div>
-      ${thumbsHtml}
-      <div class="product-name">${esc(p.title)}</div>
-      <div class="product-price">${price}</div>
-      ${descHtml}
-      ${colorHtml}${sizeHtml}${legacyHtml}
-      <button class="add-btn" id="add-${sid}"
-        data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
-        data-product-name="${esc(p.title)}"
-        data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
-        data-currency="${p.priceRange.minVariantPrice.currencyCode}"
-        onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
-        ${available ? 'Add to Cart' : 'Sold Out'}
-      </button>
-    </div>`;
+    <article class="pdp" id="pdp-${sid}">
+      <button class="pdp-back" onclick="location.hash=''">&#8592; All merch</button>
+      <div class="pdp-cols">
+        <div class="pdp-gallery">
+          <div class="product-img-wrap pdp-hero">${mainImgHtml}</div>
+          ${thumbsHtml}
+        </div>
+        <div class="pdp-info">
+          <h1 class="pdp-title">${esc(p.title)}</h1>
+          <div class="pdp-price">${price}</div>
+          <p class="pdp-ship">Ships in 3&ndash;5 business days &middot; flat-rate US shipping</p>
+          ${embHtml}${colorHtml}${sizeHtml}${legacyHtml}
+          <button class="add-btn pdp-add" id="add-${sid}"
+            data-sid="${sid}" data-vid="${seedVariant?.id || ''}"
+            data-product-name="${esc(p.title)}"
+            data-price="${seedVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
+            data-currency="${p.priceRange.minVariantPrice.currencyCode}"
+            onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
+            ${available ? 'Add to Cart' : 'Sold Out'}
+          </button>
+          ${descHtml}
+        </div>
+      </div>
+    </article>`;
 }
 
 function selectOpt(btn, sid, skipImageSwap) {
@@ -1175,7 +1898,16 @@ function selectOpt(btn, sid, skipImageSwap) {
   // option is Size (Slim/Regular 12 oz), each with its own photo -- never switched
   // pictures. Resolving the variant is also more accurate than trusting the colour pill,
   // since the variant image is the authoritative one for the exact combination chosen.
-  if (!skipImageSwap) {
+  // Changing SIZE on a product that also has a colour never changes how it looks, and
+  // swapping would throw away whichever photo of that colour the shopper had picked.
+  // Size-only products (the can cooler: Slim vs Regular 12 oz) still swap, since there
+  // the size genuinely is a different photo.
+  // Colour is handled by refreshGallery below, which holds the shopper's place in the
+  // gallery. Letting the generic swap run first would jump them to Printful's default
+  // photo for that colour and undo it.
+  const sizeOnlyReskin = sizeOpt && colorOpt && optName === sizeOpt.name;
+  const colorHandledByGallery = colorOpt && optName === colorOpt.name;
+  if (!skipImageSwap && !sizeOnlyReskin && !colorHandledByGallery) {
     const sel = card.selected;
     const match = card.variants.find(v =>
       (v.selectedOptions || []).every(o => sel[o.name] === undefined || sel[o.name] === o.value)
@@ -1186,6 +1918,9 @@ function selectOpt(btn, sid, skipImageSwap) {
     const url = match?.image?.url || btn.dataset.imgUrl;
     if (url) swapMainImage(sid, url, match?.image?.altText || btn.dataset.imgAlt || '');
   }
+
+  // Colour drives the gallery: picking Sage should leave only Sage photos on screen.
+  if (colorOpt && optName === colorOpt.name) refreshGallery(sid);
 
   // Colour additionally refreshes which sizes are still available in that colour.
   if (colorOpt && optName === colorOpt.name) {
@@ -1241,7 +1976,6 @@ function applyOptByValue(sid, name, value) {
       if (b.classList.contains('active')) return true;   // already there, nothing to do
       if (b.disabled) return false;                      // out of stock; a shopper could
                                                          // not pick it either, so don't
-      if (b.classList.contains('color-hidden')) showMoreColors(sid);
       selectOpt(b, sid, true);                           // image already swapped above
       return true;
     }
@@ -1325,20 +2059,6 @@ function selectThumb(btn, sid) {
   // that check after the size was set would test it against the previous colour.
   agreed.sort((a, b) => (/^colou?r$/i.test(a.name) ? 0 : 1) - (/^colou?r$/i.test(b.name) ? 0 : 1));
   for (const o of agreed) applyOptByValue(sid, o.name, o.value);
-}
-
-function expandDesc(sid) {
-  const more = document.getElementById(`desc-more-${sid}`);
-  const full  = document.getElementById(`desc-full-${sid}`);
-  if (more) more.hidden = true;
-  if (full) full.hidden = false;
-}
-
-function showMoreColors(sid) {
-  const container = document.getElementById(`cthumbs-${sid}`);
-  if (!container) return;
-  container.querySelectorAll('.color-hidden').forEach(b => b.classList.remove('color-hidden'));
-  container.querySelector('.more-btn')?.remove();
 }
 
 function swapMainImage(sid, url, alt, skipThumbSync) {
