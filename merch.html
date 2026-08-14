@@ -1228,24 +1228,32 @@ const MERGE_GROUPS = [
       { product: 'Bob Davis Trucker Cap - Red Embroidered',   label: 'Red'   } ] },
 ];
 
-/* Which colour a product opens on, in the grid and on its product page.
+/* Which variant a product opens on, in the grid and on its product page.
 
-   Without an entry here the default is simply whichever variant Shopify happens to
-   return first, which Printful controls and can reshuffle on any re-push. Keyed by
-   exact product title, same as MERGE_GROUPS, so a re-push cannot silently change the
-   shirt every visitor sees first. An unlisted product keeps Shopify's order, and a
-   colour that no longer exists is ignored rather than breaking the page. */
-const DEFAULT_COLOR = {
-  // 'BD Logo Trucker Cap': 'Black',
-  // '2 Dolla Bill T-Shirt': 'Black',
+   Without an entry the default is whichever variant Shopify happens to return first,
+   which Printful controls and reshuffles on a re-push. Keyed by exact product title,
+   same as MERGE_GROUPS, so a re-push cannot silently change what every visitor sees
+   first. Any option can be pinned, not just colour: the merged caps need an embroidery
+   thread colour as well. Values must match Shopify's option strings exactly, spacing
+   included ("Black/ White/ Black"). Anything that no longer exists is dropped rather
+   than breaking the page. */
+const DEFAULT_SELECTION = {
+  'BD Logo Trucker Cap':            { Embroidery: 'Black', Color: 'Black/ White/ Black' },
+  'Bob Davis Trucker Cap':          { Embroidery: 'Red',   Color: 'Black' },
+  '2 Dolla Bill T-Shirt':           { Color: 'Black' },
+  'Copper Vacuum Insulated Bottle': { Color: 'Red' },
+  'BD Logo Structured Twill Cap':   { Color: 'Red' },
 };
 
-function defaultColorFor(p, options) {
-  const want = DEFAULT_COLOR[p.title];
+function defaultSelectionFor(p, options) {
+  const want = DEFAULT_SELECTION[p.title];
   if (!want) return null;
-  const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
-  if (!colorOpt || !colorOpt.values.includes(want)) return null;
-  return { [colorOpt.name]: want };
+  const ok = {};
+  for (const [name, value] of Object.entries(want)) {
+    const opt = options.find(o => o.name.toLowerCase() === name.toLowerCase());
+    if (opt && opt.values.includes(value)) ok[opt.name] = value;
+  }
+  return Object.keys(ok).length ? ok : null;
 }
 
 function mergeProducts(products) {
@@ -1455,7 +1463,7 @@ function buildGridCard(p) {
   const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
   // Grid hero follows the same default, so the card and its product page agree.
-  const want = defaultColorFor(p, options);
+  const want = defaultSelectionFor(p, options);
   const heroVariant = want
     ? variants.find(v => Object.entries(want).every(([n, val]) =>
         v.selectedOptions?.some(o => o.name === n && o.value === val))) || variants[0]
@@ -1613,7 +1621,7 @@ function buildProductPage(p, preselect) {
   // Seed defaults from Printful's chosen default variant, then apply any override
   // (used when switching embroidery colour, which rebuilds the card).
   let seedVariant = firstVariant;
-  const wanted = preselect || defaultColorFor(p, options);
+  const wanted = preselect || defaultSelectionFor(p, options);
   if (wanted) {
     seedVariant = variants.find(v =>
       Object.entries(wanted).every(([n, val]) =>
