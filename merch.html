@@ -306,7 +306,6 @@ body {
   transition: opacity 0.15s ease;
 }
 .product-img.fading { opacity: 0; }
-.thumb-count:hover { border-color: rgba(255,215,0,0.45); color: #E8DCC8; }
 
 /* ── Product text ─────────────────── */
 .product-name {
@@ -763,25 +762,6 @@ footer {
 }
 
 /* ── Product description ──────────── */
-.product-desc {
-  font-size: 12px;
-  color: #9a7a64;
-  line-height: 1.6;
-  text-align: center;
-  width: 100%;
-  margin: 0;
-}
-.desc-btn {
-  background: none;
-  border: none;
-  color: #907860;
-  font-family: Georgia, serif;
-  font-size: 12px;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 
 /* ── Option selected label ────────── */
 .opt-current {
@@ -790,27 +770,8 @@ footer {
 }
 
 /* ── Hidden color overflow ────────── */
-.color-hidden { display: none; }
 
 /* ── Thumbnail overflow count ─────── */
-.thumb-count {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 54px;
-  height: 54px;
-  flex-shrink: 0;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  cursor: pointer;
-  font-family: Georgia, serif;
-  transition: border-color 0.15s, color 0.15s;
-  color: #9a7a64;
-  font-size: 11px;
-  font-style: italic;
-  user-select: none;
-}
 
 /* ── Focus indicators ─────────────── */
 .size-btn:focus-visible,
@@ -1077,18 +1038,11 @@ footer {
 
   .trust-line { color: #9a6838; }
 
-  .product-desc { color: #7a5030; }
-
-  .desc-btn { color: #8a5820; }
-
+  
+  
   .opt-current { color: #5a3400; }
 
-  .thumb-count {
-    background: rgba(0,0,0,0.04);
-    border-color: rgba(0,0,0,0.12);
-    color: #9a6838;
-  }
-
+  
   .size-btn:focus-visible,
   .img-thumb:focus-visible,
   .add-btn:focus-visible,
@@ -1355,7 +1309,8 @@ function showProduct(id) {
   document.getElementById('grid-view').hidden = true;
   const view = document.getElementById('product-view');
   view.hidden = false;
-  view.innerHTML = buildProductPage(p);
+  view.innerHTML = buildProductPage(p, _pendingPreselect);
+  _pendingPreselect = null;
   window.scrollTo(0, 0);
   gtag('event', 'view_item', {
     items: [{ item_id: p.id, item_name: p.title,
@@ -1373,7 +1328,14 @@ function showGrid() {
   applyFilter(CATEGORIES.some(c => c.key === cat) || cat === 'other' ? cat : 'all', true);
 }
 
-function openProduct(id) { location.hash = '#/product/' + encodeURIComponent(id); }
+/* Clicking a colour swatch in the grid should land on that colour, not the default.
+   Held in a variable rather than the URL: the hash stays a clean product link, and the
+   preselect is a one-shot hint consumed by the next render. */
+let _pendingPreselect = null;
+function openProduct(id, preselect) {
+  _pendingPreselect = preselect || null;
+  location.hash = '#/product/' + encodeURIComponent(id);
+}
 
 /* Grid cards carry image, name, price and colour swatches only. Everything else moved
    to the product page: cramming a gallery, a description and three option pickers into
@@ -1400,7 +1362,7 @@ function buildGridCard(p) {
     if (seen.size > 1) {
       swatches = `<div class="g-swatches">${[...seen].map(([val, v]) =>
         `<button class="g-swatch" title="${esc(val)}" aria-label="${esc(val)}"
-           onclick="event.stopPropagation();openProduct('${sid}')">
+           onclick="event.stopPropagation();openProduct('${sid}',{${esc(JSON.stringify(colorOpt.name))}:${esc(JSON.stringify(val))}})">
            <img src="${esc(v.image.url)}" alt="" loading="lazy"></button>`).join('')}
         </div>`;
     }
@@ -1597,9 +1559,9 @@ function buildProductPage(p, preselect) {
       </div>`;
   }
 
-  // All colours, no "+N more". On a full-width product page they fit, and Baymard
-  // flags hidden swatches as a common failure that makes shoppers miss variants.
-  const MAX_COLORS = Infinity;
+  /* Every colour, in the product's own order. The old card truncated to five behind a
+     "+N more"; Baymard flags hidden swatches as a common reason shoppers never find a
+     variant, and a product page has the room. */
   let colorHtml = '';
   if (colorOpt && !isDefault) {
     const seen = new Map();
@@ -1609,26 +1571,15 @@ function buildProductPage(p, preselect) {
     });
     if (seen.size > 1) {
       const initColor = initSelected[colorOpt.name];
-      // Selected color first (leftmost), then the rest in option display order
-      const restColors = colorOpt.values.filter(v => seen.has(v) && v !== initColor);
-      const colorEntries = (initColor && seen.has(initColor))
-        ? [[initColor, seen.get(initColor)], ...restColors.map(v => [v, seen.get(v)])]
-        : colorOpt.values.filter(v => seen.has(v)).map(v => [v, seen.get(v)]);
-      const visibleColors = colorEntries.slice(0, MAX_COLORS);
-      const hiddenColors  = colorEntries.slice(MAX_COLORS);
-      const renderBtn = ([val, v], hidden) => `<button
-        class="size-btn${val === initColor ? ' active' : ''}${hidden ? ' color-hidden' : ''}"
+      const colorEntries = colorOpt.values.filter(v => seen.has(v)).map(v => [v, seen.get(v)]);
+      const renderBtn = ([val, v]) => `<button
+        class="size-btn${val === initColor ? ' active' : ''}"
         data-opt="${esc(colorOpt.name)}" data-val="${esc(val)}"
         data-img-url="${esc(v.image?.url)}" data-img-alt="${esc(v.image?.altText)}"
         onclick="selectOpt(this,'${sid}')">${esc(val)}</button>`;
-      const moreBtn = hiddenColors.length > 0
-        ? `<button class="size-btn more-btn" onclick="showMoreColors('${sid}')">+${hiddenColors.length} more</button>`
-        : '';
       colorHtml = `<div class="option-label">Color: <span class="opt-current" id="clabel-${sid}">${esc(initColor)}</span></div>
         <div class="size-picker" id="cthumbs-${sid}">
-          ${visibleColors.map(e => renderBtn(e, false)).join('')}
-          ${hiddenColors.map(e => renderBtn(e, true)).join('')}
-          ${moreBtn}
+          ${colorEntries.map(renderBtn).join('')}
         </div>`;
     }
   }
@@ -1815,7 +1766,6 @@ function applyOptByValue(sid, name, value) {
       if (b.classList.contains('active')) return true;   // already there, nothing to do
       if (b.disabled) return false;                      // out of stock; a shopper could
                                                          // not pick it either, so don't
-      if (b.classList.contains('color-hidden')) showMoreColors(sid);
       selectOpt(b, sid, true);                           // image already swapped above
       return true;
     }
@@ -1899,20 +1849,6 @@ function selectThumb(btn, sid) {
   // that check after the size was set would test it against the previous colour.
   agreed.sort((a, b) => (/^colou?r$/i.test(a.name) ? 0 : 1) - (/^colou?r$/i.test(b.name) ? 0 : 1));
   for (const o of agreed) applyOptByValue(sid, o.name, o.value);
-}
-
-function expandDesc(sid) {
-  const more = document.getElementById(`desc-more-${sid}`);
-  const full  = document.getElementById(`desc-full-${sid}`);
-  if (more) more.hidden = true;
-  if (full) full.hidden = false;
-}
-
-function showMoreColors(sid) {
-  const container = document.getElementById(`cthumbs-${sid}`);
-  if (!container) return;
-  container.querySelectorAll('.color-hidden').forEach(b => b.classList.remove('color-hidden'));
-  container.querySelector('.more-btn')?.remove();
 }
 
 function swapMainImage(sid, url, alt, skipThumbSync) {
