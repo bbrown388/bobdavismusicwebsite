@@ -1636,22 +1636,49 @@ function warmProduct(sid) {
    Thumbnails are about 3KB each, so every colour's full rail is affordable at idle: 13
    colours of a cap is roughly 150KB. Heroes are 46KB, so only the first photo per colour
    is warmed here and the rest are left to the hover handler. */
+/* Warm everything a shopper can reach from an open product page, in the order they are
+   likely to reach it. Queued rather than fired at once: a cap with 13 colours is a few
+   megabytes at full size, and dumping that into the network the moment a page opens
+   would compete with the photos actually on screen. One item per idle slice keeps it
+   invisible, and the browser drops the whole thing the moment the page is left.
+
+   Priority order:
+     1. Full size for every photo of the CURRENT colour. These are one click away on the
+        thumbnail rail, so they are the most likely next request.
+     2. Thumbnails for every other colour, about 3KB each. Cheap, and they are what a
+        colour switch rebuilds.
+     3. Full size for the first photo of every other colour, the hero a switch lands on.
+     4. Full size for the rest of every other colour, last because it is the largest
+        cost and the least certain to be wanted. */
 function warmOtherColors(sid) {
   const card = _cards[sid];
   if (!card || !card.product) return;
   const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
-  if (!colorOpt) return;
-  const run = () => {
-    for (const value of colorOpt.values) {
-      if (value === card.selected[colorOpt.name]) continue;      // already on screen
-      const imgs = galleryFor(card.product, card.options, { ...card.selected, [colorOpt.name]: value });
-      if (!imgs.length) continue;
-      warm(imgs[0].url, 1000);                                   // the photo it will show
-      imgs.forEach(im => warm(im.url, 150));                     // the rail it will build
-    }
+
+  const queue = [];
+  (card.images || []).forEach(im => queue.push([im.url, 1000]));
+
+  if (colorOpt) {
+    const others = colorOpt.values.filter(v => v !== card.selected[colorOpt.name]);
+    const galleries = others.map(v =>
+      galleryFor(card.product, card.options, { ...card.selected, [colorOpt.name]: v }));
+    galleries.forEach(imgs => imgs.forEach(im => queue.push([im.url, 150])));
+    galleries.forEach(imgs => imgs[0] && queue.push([imgs[0].url, 1000]));
+    galleries.forEach(imgs => imgs.slice(1).forEach(im => queue.push([im.url, 1000])));
+  }
+
+  let i = 0;
+  const pump = deadline => {
+    // Stop if the shopper has moved on; this product's images are no longer worth fetching.
+    if (_cards[sid] !== card) return;
+    do { const item = queue[i++]; if (item) warm(item[0], item[1]); }
+    while (i < queue.length && deadline && deadline.timeRemaining && deadline.timeRemaining() > 8);
+    if (i < queue.length) schedule();
   };
-  if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 2000 });
-  else setTimeout(run, 600);
+  const schedule = () => window.requestIdleCallback
+    ? requestIdleCallback(pump, { timeout: 3000 })
+    : setTimeout(() => pump(null), 120);
+  schedule();
 }
 
 /* Hovering a colour pill is a strong signal and precedes the click by a few hundred ms,
@@ -1730,10 +1757,18 @@ function refreshGallery(sid) {
      photo per colour, so filtering would leave a gallery of one. Holding position there
      means picking a colour changes nothing at all, which is what it did. Jump to the
      chosen colour's photo instead. */
+  /* If the photo on screen survives into the new gallery, keep it. Clicking a thumbnail
+     also applies that photo's colour, which lands here; without this the gallery would
+     re-point the hero to the held position and visibly flash the default image over the
+     one just clicked. An explicit choice outranks any positional rule. */
+  const showing = heroRaw(sid);
+  const keptIndex = showing ? imgs.findIndex(im => im.url === showing) : -1;
+
   const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
   const chosen = colorOpt && card.selected[colorOpt.name];
   let at = Math.min(wasAt, imgs.length - 1);
-  if (chosen) {
+  if (keptIndex >= 0) at = keptIndex;
+  else if (chosen) {
     const colorOf = im => colorOfImage(im.url, colorOpt.values);
     const mixed = imgs.some(im => colorOf(im) && colorOf(im) !== chosen);
     if (mixed) {
@@ -2422,7 +2457,10 @@ function swapMainImage(sid, url, alt, skipThumbSync) {
       }
     }, wait);
   };
-  preload.src = url;
+  // Preload the file that will actually be displayed. This warmed the 2000px original
+  // while the element was then pointed at the 1000px variant, so the swap happened
+  // against a file that had never been fetched and the image blanked while it loaded.
+  preload.src = sized;
 }
 
 
