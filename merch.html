@@ -1691,8 +1691,6 @@ function warmOtherColors(sid) {
   // Thumbnails first: they are what a switch rebuilds, and they are ~3KB each.
   neighbours.forEach(imgs => imgs.forEach(im => queue.push([im.url, 150])));
   neighbours.forEach(imgs => queue.push([imgs[Math.min(at, imgs.length - 1)].url, 1000]));
-  // Then the landing photo for someone who is on the first shot, the common case.
-  neighbours.forEach(imgs => queue.push([imgs[0].url, 1000]));
 
   warmQueue(sid, card, queue);
 }
