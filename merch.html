@@ -76,6 +76,34 @@ body {
   color: #FFD700;
 }
 .filter-btn .count { opacity: 0.6; font-size: 12px; margin-left: 4px; }
+/* .product-card sets display:flex, which beats the browser default [hidden]{display:none}.
+   Without this the filter buttons set the attribute and nothing visibly happens. */
+.product-card[hidden] { display: none !important; }
+
+/* Lightbox filmstrip: the +N button used to open a single photo with no sign that the
+   rest existed. Show every image along the bottom so the count is visibly browsable. */
+.lb-strip {
+  position: absolute;
+  bottom: 46px;
+  display: flex;
+  gap: 6px;
+  max-width: 94vw;
+  overflow-x: auto;
+  padding: 4px;
+  scrollbar-width: thin;
+}
+.lb-strip button {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+}
+.lb-strip button.active { border-color: #FFD700; }
+.lb-strip img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; display: block; }
 
 /* ── Lightbox ─────────────────────── */
 .lightbox {
@@ -682,7 +710,6 @@ footer {
   color: #9a7a64;
   font-size: 11px;
   font-style: italic;
-  cursor: default;
   user-select: none;
 }
 
@@ -708,6 +735,21 @@ footer {
     background: linear-gradient(180deg, #F2E8D0 0%, #EADDb8 100%);
     color: #1e0e06;
   }
+
+  /* The filter pills were written for the dark theme: cream text on a near-transparent
+     white fill is invisible against the light background. */
+  .filter-btn {
+    background: rgba(255,255,255,0.55);
+    border-color: rgba(154,104,56,0.4);
+    color: #5a3400;
+  }
+  .filter-btn:hover { border-color: rgba(154,104,56,0.75); }
+  .filter-btn.active {
+    background: #5a3400;
+    border-color: #5a3400;
+    color: #F6ECD6;
+  }
+  .filter-btn .count { opacity: 0.75; }
 
   .back-link {
     color: #9a6838;
@@ -980,6 +1022,7 @@ footer {
   <button class="lb-prev" onclick="stepLightbox(event,-1)" aria-label="Previous">&#8249;</button>
   <img id="lb-img" src="" alt="">
   <button class="lb-next" onclick="stepLightbox(event,1)" aria-label="Next">&#8250;</button>
+  <div class="lb-strip" id="lb-strip" onclick="event.stopPropagation()"></div>
   <div class="lb-count" id="lb-count"></div>
 </div>
 
@@ -1059,7 +1102,7 @@ async function loadProducts() {
         }
       }
     }`);
-    renderProducts(data.products.edges.map(e => e.node));
+    renderProducts(mergeProducts(data.products.edges.map(e => e.node)));
   } catch (err) {
     console.error(err);
     document.getElementById('product-grid').innerHTML = '';
@@ -1089,6 +1132,65 @@ const CATEGORIES = [
 function categoryOf(p) {
   const hay = [p.productType, (p.tags || []).join(' '), p.title].filter(Boolean).join(' ').toLowerCase();
   return (CATEGORIES.find(c => c.test(hay)) || { key: 'other' }).key;
+}
+
+/* Printful cannot carry two embroidery thread colours in one product, so a single cap
+   design ships as two Shopify products. Merge them back together for display only.
+
+   This list is deliberately EXPLICIT: exact product titles, nothing inferred. Do not
+   replace it with pattern matching that guesses which products belong together -- two
+   caps sharing words in their titles are not necessarily the same design, and silently
+   merging the wrong pair would sell someone a hat they did not choose. */
+const MERGE_GROUPS = [
+  { title: 'BD Logo Trucker Cap', option: 'Embroidery', members: [
+      { product: 'BD Logo Trucker Cap - Black Embroidered', label: 'Black' },
+      { product: 'BD Logo Trucker Cap - Red Embroidered',   label: 'Red'   } ] },
+  { title: 'Bob Davis Trucker Cap', option: 'Embroidery', members: [
+      { product: 'Bob Davis Trucker Cap - Black Embroidered', label: 'Black' },
+      { product: 'Bob Davis Trucker Cap - Red Embroidered',   label: 'Red'   } ] },
+];
+
+function mergeProducts(products) {
+  const byTitle = new Map(products.map(p => [p.title, p]));
+  const consumed = new Set();
+  const merged = [];
+
+  for (const g of MERGE_GROUPS) {
+    const found = g.members.filter(m => byTitle.has(m.product));
+    if (found.length < 2) continue;            // nothing to merge, leave them alone
+    found.forEach(m => consumed.add(m.product));
+
+    const parts = found.map(m => ({ label: m.label, p: byTitle.get(m.product) }));
+    const base  = parts[0].p;
+
+    // Stamp the embroidery colour onto every variant so the existing variant matcher,
+    // which compares the full selectedOptions set, resolves the right one.
+    const variants = parts.flatMap(({ label, p }) =>
+      p.variants.edges.map(e => ({
+        ...e.node,
+        selectedOptions: [...(e.node.selectedOptions || []), { name: g.option, value: label }],
+      })));
+
+    // Union the child options, keeping each option's first-seen value order.
+    const optMap = new Map();
+    parts.forEach(({ p }) => (p.options || []).forEach(o => {
+      const cur = optMap.get(o.name) || [];
+      optMap.set(o.name, [...cur, ...o.values.filter(v => !cur.includes(v))]);
+    }));
+
+    merged.push({
+      ...base,
+      title: g.title,
+      options: [{ name: g.option, values: parts.map(x => x.label) },
+                ...[...optMap].map(([name, values]) => ({ name, values }))],
+      variants: { edges: variants.map(node => ({ node })) },
+      images:   { edges: parts.flatMap(({ p }) => p.images.edges) },
+      priceRange: base.priceRange,
+    });
+  }
+
+  const rest = products.filter(p => !consumed.has(p.title));
+  return [...merged, ...rest];
 }
 
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
@@ -1151,6 +1253,20 @@ function applyFilter(cat, skipHash) {
   if (!skipHash) history.replaceState(null, '', cat === 'all' ? location.pathname : '#' + cat);
 }
 
+/* Switching embroidery colour swaps to a different underlying Shopify product, which
+   can carry a different set of cap colours. Rebuild the card rather than patching it,
+   so an unavailable colour can never stay selected from the previous design. */
+function selectEmbroidery(sid, val) {
+  const card = _cards[sid];
+  if (!card || !card.product) return;
+  const el = document.getElementById('card-' + sid);
+  if (!el) return;
+  const wasHidden = el.hidden;
+  el.outerHTML = buildCard(card.product, { Embroidery: val });
+  const fresh = document.getElementById('card-' + sid);
+  if (fresh) fresh.hidden = wasHidden;
+}
+
 /* ── Lightbox ─────────────────────── */
 let _lb = { imgs: [], i: 0 };
 
@@ -1171,7 +1287,17 @@ function paintLightbox() {
   el.src = im.url;
   el.alt = im.altText || '';
   document.getElementById('lb-count').textContent = `${_lb.i + 1} / ${_lb.imgs.length}`;
+
+  const strip = document.getElementById('lb-strip');
+  if (strip.childElementCount !== _lb.imgs.length) {
+    strip.innerHTML = _lb.imgs.map((img, n) =>
+      `<button onclick="jumpLightbox(${n})"><img src="${esc(img.url)}" alt="" loading="lazy"></button>`).join('');
+  }
+  [...strip.children].forEach((b, n) => b.classList.toggle('active', n === _lb.i));
+  strip.children[_lb.i]?.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
+
+function jumpLightbox(n) { _lb.i = n; paintLightbox(); }
 
 function stepLightbox(e, d) {
   if (e) e.stopPropagation();
@@ -1194,7 +1320,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') stepLightbox(null, 1);
 });
 
-function buildCard(p) {
+function buildCard(p, preselect) {
   const sid = safeId(p.id);
   const variants = p.variants.edges.map(e => e.node);
   const options = p.options || [];
@@ -1203,14 +1329,22 @@ function buildCard(p) {
   const firstVariant = variants[0];
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
   const sizeOpt  = options.find(o => /^size$/i.test(o.name));
+  const embOpt   = options.find(o => /^embroidery$/i.test(o.name));
   const isDefault = variants.length === 1 && variants[0].title === 'Default Title';
 
-  // Seed defaults from Printful's chosen default variant (firstVariant)
-  const initSelected = {};
-  if (!isDefault && firstVariant?.selectedOptions) {
-    firstVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
+  // Seed defaults from Printful's chosen default variant, then apply any override
+  // (used when switching embroidery colour, which rebuilds the card).
+  let seedVariant = firstVariant;
+  if (preselect) {
+    seedVariant = variants.find(v =>
+      Object.entries(preselect).every(([n, val]) =>
+        v.selectedOptions?.some(o => o.name === n && o.value === val))) || firstVariant;
   }
-  const mainImg = firstVariant?.image || null;
+  const initSelected = {};
+  if (!isDefault && seedVariant?.selectedOptions) {
+    seedVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
+  }
+  const mainImg = seedVariant?.image || null;
   // Thumbnail list: put the selected image first so it appears leftmost
   const allImages = (() => {
     const imgs = (p.images?.edges || []).map(e => e.node);
@@ -1220,7 +1354,7 @@ function buildCard(p) {
     }
     return imgs;
   })();
-  _cards[sid] = { variants, options, selected: initSelected, images: allImages };
+  _cards[sid] = { variants, options, selected: initSelected, images: allImages, product: p };
 
   const mainImgHtml = mainImg
     ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}"
@@ -1242,6 +1376,18 @@ function buildCard(p) {
           title="View all ${allImages.length} photos">+${extraImgs}</button>` : ''}
       </div>`
     : '';
+
+  // Embroidery colour, only present on merged cap designs (see MERGE_GROUPS).
+  let embHtml = '';
+  if (embOpt && embOpt.values.length > 1) {
+    const initEmb = initSelected[embOpt.name];
+    embHtml = `<div class="option-label">Embroidery: <span class="opt-current" id="elabel-${sid}">${esc(initEmb)}</span></div>
+      <div class="size-picker" id="epicker-${sid}">
+        ${embOpt.values.map(ev => `<button class="size-btn${ev === initEmb ? ' active' : ''}"
+          data-opt="${esc(embOpt.name)}" data-val="${esc(ev)}"
+          onclick="selectEmbroidery('${sid}','${esc(ev)}')">${esc(ev)}</button>`).join('')}
+      </div>`;
+  }
 
   // Color pill buttons, show first 5, collapse rest
   const MAX_COLORS = 5;
@@ -1321,17 +1467,17 @@ function buildCard(p) {
   })();
 
   return `
-    <div class="product-card" data-cat="${categoryOf(p)}">
+    <div class="product-card" id="card-${sid}" data-cat="${categoryOf(p)}">
       <div class="product-img-wrap">${mainImgHtml}</div>
       ${thumbsHtml}
       <div class="product-name">${esc(p.title)}</div>
       <div class="product-price">${price}</div>
       ${descHtml}
-      ${colorHtml}${sizeHtml}${legacyHtml}
+      ${embHtml}${colorHtml}${sizeHtml}${legacyHtml}
       <button class="add-btn" id="add-${sid}"
-        data-sid="${sid}" data-vid="${firstVariant?.id || ''}"
+        data-sid="${sid}" data-vid="${seedVariant?.id || ''}"
         data-product-name="${esc(p.title)}"
-        data-price="${firstVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
+        data-price="${seedVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
         data-currency="${p.priceRange.minVariantPrice.currencyCode}"
         onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
         ${available ? 'Add to Cart' : 'Sold Out'}
@@ -1369,7 +1515,12 @@ function selectOpt(btn, sid, skipImageSwap) {
   // option is Size (Slim/Regular 12 oz), each with its own photo -- never switched
   // pictures. Resolving the variant is also more accurate than trusting the colour pill,
   // since the variant image is the authoritative one for the exact combination chosen.
-  if (!skipImageSwap) {
+  // Changing SIZE on a product that also has a colour never changes how it looks, and
+  // swapping would throw away whichever photo of that colour the shopper had picked.
+  // Size-only products (the can cooler: Slim vs Regular 12 oz) still swap, since there
+  // the size genuinely is a different photo.
+  const sizeOnlyReskin = sizeOpt && colorOpt && optName === sizeOpt.name;
+  if (!skipImageSwap && !sizeOnlyReskin) {
     const sel = card.selected;
     const match = card.variants.find(v =>
       (v.selectedOptions || []).every(o => sel[o.name] === undefined || sel[o.name] === o.value)
