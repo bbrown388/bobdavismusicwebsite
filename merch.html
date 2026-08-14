@@ -1657,18 +1657,30 @@ function warmProduct(sid) {
 function warmOtherColors(sid) {
   const card = _cards[sid];
   if (!card || !card.product) return;
-  const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
 
   const queue = [];
   (card.images || []).forEach(im => queue.push([im.url, 1000]));
 
-  if (colorOpt) {
-    const galleries = colorOpt.values
-      .filter(v => v !== card.selected[colorOpt.name])
-      .map(v => galleryFor(card.product, card.options, { ...card.selected, [colorOpt.name]: v }));
-    galleries.forEach(imgs => imgs.forEach(im => queue.push([im.url, 150])));
-    galleries.forEach(imgs => imgs[0] && queue.push([imgs[0].url, 1000]));
+  /* One click away means changing exactly ONE option. On a merged cap that is both the
+     other thread colour at the current cap colour, and every other cap colour at the
+     current thread colour. Combinations needing two clicks are left alone: warming the
+     other embroidery's twelve other colours would be most of the catalogue.
+
+     Driven off the options themselves rather than naming colour explicitly, so it stays
+     correct if a product ever carries a third image-affecting option. Size is excluded
+     because it does not change the photos. */
+  const visualOpts = (card.options || []).filter(o => /^(colou?r|embroidery)$/i.test(o.name));
+  const neighbours = [];
+  for (const opt of visualOpts) {
+    for (const value of opt.values) {
+      if (value === card.selected[opt.name]) continue;
+      const imgs = galleryFor(card.product, card.options, { ...card.selected, [opt.name]: value });
+      if (imgs.length) neighbours.push(imgs);
+    }
   }
+  // Thumbnails first: they are what a switch rebuilds, and they are ~3KB each.
+  neighbours.forEach(imgs => imgs.forEach(im => queue.push([im.url, 150])));
+  neighbours.forEach(imgs => queue.push([imgs[0].url, 1000]));
 
   warmQueue(sid, card, queue);
 }
@@ -1998,6 +2010,8 @@ function selectEmbroidery(sid, val) {
 
   el.outerHTML = buildProductPage(card.product, keep);
   jumpGalleryTo(sid, wasAt);
+  // The neighbours changed with the thread colour, so re-warm what is now one click away.
+  warmOtherColors(sid);
 }
 
 /* ── Lightbox ─────────────────────── */
