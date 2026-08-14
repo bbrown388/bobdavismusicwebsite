@@ -1317,10 +1317,35 @@ function colorOfImage(url, values) {
     .sort((a, b) => _slug(b).length - _slug(a).length)[0] || null;
 }
 
+/* The camera angle a photo shows, derived by stripping the colour and Printful's trailing
+   hash off the filename. Everything left ("front", "back", "front-2", "front-and-back")
+   is stable across colours, which is what lets the gallery keep its order. */
+function angleOf(url, colorValues) {
+  let f = String(url || '').split('/').pop().split('?')[0].toLowerCase().replace(/\.[a-z0-9]+$/, '');
+  f = f.replace(/-[0-9a-f]{8,}$/, '');
+  const c = colorOfImage(url, colorValues);
+  if (c) f = f.replace(new RegExp(`(^|-)${_slug(c)}(-|$)`), '$1');
+  return f;
+}
+
+/* Order every colour's photos the same way, so changing colour looks like the shirt was
+   recoloured rather than the gallery being reshuffled. Sorts by camera angle first,
+   using the order those angles first appear across the whole product, then by the
+   product's own colour order. The second key is what keeps the trucker caps (one photo
+   per colour, all the same angle) in a consistent order across embroidery colours. */
+function canonicalOrder(p, colorValues) {
+  const angles = [], all = (p.images?.edges || []).map(e => e.node);
+  all.forEach(im => { const a = angleOf(im.url, colorValues); if (!angles.includes(a)) angles.push(a); });
+  return im => [
+    angles.indexOf(angleOf(im.url, colorValues)),
+    colorValues.indexOf(colorOfImage(im.url, colorValues)),
+  ];
+}
+
 /* Narrow the gallery to the current selection, most specific first. Each filter is
    skipped when it would empty the gallery: a product whose filenames do not encode the
    colour keeps all its photos rather than showing none. */
-function galleryFor(p, options, selected, leadUrl) {
+function galleryFor(p, options, selected) {
   let imgs = (p.images?.edges || []).map(e => e.node);
 
   const embOpt = options.find(o => /^embroidery$/i.test(o.name));
@@ -1339,9 +1364,12 @@ function galleryFor(p, options, selected, leadUrl) {
     if (hit.length > 1) imgs = hit;
   }
 
-  if (leadUrl) {
-    const i = imgs.findIndex(im => im.url === leadUrl);
-    if (i > 0) imgs.unshift(imgs.splice(i, 1)[0]);
+  if (colorOpt) {
+    const key = canonicalOrder(p, colorOpt.values);
+    imgs = imgs.slice().sort((a, b) => {
+      const ka = key(a), kb = key(b);
+      return (ka[0] - kb[0]) || (ka[1] - kb[1]);
+    });
   }
   return imgs;
 }
@@ -1358,22 +1386,49 @@ function thumbsMarkup(imgs, sid, activeUrl) {
     <button class="pdp-viewall" id="viewall-${sid}" onclick="openLightbox('${sid}')">View all ${imgs.length} photos</button>`;
 }
 
+/* Show the nth photo of the current gallery, updating the hero and the active thumb. */
+function jumpGalleryTo(sid, n) {
+  const card = _cards[sid];
+  const imgs = card?.images || [];
+  if (!imgs.length) return;
+  const pick = imgs[Math.min(Math.max(0, n), imgs.length - 1)];
+  const hero = document.getElementById('img-' + sid);
+  if (hero && pick) { hero.src = pick.url; hero.alt = pick.altText || ''; }
+  document.querySelectorAll('#ithumbs-' + sid + ' .img-thumb').forEach(b =>
+    b.classList.toggle('active', b.dataset.imgUrl === pick.url));
+}
+
 /* Re-point the gallery after a colour change, without rebuilding the whole page and
-   throwing away the shopper's scroll position. */
+   throwing away the shopper's scroll position.
+
+   Holds the shopper's place in the gallery: if they were looking at the third photo,
+   they stay on the third photo of the new colour. Because every colour is ordered the
+   same way, that is the same camera angle, so the page reads as the garment changing
+   colour rather than the gallery jumping somewhere else. */
 function refreshGallery(sid) {
   const card = _cards[sid];
   if (!card) return;
-  const hero = document.getElementById('img-' + sid);
-  const imgs = galleryFor(card.product, card.options, card.selected, hero?.getAttribute('src'));
-  card.images = imgs;
-
+  const heroEl = document.getElementById('img-' + sid);
   const rail = document.getElementById('ithumbs-' + sid);
   const wrap = rail?.parentElement;
-  if (!wrap) return;
-  const markup = thumbsMarkup(imgs, sid, hero?.getAttribute('src'));
+
+  const wasAt = rail
+    ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
+    : 0;
+
+  const imgs = galleryFor(card.product, card.options, card.selected);
+  card.images = imgs;
+  if (!imgs.length || !wrap) return;
+
+  const pick = imgs[Math.min(wasAt, imgs.length - 1)];
+  if (heroEl && pick) {
+    heroEl.src = pick.url;
+    heroEl.alt = pick.altText || '';
+  }
+
   rail.remove();
   document.getElementById('viewall-' + sid)?.remove();
-  wrap.insertAdjacentHTML('beforeend', markup);
+  wrap.insertAdjacentHTML('beforeend', thumbsMarkup(imgs, sid, pick?.url));
 }
 
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
@@ -1550,7 +1605,22 @@ function selectEmbroidery(sid, val) {
   // this replaced the hidden grid card and left two product pages in the document.
   const el = document.getElementById('pdp-' + sid);
   if (!el) return;
-  el.outerHTML = buildProductPage(card.product, { Embroidery: val });
+  /* Carry the shopper's colour across. Switching thread colour used to snap the cap back
+     to its default colour, which reads as losing your place rather than restitching the
+     hat you were looking at. Embroidery is listed first so that if this colour does not
+     exist in the other design, the relaxing match in buildProductPage drops the colour
+     and keeps the thread choice, never the reverse. */
+  const keep = { Embroidery: val };
+  for (const [k, v] of Object.entries(card.selected)) if (k !== 'Embroidery') keep[k] = v;
+
+  // Hold the shopper's place in the gallery across the rebuild, same as a colour change.
+  const rail = document.getElementById('ithumbs-' + sid);
+  const wasAt = rail
+    ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
+    : 0;
+
+  el.outerHTML = buildProductPage(card.product, keep);
+  jumpGalleryTo(sid, wasAt);
 }
 
 /* ── Lightbox ─────────────────────── */
@@ -1574,8 +1644,13 @@ function paintLightbox() {
   el.alt = im.altText || '';
   document.getElementById('lb-count').textContent = `${_lb.i + 1} / ${_lb.imgs.length}`;
 
+  /* Rebuild on the actual image set, not its length. Comparing counts meant switching to
+     a colour with the same number of photos kept the previous colour's thumbnails, so the
+     strip showed one colour while the large image showed another. */
   const strip = document.getElementById('lb-strip');
-  if (strip.childElementCount !== _lb.imgs.length) {
+  const key = _lb.imgs.map(i => i.url).join('|');
+  if (strip.dataset.key !== key) {
+    strip.dataset.key = key;
     strip.innerHTML = _lb.imgs.map((img, n) =>
       `<button onclick="jumpLightbox(${n})"><img src="${esc(img.url)}" alt="" loading="lazy"></button>`).join('');
   }
@@ -1620,20 +1695,28 @@ function buildProductPage(p, preselect) {
 
   // Seed defaults from Printful's chosen default variant, then apply any override
   // (used when switching embroidery colour, which rebuilds the card).
-  let seedVariant = firstVariant;
+  /* Match as much of the request as the product actually offers, dropping constraints
+     from the end until something matches. Order matters: the caller puts the option it
+     cares most about first, so switching embroidery keeps the thread colour even when
+     the cap colour does not exist in the other design. */
+  let seedVariant = null;
   const wanted = preselect || defaultSelectionFor(p, options);
   if (wanted) {
-    seedVariant = variants.find(v =>
-      Object.entries(wanted).every(([n, val]) =>
-        v.selectedOptions?.some(o => o.name === n && o.value === val))) || firstVariant;
+    const entries = Object.entries(wanted);
+    for (let n = entries.length; n > 0 && !seedVariant; n--) {
+      const subset = entries.slice(0, n);
+      seedVariant = variants.find(v =>
+        subset.every(([name, val]) => v.selectedOptions?.some(o => o.name === name && o.value === val)));
+    }
   }
+  seedVariant = seedVariant || firstVariant;
   const initSelected = {};
   if (!isDefault && seedVariant?.selectedOptions) {
     seedVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
   }
   const mainImg = seedVariant?.image || null;
   // Thumbnail list: put the selected image first so it appears leftmost
-  const allImages = galleryFor(p, options, initSelected, mainImg?.url);
+  const allImages = galleryFor(p, options, initSelected);
   _cards[sid] = { variants, options, selected: initSelected, images: allImages, product: p };
 
   const mainImgHtml = mainImg
@@ -1798,8 +1881,12 @@ function selectOpt(btn, sid, skipImageSwap) {
   // swapping would throw away whichever photo of that colour the shopper had picked.
   // Size-only products (the can cooler: Slim vs Regular 12 oz) still swap, since there
   // the size genuinely is a different photo.
+  // Colour is handled by refreshGallery below, which holds the shopper's place in the
+  // gallery. Letting the generic swap run first would jump them to Printful's default
+  // photo for that colour and undo it.
   const sizeOnlyReskin = sizeOpt && colorOpt && optName === sizeOpt.name;
-  if (!skipImageSwap && !sizeOnlyReskin) {
+  const colorHandledByGallery = colorOpt && optName === colorOpt.name;
+  if (!skipImageSwap && !sizeOnlyReskin && !colorHandledByGallery) {
     const sel = card.selected;
     const match = card.variants.find(v =>
       (v.selectedOptions || []).every(o => sel[o.name] === undefined || sel[o.name] === o.value)
