@@ -233,16 +233,27 @@ body {
   margin-top: 2px;
 }
 .g-swatch {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border-radius: 50%;
   overflow: hidden;
   border: 1px solid rgba(255,215,0,0.3);
-  background: none;
+  background: #fff;
   cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
 }
-.g-swatch img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.g-swatch:hover { border-color: #FFD700; transform: scale(1.12); }
+/* Printful shoots on white with the product filling roughly the middle half, so a
+   straight cover-crop of a 26px circle is mostly background and every colour ends up
+   looking like the same pale dot. Zoom into the centre so the swatch shows the product. */
+.g-swatch img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scale(1.9);
+}
 .g-count { font-size: 11px; color: #9a7a64; letter-spacing: 0.05em; }
 .g-sold { font-size: 12px; color: #9a7a64; font-style: italic; }
 .product-card { cursor: pointer; }
@@ -290,7 +301,10 @@ body {
   position: relative;
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(255,255,255,0.07);
+  /* Printful photographs on white, and the images are letterboxed by object-fit:contain.
+     A white tile makes the bars blend into the photo instead of framing it in a
+     mismatched panel. */
+  background: #fff;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
 }
 .product-img {
@@ -842,7 +856,7 @@ footer {
   }
 
   .product-img-wrap {
-    background: rgba(139,105,20,0.08);
+    background: #fff;   /* match the white Printful shoots on, so contain does not letterbox */
   }
 
   .product-name {
@@ -1261,6 +1275,79 @@ function mergeProducts(products) {
   return [...merged, ...rest];
 }
 
+/* ── Gallery filtering ────────────────────────────────────
+   Colour is the primary thing a shopper is choosing, so the gallery should show that
+   colour and nothing else. Printful names every file after its variant, which is the
+   only link between a photo and a colour the Storefront API gives us. */
+const _slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+function colorOfImage(url, values) {
+  const file = String(url || '').split('/').pop().split('?')[0].toLowerCase();
+  // Longest match wins, so "Black/ White" beats a bare "Black" on the same filename.
+  return values
+    .filter(v => { const s = _slug(v); return s && new RegExp(`(^|-)${s}(-|\\.|$)`).test(file); })
+    .sort((a, b) => _slug(b).length - _slug(a).length)[0] || null;
+}
+
+/* Narrow the gallery to the current selection, most specific first. Each filter is
+   skipped when it would empty the gallery: a product whose filenames do not encode the
+   colour keeps all its photos rather than showing none. */
+function galleryFor(p, options, selected, leadUrl) {
+  let imgs = (p.images?.edges || []).map(e => e.node);
+
+  const embOpt = options.find(o => /^embroidery$/i.test(o.name));
+  if (embOpt && selected[embOpt.name]) {
+    const hit = imgs.filter(im => im.emb === selected[embOpt.name]);
+    if (hit.length) imgs = hit;
+  }
+
+  /* Only narrow by colour when it still leaves something to browse. The trucker caps
+     have exactly one photo per colour, so filtering there would replace a 13-image
+     gallery with a single shot and no way to see the others. Products shot from several
+     angles per colour (the tee has four, the twill cap six) do filter. */
+  const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
+  if (colorOpt && selected[colorOpt.name]) {
+    const hit = imgs.filter(im => colorOfImage(im.url, colorOpt.values) === selected[colorOpt.name]);
+    if (hit.length > 1) imgs = hit;
+  }
+
+  if (leadUrl) {
+    const i = imgs.findIndex(im => im.url === leadUrl);
+    if (i > 0) imgs.unshift(imgs.splice(i, 1)[0]);
+  }
+  return imgs;
+}
+
+function thumbsMarkup(imgs, sid, activeUrl) {
+  if (imgs.length < 2) return '';
+  return `<div class="img-thumbs pdp-thumbs" id="ithumbs-${sid}">
+      ${imgs.map(img => `<button class="img-thumb${img.url === activeUrl ? ' active' : ''}"
+        data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
+        onclick="selectThumb(this,'${sid}')">
+        <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
+      </button>`).join('')}
+    </div>
+    <button class="pdp-viewall" id="viewall-${sid}" onclick="openLightbox('${sid}')">View all ${imgs.length} photos</button>`;
+}
+
+/* Re-point the gallery after a colour change, without rebuilding the whole page and
+   throwing away the shopper's scroll position. */
+function refreshGallery(sid) {
+  const card = _cards[sid];
+  if (!card) return;
+  const hero = document.getElementById('img-' + sid);
+  const imgs = galleryFor(card.product, card.options, card.selected, hero?.getAttribute('src'));
+  card.images = imgs;
+
+  const rail = document.getElementById('ithumbs-' + sid);
+  const wrap = rail?.parentElement;
+  if (!wrap) return;
+  const markup = thumbsMarkup(imgs, sid, hero?.getAttribute('src'));
+  rail.remove();
+  document.getElementById('viewall-' + sid)?.remove();
+  wrap.insertAdjacentHTML('beforeend', markup);
+}
+
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -1511,20 +1598,7 @@ function buildProductPage(p, preselect) {
   }
   const mainImg = seedVariant?.image || null;
   // Thumbnail list: put the selected image first so it appears leftmost
-  const allImages = (() => {
-    let imgs = (p.images?.edges || []).map(e => e.node);
-    // On a merged cap, keep only the photos for the embroidery colour on screen.
-    if (embOpt) {
-      const chosen = initSelected[embOpt.name];
-      const forThis = imgs.filter(im => im.emb === chosen);
-      if (forThis.length) imgs = forThis;
-    }
-    if (mainImg) {
-      const idx = imgs.findIndex(img => img.url === mainImg.url);
-      if (idx > 0) imgs.unshift(imgs.splice(idx, 1)[0]);
-    }
-    return imgs;
-  })();
+  const allImages = galleryFor(p, options, initSelected, mainImg?.url);
   _cards[sid] = { variants, options, selected: initSelected, images: allImages, product: p };
 
   const mainImgHtml = mainImg
@@ -1532,20 +1606,10 @@ function buildProductPage(p, preselect) {
          onclick="openLightbox('${sid}')" title="Click to enlarge">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
-  /* Every thumbnail, no truncation. Baymard: truncating a gallery without a clear
-     signpost makes users assume the visible thumbnails are all that exist -- which is
-     exactly what the old "+22" badge did. There is room on a product page, so the rail
-     simply scrolls and the count is stated outright. */
-  const thumbsHtml = allImages.length > 1
-    ? `<div class="img-thumbs pdp-thumbs" id="ithumbs-${sid}">
-        ${allImages.map((img) => `<button class="img-thumb${img.url === mainImg?.url ? ' active' : ''}"
-          data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
-          onclick="selectThumb(this,'${sid}')">
-          <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
-        </button>`).join('')}
-      </div>
-      <button class="pdp-viewall" onclick="openLightbox('${sid}')">View all ${allImages.length} photos</button>`
-    : '';
+  /* Every thumbnail for the current selection, no truncation. Baymard: truncating a
+     gallery with no signpost makes users assume the visible thumbnails are all there is,
+     which is exactly what the old "+22" badge did. */
+  const thumbsHtml = thumbsMarkup(allImages, sid, mainImg?.url);
 
   // Embroidery colour, only present on merged cap designs (see MERGE_GROUPS).
   let embHtml = '';
@@ -1711,6 +1775,9 @@ function selectOpt(btn, sid, skipImageSwap) {
     const url = match?.image?.url || btn.dataset.imgUrl;
     if (url) swapMainImage(sid, url, match?.image?.altText || btn.dataset.imgAlt || '');
   }
+
+  // Colour drives the gallery: picking Sage should leave only Sage photos on screen.
+  if (colorOpt && optName === colorOpt.name) refreshGallery(sid);
 
   // Colour additionally refreshes which sizes are still available in that colour.
   if (colorOpt && optName === colorOpt.name) {
