@@ -148,6 +148,105 @@ body {
   .lb-prev, .lb-next { width: 40px; height: 40px; font-size: 20px; }
 }
 
+/* ── Product page ─────────────────── */
+/* body is a centred flex column, so a child with no width constraint sizes to its
+   content. The 13-thumbnail rail made #product-view 778px wide inside a 390px phone,
+   which is why overflow-x:auto never engaged and the whole page scrolled sideways.
+   Constrain the chain and let every track shrink below its content. */
+#grid-view, #product-view { width: 100%; min-width: 0; }
+.pdp { width: 100%; max-width: 1080px; margin: 0 auto; min-width: 0; }
+.pdp-cols > *, .pdp-gallery, .pdp-info { min-width: 0; }
+.pdp-thumbs { max-width: 100%; }
+.pdp-back {
+  background: none;
+  border: none;
+  color: #C9A227;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 0 18px;
+}
+.pdp-back:hover { text-decoration: underline; }
+.pdp-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+.pdp-gallery { position: sticky; top: 24px; }
+.pdp-hero { aspect-ratio: 1 / 1; }
+.pdp-hero .product-img { cursor: zoom-in; }
+.pdp-thumbs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 2px 4px;
+  scrollbar-width: thin;
+}
+.pdp-viewall {
+  background: none;
+  border: none;
+  color: #C9A227;
+  font-family: Georgia, serif;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0 0;
+}
+.pdp-viewall:hover { text-decoration: underline; }
+.pdp-title {
+  font-size: 26px;
+  font-weight: normal;
+  letter-spacing: 0.02em;
+  margin: 0 0 8px;
+  color: #E8DCC8;
+}
+.pdp-price { font-size: 22px; color: #FFD700; margin-bottom: 6px; }
+.pdp-ship { font-size: 12.5px; color: #9a7a64; margin: 0 0 22px; font-style: italic; }
+.pdp-info .option-label { margin-top: 16px; }
+.pdp-add { margin-top: 26px; width: 100%; }
+.pdp-desc {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,215,0,0.14);
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: #b49a86;
+  text-align: left;
+}
+.pdp-desc ul { margin: 10px 0 0 18px; }
+.pdp-desc li { margin-bottom: 5px; }
+
+@media (max-width: 780px) {
+  /* minmax(0,1fr), not 1fr: a bare 1fr is minmax(auto,1fr) and refuses to shrink
+     below its content, which reintroduces the sideways scroll. */
+  .pdp-cols { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .pdp-gallery { position: static; }
+  .pdp-title { font-size: 22px; }
+}
+
+/* ── Grid card extras ─────────────── */
+.g-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  margin-top: 2px;
+}
+.g-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid rgba(255,215,0,0.3);
+  background: none;
+  cursor: pointer;
+}
+.g-swatch img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.g-count { font-size: 11px; color: #9a7a64; letter-spacing: 0.05em; }
+.g-sold { font-size: 12px; color: #9a7a64; font-style: italic; }
+.product-card { cursor: pointer; }
+
 /* ── Product grid ─────────────────── */
 .product-grid {
   display: grid;
@@ -751,6 +850,14 @@ footer {
   }
   .filter-btn .count { opacity: 0.75; }
 
+  .pdp-back, .pdp-viewall { color: #9a6838; }
+  .pdp-title { color: #1e0e06; }
+  .pdp-price { color: #5a3400; }
+  .pdp-ship { color: #7a5030; }
+  .pdp-desc { color: #4a2e18; border-top-color: rgba(154,104,56,0.25); }
+  .g-count, .g-sold { color: #7a5030; }
+  .g-swatch { border-color: rgba(154,104,56,0.45); }
+
   .back-link {
     color: #9a6838;
   }
@@ -1009,12 +1116,15 @@ footer {
 <p class="section-label">Merch</p>
 <p class="trust-line">Designed &amp; sold by Bob Davis &middot; Ships 3&ndash;5 business days</p>
 
-<div class="filter-row" id="filter-row" hidden></div>
-
-<div class="product-grid" id="product-grid">
-  <p class="status-msg">Loading...</p>
+<div id="grid-view">
+  <div class="filter-row" id="filter-row" hidden></div>
+  <div class="product-grid" id="product-grid">
+    <p class="status-msg">Loading...</p>
+  </div>
+  <p class="status-msg" id="empty-cat" hidden>Nothing in this category yet.</p>
 </div>
-<p class="status-msg" id="empty-cat" hidden>Nothing in this category yet.</p>
+
+<div id="product-view" hidden></div>
 <p class="error-msg" id="error-msg" hidden>Something went wrong loading the store. Try refreshing.</p>
 
 <div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
@@ -1184,7 +1294,11 @@ function mergeProducts(products) {
       options: [{ name: g.option, values: parts.map(x => x.label) },
                 ...[...optMap].map(([name, values]) => ({ name, values }))],
       variants: { edges: variants.map(node => ({ node })) },
-      images:   { edges: parts.flatMap(({ p }) => p.images.edges) },
+      // Tag each photo with the embroidery it belongs to. Without this the gallery
+      // shows both thread colours at once and switching embroidery only changes the
+      // hero image while the thumbnails keep showing the other design.
+      images: { edges: parts.flatMap(({ label, p }) =>
+        p.images.edges.map(e => ({ node: { ...e.node, emb: label } }))) },
       priceRange: base.priceRange,
     });
   }
@@ -1206,9 +1320,11 @@ function renderProducts(products) {
     grid.innerHTML = '<p class="status-msg">No products yet, check back soon.</p>';
     return;
   }
+  _products = products;
   if (products.length === 1) grid.classList.add('single');
-  grid.innerHTML = products.map(buildCard).join('');
+  grid.innerHTML = products.map(buildGridCard).join('');
   buildFilters(products);
+  route();
   gtag('event', 'view_item_list', {
     item_list_name: 'Merch',
     items: products.map(p => ({
@@ -1218,6 +1334,94 @@ function renderProducts(products) {
       currency: p.priceRange.minVariantPrice.currencyCode
     }))
   });
+}
+
+let _products = [];
+
+/* ── Routing ──────────────────────────────────────────────
+   Hash router so a product is linkable and the back button works, without needing a
+   file per product (products come from Shopify at runtime, so static pages are out).
+   Category filters keep using a bare #hats hash; products use #/product/<id>. */
+function route() {
+  const m = (location.hash || '').match(/^#\/product\/(.+)$/);
+  if (m) showProduct(decodeURIComponent(m[1]));
+  else showGrid();
+}
+window.addEventListener('hashchange', route);
+
+function showProduct(id) {
+  const p = _products.find(x => safeId(x.id) === id || x.id === id);
+  if (!p) { location.hash = ''; return; }
+  document.getElementById('grid-view').hidden = true;
+  const view = document.getElementById('product-view');
+  view.hidden = false;
+  view.innerHTML = buildProductPage(p);
+  window.scrollTo(0, 0);
+  gtag('event', 'view_item', {
+    items: [{ item_id: p.id, item_name: p.title,
+      price: parseFloat(p.priceRange.minVariantPrice.amount),
+      currency: p.priceRange.minVariantPrice.currencyCode }]
+  });
+}
+
+function showGrid() {
+  const view = document.getElementById('product-view');
+  view.hidden = true;
+  view.innerHTML = '';
+  document.getElementById('grid-view').hidden = false;
+  const cat = (location.hash || '').replace('#', '');
+  applyFilter(CATEGORIES.some(c => c.key === cat) || cat === 'other' ? cat : 'all', true);
+}
+
+function openProduct(id) { location.hash = '#/product/' + encodeURIComponent(id); }
+
+/* Grid cards carry image, name, price and colour swatches only. Everything else moved
+   to the product page: cramming a gallery, a description and three option pickers into
+   a 260px card is what made the old grid unreadable. */
+function buildGridCard(p) {
+  const sid = safeId(p.id);
+  const variants = p.variants.edges.map(e => e.node);
+  const options = p.options || [];
+  const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
+  const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
+  const available = variants.some(v => v.availableForSale);
+  const hero = variants[0]?.image || p.images.edges[0]?.node || null;
+
+  // One swatch per colour, using that colour's own photo. Baymard's finding is that
+  // hiding swatches behind a "+N more" on list items is a common mobile failure, so
+  // show them all -- they are small, and the row wraps.
+  let swatches = '';
+  if (colorOpt) {
+    const seen = new Map();
+    variants.forEach(v => {
+      const val = v.selectedOptions?.find(o => o.name === colorOpt.name)?.value;
+      if (val && !seen.has(val) && v.image?.url) seen.set(val, v);
+    });
+    if (seen.size > 1) {
+      swatches = `<div class="g-swatches">${[...seen].map(([val, v]) =>
+        `<button class="g-swatch" title="${esc(val)}" aria-label="${esc(val)}"
+           onclick="event.stopPropagation();openProduct('${sid}')">
+           <img src="${esc(v.image.url)}" alt="" loading="lazy"></button>`).join('')}
+        </div>`;
+    }
+  }
+
+  const count = colorOpt ? [...new Set(variants.map(v =>
+    v.selectedOptions?.find(o => o.name === colorOpt.name)?.value).filter(Boolean))].length : 0;
+
+  return `
+    <div class="product-card" id="card-${sid}" data-cat="${categoryOf(p)}"
+         onclick="openProduct('${sid}')" role="link" tabindex="0"
+         onkeydown="if(event.key==='Enter')openProduct('${sid}')">
+      <div class="product-img-wrap">
+        ${hero ? `<img class="product-img" src="${esc(hero.url)}" alt="${esc(hero.altText || p.title)}" loading="lazy">`
+               : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`}
+      </div>
+      <div class="product-name">${esc(p.title)}</div>
+      <div class="product-price">${price}${!available ? ' <span class="g-sold">Sold out</span>' : ''}</div>
+      ${swatches}
+      ${count > 1 ? `<div class="g-count">${count} colors</div>` : ''}
+    </div>`;
 }
 
 /* Only render a filter row when it earns its place: at least two categories present. */
@@ -1259,12 +1463,11 @@ function applyFilter(cat, skipHash) {
 function selectEmbroidery(sid, val) {
   const card = _cards[sid];
   if (!card || !card.product) return;
-  const el = document.getElementById('card-' + sid);
+  // Must target the product page, not the grid card. They previously shared an id, so
+  // this replaced the hidden grid card and left two product pages in the document.
+  const el = document.getElementById('pdp-' + sid);
   if (!el) return;
-  const wasHidden = el.hidden;
-  el.outerHTML = buildCard(card.product, { Embroidery: val });
-  const fresh = document.getElementById('card-' + sid);
-  if (fresh) fresh.hidden = wasHidden;
+  el.outerHTML = buildProductPage(card.product, { Embroidery: val });
 }
 
 /* ── Lightbox ─────────────────────── */
@@ -1320,7 +1523,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') stepLightbox(null, 1);
 });
 
-function buildCard(p, preselect) {
+function buildProductPage(p, preselect) {
   const sid = safeId(p.id);
   const variants = p.variants.edges.map(e => e.node);
   const options = p.options || [];
@@ -1347,7 +1550,13 @@ function buildCard(p, preselect) {
   const mainImg = seedVariant?.image || null;
   // Thumbnail list: put the selected image first so it appears leftmost
   const allImages = (() => {
-    const imgs = (p.images?.edges || []).map(e => e.node);
+    let imgs = (p.images?.edges || []).map(e => e.node);
+    // On a merged cap, keep only the photos for the embroidery colour on screen.
+    if (embOpt) {
+      const chosen = initSelected[embOpt.name];
+      const forThis = imgs.filter(im => im.emb === chosen);
+      if (forThis.length) imgs = forThis;
+    }
     if (mainImg) {
       const idx = imgs.findIndex(img => img.url === mainImg.url);
       if (idx > 0) imgs.unshift(imgs.splice(idx, 1)[0]);
@@ -1361,20 +1570,19 @@ function buildCard(p, preselect) {
          onclick="openLightbox('${sid}')" title="Click to enlarge">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
-  // Thumbnail strip, cap at 6, show overflow count
-  const MAX_THUMBS = 6;
-  const visibleImgs = allImages.slice(0, MAX_THUMBS);
-  const extraImgs = allImages.length - MAX_THUMBS;
+  /* Every thumbnail, no truncation. Baymard: truncating a gallery without a clear
+     signpost makes users assume the visible thumbnails are all that exist -- which is
+     exactly what the old "+22" badge did. There is room on a product page, so the rail
+     simply scrolls and the count is stated outright. */
   const thumbsHtml = allImages.length > 1
-    ? `<div class="img-thumbs" id="ithumbs-${sid}">
-        ${visibleImgs.map((img) => `<button class="img-thumb${img.url === mainImg?.url ? ' active' : ''}"
+    ? `<div class="img-thumbs pdp-thumbs" id="ithumbs-${sid}">
+        ${allImages.map((img) => `<button class="img-thumb${img.url === mainImg?.url ? ' active' : ''}"
           data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
           onclick="selectThumb(this,'${sid}')">
           <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
         </button>`).join('')}
-        ${extraImgs > 0 ? `<button class="thumb-count" onclick="openLightbox('${sid}')"
-          title="View all ${allImages.length} photos">+${extraImgs}</button>` : ''}
-      </div>`
+      </div>
+      <button class="pdp-viewall" onclick="openLightbox('${sid}')">View all ${allImages.length} photos</button>`
     : '';
 
   // Embroidery colour, only present on merged cap designs (see MERGE_GROUPS).
@@ -1389,8 +1597,9 @@ function buildCard(p, preselect) {
       </div>`;
   }
 
-  // Color pill buttons, show first 5, collapse rest
-  const MAX_COLORS = 5;
+  // All colours, no "+N more". On a full-width product page they fit, and Baymard
+  // flags hidden swatches as a common failure that makes shoppers miss variants.
+  const MAX_COLORS = Infinity;
   let colorHtml = '';
   if (colorOpt && !isDefault) {
     const seen = new Map();
@@ -1455,34 +1664,54 @@ function buildCard(p, preselect) {
     </div>`;
   }
 
+  /* Full description, no truncation. It used to be cut at 100 characters because it was
+     competing for room in a 260px card. On a product page it has a column to itself.
+     Printful writes one long paragraph with bullet-ish fragments after a colon, so split
+     those onto their own lines rather than showing an unreadable wall. */
   const descHtml = (() => {
     if (!p.description) return '';
-    const MAX = 100;
-    const safe = esc(p.description);
-    if (safe.length <= MAX) return `<p class="product-desc">${safe}</p>`;
-    const cutIdx = safe.slice(0, MAX).search(/\s\S*$/);
-    const head = safe.slice(0, cutIdx > 0 ? cutIdx : MAX);
-    const tail = safe.slice(head.length);
-    return `<p class="product-desc" id="desc-${sid}">${head}<span id="desc-more-${sid}">&thinsp;&hellip;&thinsp;<button class="desc-btn" onclick="expandDesc('${sid}')">more</button></span><span id="desc-full-${sid}" hidden>${tail}</span></p>`;
+    /* Printful appends the same print-on-demand disclaimer to every product, unpunctuated,
+       so it runs on into the last spec bullet and ends with a stray "Size guide". Cut it:
+       it is identical on all seven products and says nothing about this one. */
+    const cleaned = String(p.description)
+      .replace(/This product is made especially for you[\s\S]*$/i, '')
+      .replace(/\s*Size guide\s*$/i, '')
+      .trim();
+    const parts = cleaned.split(/\s*•\s*|\s*\|\s*/).map(s => s.trim().replace(/[.\s]+$/, '')).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length < 3) return `<div class="pdp-desc"><p>${esc(cleaned)}</p></div>`;
+    const [intro, ...bullets] = parts;
+    return `<div class="pdp-desc">
+      <p>${esc(intro)}</p>
+      <ul>${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+    </div>`;
   })();
 
   return `
-    <div class="product-card" id="card-${sid}" data-cat="${categoryOf(p)}">
-      <div class="product-img-wrap">${mainImgHtml}</div>
-      ${thumbsHtml}
-      <div class="product-name">${esc(p.title)}</div>
-      <div class="product-price">${price}</div>
-      ${descHtml}
-      ${embHtml}${colorHtml}${sizeHtml}${legacyHtml}
-      <button class="add-btn" id="add-${sid}"
-        data-sid="${sid}" data-vid="${seedVariant?.id || ''}"
-        data-product-name="${esc(p.title)}"
-        data-price="${seedVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
-        data-currency="${p.priceRange.minVariantPrice.currencyCode}"
-        onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
-        ${available ? 'Add to Cart' : 'Sold Out'}
-      </button>
-    </div>`;
+    <article class="pdp" id="pdp-${sid}">
+      <button class="pdp-back" onclick="location.hash=''">&#8592; All merch</button>
+      <div class="pdp-cols">
+        <div class="pdp-gallery">
+          <div class="product-img-wrap pdp-hero">${mainImgHtml}</div>
+          ${thumbsHtml}
+        </div>
+        <div class="pdp-info">
+          <h1 class="pdp-title">${esc(p.title)}</h1>
+          <div class="pdp-price">${price}</div>
+          <p class="pdp-ship">Ships in 3&ndash;5 business days &middot; flat-rate US shipping</p>
+          ${embHtml}${colorHtml}${sizeHtml}${legacyHtml}
+          <button class="add-btn pdp-add" id="add-${sid}"
+            data-sid="${sid}" data-vid="${seedVariant?.id || ''}"
+            data-product-name="${esc(p.title)}"
+            data-price="${seedVariant?.priceV2?.amount || p.priceRange.minVariantPrice.amount}"
+            data-currency="${p.priceRange.minVariantPrice.currencyCode}"
+            onclick="handleAdd(this)" ${!available ? 'disabled' : ''}>
+            ${available ? 'Add to Cart' : 'Sold Out'}
+          </button>
+          ${descHtml}
+        </div>
+      </div>
+    </article>`;
 }
 
 function selectOpt(btn, sid, skipImageSwap) {
