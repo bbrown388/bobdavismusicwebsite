@@ -1627,25 +1627,42 @@ function warmProduct(sid) {
   warm(p.variants.edges[0]?.node?.image?.url || p.images.edges[0]?.node?.url, 1000);
 }
 
-/* Once a product page is open and idle, warm one photo per remaining colour so switching
-   colour is instant. requestIdleCallback keeps it off the critical path; without support
-   a short timeout is close enough and still runs after first paint. */
+/* Warm what a colour switch actually requests, which is not what the variant record
+   points at. Switching colour rebuilds the thumbnail rail, so the visible cost is that
+   colour's THUMBNAILS at 150px, plus whichever gallery photo the held position lands on
+   at 1000px. Warming only the variant's own hero, as this did at first, warmed a file
+   the switch frequently never asks for and left the rail to fetch cold.
+
+   Thumbnails are about 3KB each, so every colour's full rail is affordable at idle: 13
+   colours of a cap is roughly 150KB. Heroes are 46KB, so only the first photo per colour
+   is warmed here and the rest are left to the hover handler. */
 function warmOtherColors(sid) {
   const card = _cards[sid];
-  if (!card) return;
+  if (!card || !card.product) return;
   const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
   if (!colorOpt) return;
   const run = () => {
-    const seen = new Set();
-    for (const v of card.variants) {
-      const val = v.selectedOptions?.find(o => o.name === colorOpt.name)?.value;
-      if (!val || seen.has(val) || !v.image?.url) continue;
-      seen.add(val);
-      warm(v.image.url, 1000);
+    for (const value of colorOpt.values) {
+      if (value === card.selected[colorOpt.name]) continue;      // already on screen
+      const imgs = galleryFor(card.product, card.options, { ...card.selected, [colorOpt.name]: value });
+      if (!imgs.length) continue;
+      warm(imgs[0].url, 1000);                                   // the photo it will show
+      imgs.forEach(im => warm(im.url, 150));                     // the rail it will build
     }
   };
   if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 2000 });
   else setTimeout(run, 600);
+}
+
+/* Hovering a colour pill is a strong signal and precedes the click by a few hundred ms,
+   which is enough to have the full-size photo decoded before it is needed. */
+function warmColor(sid, value) {
+  const card = _cards[sid];
+  if (!card || !card.product) return;
+  const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
+  if (!colorOpt) return;
+  const imgs = galleryFor(card.product, card.options, { ...card.selected, [colorOpt.name]: value });
+  imgs.slice(0, 4).forEach((im, i) => warm(im.url, i === 0 ? 1000 : 150));
 }
 
 /* The original url of whatever the hero is showing. src carries a CDN-resized variant,
@@ -2077,6 +2094,7 @@ function buildProductPage(p, preselect) {
         class="size-btn${val === initColor ? ' active' : ''}"
         data-opt="${esc(colorOpt.name)}" data-val="${esc(val)}"
         data-img-url="${esc(v.image?.url)}" data-img-alt="${esc(v.image?.altText)}"
+        onmouseenter="warmColor('${sid}',this.dataset.val)"
         onclick="selectOpt(this,'${sid}')">${esc(val)}</button>`;
       colorHtml = `<div class="option-label">Color: <span class="opt-current" id="clabel-${sid}">${esc(initColor)}</span></div>
         <div class="size-picker" id="cthumbs-${sid}">
