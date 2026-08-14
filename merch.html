@@ -1420,7 +1420,28 @@ function refreshGallery(sid) {
   card.images = imgs;
   if (!imgs.length || !wrap) return;
 
-  const pick = imgs[Math.min(wasAt, imgs.length - 1)];
+  /* Two different right answers depending on whether the gallery narrowed.
+
+     When it did (the tee: four Sage photos replace four Black ones) the content changed
+     under the shopper, so holding their position keeps them on the same camera angle.
+
+     When it did not, the rail still holds every colour -- the trucker caps have one
+     photo per colour, so filtering would leave a gallery of one. Holding position there
+     means picking a colour changes nothing at all, which is what it did. Jump to the
+     chosen colour's photo instead. */
+  const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
+  const chosen = colorOpt && card.selected[colorOpt.name];
+  let at = Math.min(wasAt, imgs.length - 1);
+  if (chosen) {
+    const colorOf = im => colorOfImage(im.url, colorOpt.values);
+    const mixed = imgs.some(im => colorOf(im) && colorOf(im) !== chosen);
+    if (mixed) {
+      const i = imgs.findIndex(im => colorOf(im) === chosen);
+      if (i >= 0) at = i;
+    }
+  }
+
+  const pick = imgs[at];
   if (heroEl && pick) {
     heroEl.src = pick.url;
     heroEl.alt = pick.altText || '';
