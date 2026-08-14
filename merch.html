@@ -49,18 +49,93 @@ body {
   margin-bottom: 28px;
 }
 
+/* ── Category filters ─────────────── */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 22px;
+  max-width: 1180px;
+}
+.filter-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,215,0,0.22);
+  color: #E8DCC8;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.filter-btn:hover { border-color: rgba(255,215,0,0.5); }
+.filter-btn.active {
+  background: rgba(255,215,0,0.14);
+  border-color: rgba(255,215,0,0.65);
+  color: #FFD700;
+}
+.filter-btn .count { opacity: 0.6; font-size: 12px; margin-left: 4px; }
+
+/* ── Lightbox ─────────────────────── */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox.open { display: flex; }
+.lightbox img {
+  max-width: 92vw;
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.lb-close, .lb-prev, .lb-next {
+  position: absolute;
+  background: rgba(255,255,255,0.09);
+  border: 1px solid rgba(255,215,0,0.3);
+  color: #E8DCC8;
+  font-size: 26px;
+  line-height: 1;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.lb-close { top: 18px; right: 18px; font-size: 22px; }
+.lb-prev  { left: 14px; }
+.lb-next  { right: 14px; }
+.lb-count {
+  position: absolute;
+  bottom: 20px;
+  font-size: 13px;
+  color: rgba(232,220,200,0.75);
+  letter-spacing: 0.06em;
+}
+@media (max-width: 500px) {
+  .lb-prev, .lb-next { width: 40px; height: 40px; font-size: 20px; }
+}
+
 /* ── Product grid ─────────────────── */
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-  gap: 20px;
+  /* 260px keeps two columns on a small phone in landscape and lets a desktop
+     window fill out to four. The old 480px cap made the whole shop render at
+     phone width no matter how big the screen was. */
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 24px;
   width: 100%;
-  max-width: 480px;
-  margin-bottom: 16px;
+  max-width: 1180px;
+  margin: 0 auto 16px;
 }
 .product-grid.single {
-  grid-template-columns: 1fr;
-  max-width: 260px;
+  grid-template-columns: minmax(0, 340px);
+  justify-content: center;
+  max-width: 100%;
 }
 
 /* ── Product card ─────────────────── */
@@ -100,9 +175,11 @@ body {
      product reads as intentional where a decapitated bottle does not. */
   object-fit: contain;
   display: block;
+  cursor: zoom-in;
   transition: opacity 0.15s ease;
 }
 .product-img.fading { opacity: 0; }
+.thumb-count:hover { border-color: rgba(255,215,0,0.45); color: #E8DCC8; }
 
 /* ── Product text ─────────────────── */
 .product-name {
@@ -599,6 +676,9 @@ footer {
   border-radius: 6px;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  font-family: Georgia, serif;
+  transition: border-color 0.15s, color 0.15s;
   color: #9a7a64;
   font-size: 11px;
   font-style: italic;
@@ -887,10 +967,21 @@ footer {
 <p class="section-label">Merch</p>
 <p class="trust-line">Designed &amp; sold by Bob Davis &middot; Ships 3&ndash;5 business days</p>
 
+<div class="filter-row" id="filter-row" hidden></div>
+
 <div class="product-grid" id="product-grid">
   <p class="status-msg">Loading...</p>
 </div>
+<p class="status-msg" id="empty-cat" hidden>Nothing in this category yet.</p>
 <p class="error-msg" id="error-msg" hidden>Something went wrong loading the store. Try refreshing.</p>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+  <button class="lb-close" onclick="closeLightbox()" aria-label="Close">&#10005;</button>
+  <button class="lb-prev" onclick="stepLightbox(event,-1)" aria-label="Previous">&#8249;</button>
+  <img id="lb-img" src="" alt="">
+  <button class="lb-next" onclick="stepLightbox(event,1)" aria-label="Next">&#8250;</button>
+  <div class="lb-count" id="lb-count"></div>
+</div>
 
 <div class="cart-overlay" id="cart-overlay" onclick="closeCart()"></div>
 
@@ -950,11 +1041,11 @@ async function loadProducts() {
       products(first: 20, sortKey: CREATED_AT, reverse: true) {
         edges {
           node {
-            id title description
+            id title description productType tags
             priceRange { minVariantPrice { amount currencyCode } }
             options { name values }
-            images(first: 20) { edges { node { url altText } } }
-            variants(first: 30) {
+            images(first: 60) { edges { node { url altText } } }
+            variants(first: 100) {
               edges {
                 node {
                   id title availableForSale
@@ -976,6 +1067,30 @@ async function loadProducts() {
   }
 }
 
+/* Shopify hands back option values in whatever order Printful pushed them, which for
+   the tee is M, L, XL, 2XL, 3XL, 4XL, S -- small last. Sorting here rather than
+   fixing the data, because a Printful re-push would undo a manual fix in Shopify. */
+const SIZE_RANK = ['XS','S','S/M','M','L','L/XL','XL','XXL','2XL','XXXL','3XL','4XL','5XL','ONE SIZE'];
+function sizeRank(v) {
+  const i = SIZE_RANK.indexOf(String(v).trim().toUpperCase());
+  return i === -1 ? SIZE_RANK.length : i;   // unknown sizes sort to the end, order preserved
+}
+function sortSizes(values) {
+  return [...values].sort((a, b) => sizeRank(a) - sizeRank(b));
+}
+
+/* productType is set on only three of the seven products (EMBROIDERY, DRINKWARE, blank),
+   so it cannot be the sole source. Try it, then tags, then fall back to the title. */
+const CATEGORIES = [
+  { key: 'shirts',    label: 'Shirts',    test: s => /t-?shirt|tee|hoodie|sweat/.test(s) },
+  { key: 'hats',      label: 'Hats',      test: s => /cap|hat|trucker|beanie|snapback/.test(s) },
+  { key: 'drinkware', label: 'Drinkware', test: s => /bottle|tumbler|mug|glass|koozie|cooler|drinkware/.test(s) },
+];
+function categoryOf(p) {
+  const hay = [p.productType, (p.tags || []).join(' '), p.title].filter(Boolean).join(' ').toLowerCase();
+  return (CATEGORIES.find(c => c.test(hay)) || { key: 'other' }).key;
+}
+
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -991,6 +1106,7 @@ function renderProducts(products) {
   }
   if (products.length === 1) grid.classList.add('single');
   grid.innerHTML = products.map(buildCard).join('');
+  buildFilters(products);
   gtag('event', 'view_item_list', {
     item_list_name: 'Merch',
     items: products.map(p => ({
@@ -1001,6 +1117,82 @@ function renderProducts(products) {
     }))
   });
 }
+
+/* Only render a filter row when it earns its place: at least two categories present. */
+function buildFilters(products) {
+  const row = document.getElementById('filter-row');
+  const counts = {};
+  products.forEach(p => { const c = categoryOf(p); counts[c] = (counts[c] || 0) + 1; });
+  const present = CATEGORIES.filter(c => counts[c.key]);
+  if (counts.other) present.push({ key: 'other', label: 'Other' });
+  if (present.length < 2) { row.hidden = true; return; }
+
+  row.hidden = false;
+  row.innerHTML = [{ key: 'all', label: 'All' }, ...present].map(c => {
+    const n = c.key === 'all' ? products.length : counts[c.key];
+    return `<button class="filter-btn" data-cat="${c.key}" onclick="applyFilter('${c.key}')">
+      ${c.label}<span class="count">${n}</span></button>`;
+  }).join('');
+
+  const fromHash = (location.hash || '').replace('#', '');
+  applyFilter(present.some(c => c.key === fromHash) ? fromHash : 'all', true);
+}
+
+function applyFilter(cat, skipHash) {
+  document.querySelectorAll('.filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.cat === cat));
+  let shown = 0;
+  document.querySelectorAll('.product-card').forEach(card => {
+    const hit = cat === 'all' || card.dataset.cat === cat;
+    card.hidden = !hit;
+    if (hit) shown++;
+  });
+  document.getElementById('empty-cat').hidden = shown > 0;
+  if (!skipHash) history.replaceState(null, '', cat === 'all' ? location.pathname : '#' + cat);
+}
+
+/* ── Lightbox ─────────────────────── */
+let _lb = { imgs: [], i: 0 };
+
+function openLightbox(sid) {
+  const card = _cards[sid];
+  if (!card || !card.images || !card.images.length) return;
+  const current = document.getElementById('img-' + sid)?.getAttribute('src');
+  const at = card.images.findIndex(im => im.url === current);
+  _lb = { imgs: card.images, i: at === -1 ? 0 : at };
+  paintLightbox();
+  document.getElementById('lightbox').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function paintLightbox() {
+  const im = _lb.imgs[_lb.i];
+  const el = document.getElementById('lb-img');
+  el.src = im.url;
+  el.alt = im.altText || '';
+  document.getElementById('lb-count').textContent = `${_lb.i + 1} / ${_lb.imgs.length}`;
+}
+
+function stepLightbox(e, d) {
+  if (e) e.stopPropagation();
+  if (!_lb.imgs.length) return;
+  _lb.i = (_lb.i + d + _lb.imgs.length) % _lb.imgs.length;
+  paintLightbox();
+}
+
+function closeLightbox(e) {
+  // Clicking the image itself should not close it, only the backdrop or the X.
+  if (e && e.target && e.target.id === 'lb-img') return;
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('lightbox')?.classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') stepLightbox(null, -1);
+  if (e.key === 'ArrowRight') stepLightbox(null, 1);
+});
 
 function buildCard(p) {
   const sid = safeId(p.id);
@@ -1028,10 +1220,11 @@ function buildCard(p) {
     }
     return imgs;
   })();
-  _cards[sid] = { variants, options, selected: initSelected };
+  _cards[sid] = { variants, options, selected: initSelected, images: allImages };
 
   const mainImgHtml = mainImg
-    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}">`
+    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}"
+         onclick="openLightbox('${sid}')" title="Click to enlarge">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
   // Thumbnail strip, cap at 6, show overflow count
@@ -1045,7 +1238,8 @@ function buildCard(p) {
           onclick="selectThumb(this,'${sid}')">
           <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
         </button>`).join('')}
-        ${extraImgs > 0 ? `<div class="thumb-count">+${extraImgs}</div>` : ''}
+        ${extraImgs > 0 ? `<button class="thumb-count" onclick="openLightbox('${sid}')"
+          title="View all ${allImages.length} photos">+${extraImgs}</button>` : ''}
       </div>`
     : '';
 
@@ -1091,7 +1285,7 @@ function buildCard(p) {
     const initSize  = initSelected[sizeOpt.name];
     sizeHtml = `<div class="option-label">Size: <span class="opt-current" id="slabel-${sid}">${esc(initSize)}</span></div>
       <div class="size-picker" id="spicker-${sid}">
-        ${sizeOpt.values.map(sv => {
+        ${sortSizes(sizeOpt.values).map(sv => {
           const ok = variants.some(v => {
             const hasSize  = v.selectedOptions?.some(o => o.name === sizeOpt.name && o.value === sv);
             const hasColor = !colorOpt || !initColor || v.selectedOptions?.some(o => o.name === colorOpt.name && o.value === initColor);
@@ -1127,7 +1321,7 @@ function buildCard(p) {
   })();
 
   return `
-    <div class="product-card">
+    <div class="product-card" data-cat="${categoryOf(p)}">
       <div class="product-img-wrap">${mainImgHtml}</div>
       ${thumbsHtml}
       <div class="product-name">${esc(p.title)}</div>
