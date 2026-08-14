@@ -1228,6 +1228,26 @@ const MERGE_GROUPS = [
       { product: 'Bob Davis Trucker Cap - Red Embroidered',   label: 'Red'   } ] },
 ];
 
+/* Which colour a product opens on, in the grid and on its product page.
+
+   Without an entry here the default is simply whichever variant Shopify happens to
+   return first, which Printful controls and can reshuffle on any re-push. Keyed by
+   exact product title, same as MERGE_GROUPS, so a re-push cannot silently change the
+   shirt every visitor sees first. An unlisted product keeps Shopify's order, and a
+   colour that no longer exists is ignored rather than breaking the page. */
+const DEFAULT_COLOR = {
+  // 'BD Logo Trucker Cap': 'Black',
+  // '2 Dolla Bill T-Shirt': 'Black',
+};
+
+function defaultColorFor(p, options) {
+  const want = DEFAULT_COLOR[p.title];
+  if (!want) return null;
+  const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
+  if (!colorOpt || !colorOpt.values.includes(want)) return null;
+  return { [colorOpt.name]: want };
+}
+
 function mergeProducts(products) {
   const byTitle = new Map(products.map(p => [p.title, p]));
   const consumed = new Set();
@@ -1434,7 +1454,13 @@ function buildGridCard(p) {
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
   const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
-  const hero = variants[0]?.image || p.images.edges[0]?.node || null;
+  // Grid hero follows the same default, so the card and its product page agree.
+  const want = defaultColorFor(p, options);
+  const heroVariant = want
+    ? variants.find(v => Object.entries(want).every(([n, val]) =>
+        v.selectedOptions?.some(o => o.name === n && o.value === val))) || variants[0]
+    : variants[0];
+  const hero = heroVariant?.image || p.images.edges[0]?.node || null;
 
   // One swatch per colour, using that colour's own photo. Baymard's finding is that
   // hiding swatches behind a "+N more" on list items is a common mobile failure, so
@@ -1587,9 +1613,10 @@ function buildProductPage(p, preselect) {
   // Seed defaults from Printful's chosen default variant, then apply any override
   // (used when switching embroidery colour, which rebuilds the card).
   let seedVariant = firstVariant;
-  if (preselect) {
+  const wanted = preselect || defaultColorFor(p, options);
+  if (wanted) {
     seedVariant = variants.find(v =>
-      Object.entries(preselect).every(([n, val]) =>
+      Object.entries(wanted).every(([n, val]) =>
         v.selectedOptions?.some(o => o.name === n && o.value === val))) || firstVariant;
   }
   const initSelected = {};
