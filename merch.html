@@ -1201,7 +1201,9 @@ footer {
 </nav>
 
 <p class="section-label">Merch</p>
-<p class="trust-line">Designed &amp; sold by Bob Davis &middot; Ships 3&ndash;5 business days</p>
+<!-- No delivery promise here. Timing varies by product (embroidery takes longer than
+     print) and the honest per-product figure lives on each product page. -->
+<p class="trust-line">Designed &amp; sold by Bob Davis &middot; Every item made to order</p>
 
 <div id="grid-view">
   <div class="filter-row" id="filter-row" hidden></div>
@@ -1355,6 +1357,22 @@ const CATEGORIES = [
   { key: 'hats',      label: 'Hats',      test: s => /cap|hat|trucker|beanie|snapback/.test(s) },
   { key: 'drinkware', label: 'Drinkware', test: s => /bottle|tumbler|mug|glass|koozie|cooler|drinkware/.test(s) },
 ];
+/* Production time before anything ships, from Printful's published fulfillment ranges:
+   2-5 business days for DTG apparel, 3-7 for embroidery, 1-3 for non-print items. US
+   transit adds roughly 3-8 business days on top.
+
+   The old copy said "ships 3-5 business days" for everything, which understated the
+   embroidered caps even before transit, and read to a shopper as a delivery estimate
+   when door to door is really 5-13 business days. State production honestly and let
+   Shopify's checkout, which has automated delivery dates turned on, give the arrival
+   estimate: that is the only figure guaranteed to match what they see next. */
+const MAKE_TIME = {
+  shirts:    'printed in 2 to 5 business days',
+  hats:      'embroidered in 3 to 7 business days',
+  drinkware: 'made in 1 to 3 business days',
+  other:     'made to order',
+};
+
 function categoryOf(p) {
   const hay = [p.productType, (p.tags || []).join(' '), p.title].filter(Boolean).join(' ').toLowerCase();
   return (CATEGORIES.find(c => c.test(hay)) || { key: 'other' }).key;
@@ -2125,10 +2143,11 @@ function buildProductPage(p, preselect) {
           <h1 class="pdp-title">${esc(p.title)}</h1>
           <div class="pdp-price">${price}</div>
           <!-- "flat rate" implied one price no matter how many items, which is not true:
-               Printful charges per additional item. Shopify works the real number out at
-               checkout from the shipping profile, and that is the only figure guaranteed
-               to match what the shopper pays, so say exactly that and nothing more. -->
-          <p class="pdp-ship">Made to order &middot; ships in 3&ndash;5 business days &middot; shipping calculated at checkout</p>
+               Printful charges per additional item. Neither cost nor arrival date can be
+               known here, and only Shopify's checkout figures are guaranteed to match
+               what the shopper sees next, so quote production time and defer the rest. -->
+          <p class="pdp-ship">Made to order, ${MAKE_TIME[categoryOf(p)] || MAKE_TIME.other},
+            then shipped &middot; delivery and shipping cost calculated at checkout</p>
           ${embHtml}${colorHtml}${sizeHtml}${legacyHtml}
           ${sizeGuideMarkup(p, sid)}
           <button class="add-btn pdp-add" id="add-${sid}"
