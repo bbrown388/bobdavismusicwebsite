@@ -30,7 +30,7 @@ const CATALOG_QUERY = `{
         id title description descriptionHtml productType tags
         priceRange { minVariantPrice { amount currencyCode } }
         options { name values }
-        images(first: 60) { edges { node { url altText } } }
+        images(first: 60) { edges { node { url altText width height } } }
         variants(first: 100) {
           edges {
             node {
@@ -1545,8 +1545,19 @@ function angleOf(url, colorValues) {
 function canonicalOrder(p, colorValues) {
   const angles = [], all = (p.images?.edges || []).map(e => e.node);
   all.forEach(im => { const a = angleOf(im.url, colorValues); if (!angles.includes(a)) angles.push(a); });
+  /* Third key is pixel area. Printful gives each colour one 1000x1000 image, the variant's
+     primary mockup, and ships the rest at 2000x2000. Several of those share the exact same
+     angle token (three files per cap colour are all "<colour>-front-<hash>"), so the angle
+     key cannot separate them and the sort would otherwise fall back to Printful's own
+     order, which differs per colour. Area at least pins the primary mockup to first, so
+     every colour opens on the same kind of shot.
+
+     It cannot order the same-size, same-angle photos among themselves. Nothing in the
+     Storefront API distinguishes them, so that ordering has to be fixed at the source by
+     selecting mockups in a consistent order per colour in Printful. */
   return im => [
     angles.indexOf(angleOf(im.url, colorValues)),
+    (im.width || 0) * (im.height || 0),
     colorValues.indexOf(colorOfImage(im.url, colorValues)),
   ];
 }
@@ -1577,7 +1588,7 @@ function galleryFor(p, options, selected) {
     const key = canonicalOrder(p, colorOpt.values);
     imgs = imgs.slice().sort((a, b) => {
       const ka = key(a), kb = key(b);
-      return (ka[0] - kb[0]) || (ka[1] - kb[1]);
+      return (ka[0] - kb[0]) || (ka[1] - kb[1]) || (ka[2] - kb[2]);
     });
   }
   return imgs;
