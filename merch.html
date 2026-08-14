@@ -1,6 +1,59 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Open the connections the page cannot render without, before the parser reaches the
+     script that needs them. The catalogue call goes to the Shopify API and every photo
+     comes from their CDN, so paying DNS and TLS setup up front takes that latency off
+     the first paint rather than adding to it. -->
+<link rel="preconnect" href="https://6anqxb-rt.myshopify.com" crossorigin>
+<link rel="preconnect" href="https://cdn.shopify.com" crossorigin>
+<link rel="dns-prefetch" href="https://cdn.shopify.com">
+
+<script>
+/* Fire the catalogue request here, at the top of the document, rather than where it is
+   consumed at the bottom. Nothing on this page can render without it, and it used to be
+   requested only after the parser had worked through the whole stylesheet and script,
+   so the connection sat idle through all of that. Starting it now overlaps the round
+   trip with parsing, which is the only lever available on a first visit, where there is
+   no cached catalogue to fall back on.
+
+   These constants live here because the request needs them; the main script below reuses
+   the same ones rather than redeclaring them. */
+const SHOP_DOMAIN = '6anqxb-rt.myshopify.com';
+const STOREFRONT_TOKEN = '2a7e0382b6e5915658809f9549bb28a7';
+const GQL = `https://${SHOP_DOMAIN}/api/2024-01/graphql.json`;
+
+const CATALOG_QUERY = `{
+  products(first: 20, sortKey: CREATED_AT, reverse: true) {
+    edges {
+      node {
+        id title description productType tags
+        priceRange { minVariantPrice { amount currencyCode } }
+        options { name values }
+        images(first: 60) { edges { node { url altText } } }
+        variants(first: 100) {
+          edges {
+            node {
+              id title availableForSale
+              selectedOptions { name value }
+              image { url altText }
+              priceV2 { amount currencyCode }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+// Resolves to the parsed body, or an object carrying the error for loadProducts to handle.
+window.__catalogRequest = fetch(GQL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': STOREFRONT_TOKEN },
+  body: JSON.stringify({ query: CATALOG_QUERY }),
+}).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+  .catch(err => ({ __error: err }));
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Merch | Bob Davis Music</title>
@@ -147,6 +200,28 @@ body {
 @media (max-width: 500px) {
   .lb-prev, .lb-next { width: 40px; height: 40px; font-size: 20px; }
 }
+
+/* ── Loading skeletons ────────────── */
+.skeleton-card {
+  border: 1px solid rgba(255,215,0,0.12);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.sk {
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.10) 37%, rgba(255,255,255,0.05) 63%);
+  background-size: 400% 100%;
+  border-radius: 6px;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+.sk-img  { width: 100%; aspect-ratio: 4/3; }
+.sk-line { width: 70%; height: 13px; }
+.sk-line.short { width: 40%; }
+@keyframes sk-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 
 /* ── Product page ─────────────────── */
 /* body is a centred flex column, so a child with no width constraint sizes to its
@@ -825,6 +900,12 @@ footer {
   }
   .filter-btn .count { opacity: 0.75; }
 
+  .skeleton-card { border-color: rgba(154,104,56,0.18); }
+  .sk {
+    background: linear-gradient(90deg, rgba(139,105,20,0.08) 25%, rgba(139,105,20,0.16) 37%, rgba(139,105,20,0.08) 63%);
+    background-size: 400% 100%;
+  }
+
   .pdp-back, .pdp-viewall { color: #9a6838; }
   .pdp-title { color: #1e0e06; }
   .pdp-price { color: #5a3400; }
@@ -1086,8 +1167,15 @@ footer {
 
 <div id="grid-view">
   <div class="filter-row" id="filter-row" hidden></div>
+  <!-- Skeletons, not the word "Loading". On a first visit there is no cached catalogue,
+       so something has to occupy the wait; a grid of card-shaped placeholders reads as a
+       shop that is nearly ready instead of a blank page with a status message, and it
+       stops the layout jumping when the real cards arrive. -->
   <div class="product-grid" id="product-grid">
-    <p class="status-msg">Loading...</p>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
   </div>
   <p class="status-msg" id="empty-cat" hidden>Nothing in this category yet.</p>
 </div>
@@ -1127,9 +1215,8 @@ footer {
 <footer>&#169; Bob Davis Music</footer>
 
 <script>
-const SHOP_DOMAIN = '6anqxb-rt.myshopify.com';
-const STOREFRONT_TOKEN = '2a7e0382b6e5915658809f9549bb28a7';
-const GQL = `https://${SHOP_DOMAIN}/api/2024-01/graphql.json`;
+// SHOP_DOMAIN, STOREFRONT_TOKEN and GQL are declared in the head, where the catalogue
+// request is kicked off before this script is even parsed.
 
 let cartId = localStorage.getItem('bd_cart_id');
 let currentCart = null;
@@ -1156,35 +1243,56 @@ function fmt(amount, currency) {
 
 // ── Products ──────────────────────────────────────────────
 
-async function loadProducts() {
+/* Render from the last known catalogue immediately, then refresh in the background.
+   The Shopify round trip is the entire "Loading..." window, so a returning visitor
+   should never see it. Cached for a day; a shorter window would refetch constantly and
+   a longer one risks showing a price that has changed. The background refresh always
+   runs, so a stale render is corrected within the same visit. */
+const CATALOG_KEY = 'bd_catalog_v1';
+const CATALOG_TTL = 24 * 60 * 60 * 1000;
+
+function readCatalog() {
   try {
-    const data = await shopify(`{
-      products(first: 20, sortKey: CREATED_AT, reverse: true) {
-        edges {
-          node {
-            id title description productType tags
-            priceRange { minVariantPrice { amount currencyCode } }
-            options { name values }
-            images(first: 60) { edges { node { url altText } } }
-            variants(first: 100) {
-              edges {
-                node {
-                  id title availableForSale
-                  selectedOptions { name value }
-                  image { url altText }
-                  priceV2 { amount currencyCode }
-                }
-              }
-            }
-          }
-        }
-      }
-    }`);
-    renderProducts(mergeProducts(data.products.edges.map(e => e.node)));
+    const raw = localStorage.getItem(CATALOG_KEY);
+    if (!raw) return null;
+    const { at, products } = JSON.parse(raw);
+    if (!at || !Array.isArray(products) || Date.now() - at > CATALOG_TTL) return null;
+    return products;
+  } catch { return null; }
+}
+
+function writeCatalog(products) {
+  // Quota is ~5MB and the catalogue is large; failing to cache must never break the page.
+  try { localStorage.setItem(CATALOG_KEY, JSON.stringify({ at: Date.now(), products })); }
+  catch { try { localStorage.removeItem(CATALOG_KEY); } catch {} }
+}
+
+async function loadProducts() {
+  const cached = readCatalog();
+  if (cached) {
+    window.__renderSource = 'cache';
+    try { renderProducts(mergeProducts(cached)); } catch { /* fall through to the network */ }
+    window.__renderSource = 'network';
+  }
+  try {
+    // Await the request the head already started, rather than issuing a second one.
+    const json = await (window.__catalogRequest || shopify(CATALOG_QUERY).then(d => ({ data: d })));
+    if (json.__error) throw json.__error;
+    if (json.errors) throw new Error(json.errors[0].message);
+    const data = json.data;
+    const fresh = data.products.edges.map(e => e.node);
+    writeCatalog(fresh);
+    // Do not repaint over a product page the shopper already opened from cache.
+    const onProduct = /^#\/product\//.test(location.hash || '');
+    _products = mergeProducts(fresh);
+    if (!onProduct) renderProducts(_products);
   } catch (err) {
     console.error(err);
-    document.getElementById('product-grid').innerHTML = '';
-    document.getElementById('error-msg').hidden = false;
+    // A cached render is better than an error screen when the network is the problem.
+    if (!document.querySelector('.product-card')) {
+      document.getElementById('product-grid').innerHTML = '';
+      document.getElementById('error-msg').hidden = false;
+    }
   }
 }
 
@@ -1376,14 +1484,42 @@ function galleryFor(p, options, selected) {
 
 function thumbsMarkup(imgs, sid, activeUrl) {
   if (imgs.length < 2) return '';
+  /* Ask the CDN for the size actually shown. These render at 50px but were pulling the
+     2000px original, about 135KB each, so the tee's rail alone was ~3.8MB. 150px covers
+     a 3x screen and costs about 3KB. data-img-url keeps the ORIGINAL url, because every
+     comparison in the page matches on that. */
   return `<div class="img-thumbs pdp-thumbs" id="ithumbs-${sid}">
       ${imgs.map(img => `<button class="img-thumb${img.url === activeUrl ? ' active' : ''}"
         data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
         onclick="selectThumb(this,'${sid}')">
-        <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
+        <img src="${esc(cdnThumb(img.url, 150))}" alt="${esc(img.altText)}" loading="lazy">
       </button>`).join('')}
     </div>
     <button class="pdp-viewall" id="viewall-${sid}" onclick="openLightbox('${sid}')">View all ${imgs.length} photos</button>`;
+}
+
+/* The original url of whatever the hero is showing. src carries a CDN-resized variant,
+   so it can never be compared against the image list directly. */
+function heroRaw(sid) {
+  return document.getElementById('img-' + sid)?.dataset.raw || null;
+}
+
+/* Swap the hero without letting it go blank. Assigning src directly clears the element
+   while the new file downloads, which is the flash of nothing between colours. Decode
+   the replacement off-screen first, then swap; the old photo stays up until the new one
+   is ready. Costs no extra bandwidth, the browser fetches the same file either way. */
+function setHero(sid, img) {
+  const el = document.getElementById('img-' + sid);
+  if (!el || !img) return;
+  const url = cdnThumb(img.url, 1000);
+  el.dataset.raw = img.url;              // set immediately so state reads stay correct
+  el.alt = img.altText || '';
+  const pre = new Image();
+  const show = () => { el.src = url; el.classList.remove('fading'); };
+  pre.onload = show;
+  pre.onerror = show;                     // never strand the shopper on a stale photo
+  pre.src = url;
+  if (pre.complete) show();               // already cached, swap now, no flicker at all
 }
 
 /* Show the nth photo of the current gallery, updating the hero and the active thumb. */
@@ -1392,8 +1528,7 @@ function jumpGalleryTo(sid, n) {
   const imgs = card?.images || [];
   if (!imgs.length) return;
   const pick = imgs[Math.min(Math.max(0, n), imgs.length - 1)];
-  const hero = document.getElementById('img-' + sid);
-  if (hero && pick) { hero.src = pick.url; hero.alt = pick.altText || ''; }
+  setHero(sid, pick);
   document.querySelectorAll('#ithumbs-' + sid + ' .img-thumb').forEach(b =>
     b.classList.toggle('active', b.dataset.imgUrl === pick.url));
 }
@@ -1408,7 +1543,6 @@ function jumpGalleryTo(sid, n) {
 function refreshGallery(sid) {
   const card = _cards[sid];
   if (!card) return;
-  const heroEl = document.getElementById('img-' + sid);
   const rail = document.getElementById('ithumbs-' + sid);
   const wrap = rail?.parentElement;
 
@@ -1442,10 +1576,7 @@ function refreshGallery(sid) {
   }
 
   const pick = imgs[at];
-  if (heroEl && pick) {
-    heroEl.src = pick.url;
-    heroEl.alt = pick.altText || '';
-  }
+  setHero(sid, pick);
 
   rail.remove();
   document.getElementById('viewall-' + sid)?.remove();
@@ -1465,6 +1596,8 @@ function renderProducts(products) {
     grid.innerHTML = '<p class="status-msg">No products yet, check back soon.</p>';
     return;
   }
+  // When the grid first painted, and whether that came from cache or the network.
+  if (!window.__firstPaint) window.__firstPaint = { at: Math.round(performance.now()), source: window.__renderSource || 'network' };
   _products = products;
   if (products.length === 1) grid.classList.add('single');
   grid.innerHTML = products.map(buildGridCard).join('');
@@ -1560,7 +1693,7 @@ function buildGridCard(p) {
       swatches = `<div class="g-swatches">${[...seen].map(([val, v]) =>
         `<button class="g-swatch" title="${esc(val)}" aria-label="${esc(val)}"
            onclick="event.stopPropagation();openProduct('${sid}',{${esc(JSON.stringify(colorOpt.name))}:${esc(JSON.stringify(val))}})">
-           <img src="${esc(v.image.url)}" alt="" loading="lazy"></button>`).join('')}
+           <img src="${esc(cdnThumb(v.image.url, 90))}" alt="" loading="lazy"></button>`).join('')}
         </div>`;
     }
   }
@@ -1573,7 +1706,7 @@ function buildGridCard(p) {
          onclick="openProduct('${sid}')" role="link" tabindex="0"
          onkeydown="if(event.key==='Enter')openProduct('${sid}')">
       <div class="product-img-wrap">
-        ${hero ? `<img class="product-img" src="${esc(hero.url)}" alt="${esc(hero.altText || p.title)}" loading="lazy">`
+        ${hero ? `<img class="product-img" src="${esc(cdnThumb(hero.url, 600))}" alt="${esc(hero.altText || p.title)}" loading="lazy">`
                : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`}
       </div>
       <div class="product-name">${esc(p.title)}</div>
@@ -1650,7 +1783,7 @@ let _lb = { imgs: [], i: 0 };
 function openLightbox(sid) {
   const card = _cards[sid];
   if (!card || !card.images || !card.images.length) return;
-  const current = document.getElementById('img-' + sid)?.getAttribute('src');
+  const current = heroRaw(sid);
   const at = card.images.findIndex(im => im.url === current);
   _lb = { imgs: card.images, i: at === -1 ? 0 : at };
   paintLightbox();
@@ -1661,7 +1794,7 @@ function openLightbox(sid) {
 function paintLightbox() {
   const im = _lb.imgs[_lb.i];
   const el = document.getElementById('lb-img');
-  el.src = im.url;
+  el.src = cdnThumb(im.url, 1600);
   el.alt = im.altText || '';
   document.getElementById('lb-count').textContent = `${_lb.i + 1} / ${_lb.imgs.length}`;
 
@@ -1673,7 +1806,7 @@ function paintLightbox() {
   if (strip.dataset.key !== key) {
     strip.dataset.key = key;
     strip.innerHTML = _lb.imgs.map((img, n) =>
-      `<button onclick="jumpLightbox(${n})"><img src="${esc(img.url)}" alt="" loading="lazy"></button>`).join('');
+      `<button onclick="jumpLightbox(${n})"><img src="${esc(cdnThumb(img.url, 150))}" alt="" loading="lazy"></button>`).join('');
   }
   [...strip.children].forEach((b, n) => b.classList.toggle('active', n === _lb.i));
   strip.children[_lb.i]?.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -1740,8 +1873,12 @@ function buildProductPage(p, preselect) {
   const allImages = galleryFor(p, options, initSelected);
   _cards[sid] = { variants, options, selected: initSelected, images: allImages, product: p };
 
+  /* The hero renders about 533px wide; 1000 covers a 2x screen at a third of the bytes
+     of the 2000px original. data-raw carries the untouched url, which openLightbox and
+     the gallery use to work out which photo is on screen. */
   const mainImgHtml = mainImg
-    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}"
+    ? `<img class="product-img" id="img-${sid}" src="${esc(cdnThumb(mainImg.url, 1000))}"
+         data-raw="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}"
          onclick="openLightbox('${sid}')" title="Click to enlarge">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
@@ -2063,14 +2200,18 @@ function selectThumb(btn, sid) {
 
 function swapMainImage(sid, url, alt, skipThumbSync) {
   const imgEl = document.getElementById(`img-${sid}`);
-  if (!imgEl || imgEl.src === url) return;
+  // Compare against the ORIGINAL url: src now carries a CDN-resized variant, so
+  // comparing src would never match and would re-fetch the full-size original.
+  if (!imgEl || imgEl.dataset.raw === url) return;
+  const sized = cdnThumb(url, 1000);
   imgEl.classList.add('fading');
   const start = Date.now();
   const preload = new Image();
   preload.onload = preload.onerror = () => {
     const wait = Math.max(0, 150 - (Date.now() - start));
     setTimeout(() => {
-      imgEl.src = url;
+      imgEl.src = sized;
+      imgEl.dataset.raw = url;
       imgEl.alt = alt || '';
       imgEl.classList.remove('fading');
       if (!skipThumbSync) {
