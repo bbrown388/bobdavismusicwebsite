@@ -1678,8 +1678,20 @@ function warmOtherColors(sid) {
       if (imgs.length) neighbours.push(imgs);
     }
   }
+  /* Which photo a neighbour opens on depends on where the shopper is NOW, because a
+     switch preserves their position in the gallery. Warming each neighbour's first photo
+     was only right when they happened to be on the first photo; anyone looking at the
+     third shot switched and then waited for the third shot to download. Warm the photo at
+     the CURRENT index instead, which is what a click would actually display. */
+  const rail = document.getElementById('ithumbs-' + sid);
+  const at = rail
+    ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
+    : 0;
+
   // Thumbnails first: they are what a switch rebuilds, and they are ~3KB each.
   neighbours.forEach(imgs => imgs.forEach(im => queue.push([im.url, 150])));
+  neighbours.forEach(imgs => queue.push([imgs[Math.min(at, imgs.length - 1)].url, 1000]));
+  // Then the landing photo for someone who is on the first shot, the common case.
   neighbours.forEach(imgs => queue.push([imgs[0].url, 1000]));
 
   warmQueue(sid, card, queue);
@@ -2004,8 +2016,13 @@ function selectEmbroidery(sid, val) {
     ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
     : 0;
 
-  el.outerHTML = buildProductPage(card.product, keep);
-  jumpGalleryTo(sid, wasAt);
+  /* Work out which photo the new thread colour should open on BEFORE rebuilding, and
+     hand it to the builder. Rebuilding first and correcting afterwards is what produced
+     the flash: the page painted the default shot, then swapped to this one. */
+  const nextImgs = galleryFor(card.product, card.options, keep);
+  const target = nextImgs[Math.min(wasAt, Math.max(0, nextImgs.length - 1))];
+
+  el.outerHTML = buildProductPage(card.product, keep, target?.url);
   // The neighbours changed with the thread colour, so re-warm what is now one click away.
   warmOtherColors(sid);
 }
@@ -2077,7 +2094,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') stepLightbox(null, 1);
 });
 
-function buildProductPage(p, preselect) {
+/* heroUrl lets the caller name the photo to open on. Without it a rebuild always paints
+   the variant's default shot, so switching embroidery flashed that default before
+   jumping to the photo the shopper was actually looking at. */
+function buildProductPage(p, preselect, heroUrl) {
   const sid = safeId(p.id);
   const variants = p.variants.edges.map(e => e.node);
   const options = p.options || [];
@@ -2110,9 +2130,15 @@ function buildProductPage(p, preselect) {
   if (!isDefault && seedVariant?.selectedOptions) {
     seedVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
   }
-  const mainImg = seedVariant?.image || null;
+  let mainImg = seedVariant?.image || null;
   // Thumbnail list: put the selected image first so it appears leftmost
   const allImages = galleryFor(p, options, initSelected);
+  // Open on the requested photo when it exists in this gallery, so the page paints the
+  // right image once instead of painting a default and then correcting itself.
+  if (heroUrl) {
+    const want = allImages.find(im => im.url === heroUrl);
+    if (want) mainImg = want;
+  }
   _cards[sid] = { variants, options, selected: initSelected, images: allImages, product: p };
 
   /* The hero renders about 533px wide; 1000 covers a 2x screen at a third of the bytes
@@ -2388,6 +2414,9 @@ function selectThumb(btn, sid) {
     .forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt, true);
+  // Moving down the rail changes which photo every neighbour would open on, so the warm
+  // set has to follow. Already-fetched urls are skipped, so this is cheap to repeat.
+  warmOtherColors(sid);
 
   // Picking a photo should also pick the thing in the photo. This used to scan the
   // colour pills only, so hats followed the gallery but the can cooler -- whose only
