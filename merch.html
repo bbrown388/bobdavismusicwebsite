@@ -1,6 +1,59 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Open the connections the page cannot render without, before the parser reaches the
+     script that needs them. The catalogue call goes to the Shopify API and every photo
+     comes from their CDN, so paying DNS and TLS setup up front takes that latency off
+     the first paint rather than adding to it. -->
+<link rel="preconnect" href="https://6anqxb-rt.myshopify.com" crossorigin>
+<link rel="preconnect" href="https://cdn.shopify.com" crossorigin>
+<link rel="dns-prefetch" href="https://cdn.shopify.com">
+
+<script>
+/* Fire the catalogue request here, at the top of the document, rather than where it is
+   consumed at the bottom. Nothing on this page can render without it, and it used to be
+   requested only after the parser had worked through the whole stylesheet and script,
+   so the connection sat idle through all of that. Starting it now overlaps the round
+   trip with parsing, which is the only lever available on a first visit, where there is
+   no cached catalogue to fall back on.
+
+   These constants live here because the request needs them; the main script below reuses
+   the same ones rather than redeclaring them. */
+const SHOP_DOMAIN = '6anqxb-rt.myshopify.com';
+const STOREFRONT_TOKEN = '2a7e0382b6e5915658809f9549bb28a7';
+const GQL = `https://${SHOP_DOMAIN}/api/2024-01/graphql.json`;
+
+const CATALOG_QUERY = `{
+  products(first: 20, sortKey: CREATED_AT, reverse: true) {
+    edges {
+      node {
+        id title description descriptionHtml productType tags
+        priceRange { minVariantPrice { amount currencyCode } }
+        options { name values }
+        images(first: 60) { edges { node { url altText } } }
+        variants(first: 100) {
+          edges {
+            node {
+              id title availableForSale
+              selectedOptions { name value }
+              image { url altText }
+              priceV2 { amount currencyCode }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+// Resolves to the parsed body, or an object carrying the error for loadProducts to handle.
+window.__catalogRequest = fetch(GQL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': STOREFRONT_TOKEN },
+  body: JSON.stringify({ query: CATALOG_QUERY }),
+}).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+  .catch(err => ({ __error: err }));
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Merch | Bob Davis Music</title>
@@ -147,6 +200,61 @@ body {
 @media (max-width: 500px) {
   .lb-prev, .lb-next { width: 40px; height: 40px; font-size: 20px; }
 }
+
+/* ── Size guide + policy ──────────── */
+.size-guide, .pdp-policy {
+  margin-top: 18px;
+  border-top: 1px solid rgba(255,215,0,0.14);
+  padding-top: 14px;
+  font-size: 13px;
+  color: #b49a86;
+}
+.size-guide summary, .pdp-policy summary {
+  cursor: pointer;
+  color: #C9A227;
+  letter-spacing: 0.04em;
+  list-style: none;
+  padding: 4px 0;
+}
+.size-guide summary::-webkit-details-marker, .pdp-policy summary::-webkit-details-marker { display: none; }
+.size-guide summary::before, .pdp-policy summary::before { content: '+ '; }
+.size-guide[open] summary::before, .pdp-policy[open] summary::before { content: '\2212 '; }
+.size-guide summary:hover, .pdp-policy summary:hover { text-decoration: underline; }
+.size-guide-scroll { overflow-x: auto; margin-top: 10px; }
+.size-guide table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.size-guide th, .size-guide td {
+  border: 1px solid rgba(255,215,0,0.16);
+  padding: 6px 9px;
+  text-align: center;
+  white-space: nowrap;
+}
+.size-guide thead th { color: #E8DCC8; font-weight: normal; letter-spacing: 0.04em; }
+.size-guide tbody th { color: #E8DCC8; font-weight: normal; }
+.size-guide-note { margin-top: 8px; font-style: italic; opacity: 0.75; }
+.pdp-policy p { margin-top: 10px; line-height: 1.65; }
+.pdp-policy strong { color: #E8DCC8; }
+
+/* ── Loading skeletons ────────────── */
+.skeleton-card {
+  border: 1px solid rgba(255,215,0,0.12);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.sk {
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.10) 37%, rgba(255,255,255,0.05) 63%);
+  background-size: 400% 100%;
+  border-radius: 6px;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+.sk-img  { width: 100%; aspect-ratio: 4/3; }
+.sk-line { width: 70%; height: 13px; }
+.sk-line.short { width: 40%; }
+@keyframes sk-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 
 /* ── Product page ─────────────────── */
 /* body is a centred flex column, so a child with no width constraint sizes to its
@@ -825,6 +933,17 @@ footer {
   }
   .filter-btn .count { opacity: 0.75; }
 
+  .size-guide, .pdp-policy { color: #4a2e18; border-top-color: rgba(154,104,56,0.25); }
+  .size-guide summary, .pdp-policy summary { color: #9a6838; }
+  .size-guide th, .size-guide td { border-color: rgba(154,104,56,0.28); }
+  .size-guide thead th, .size-guide tbody th, .pdp-policy strong { color: #1e0e06; }
+
+  .skeleton-card { border-color: rgba(154,104,56,0.18); }
+  .sk {
+    background: linear-gradient(90deg, rgba(139,105,20,0.08) 25%, rgba(139,105,20,0.16) 37%, rgba(139,105,20,0.08) 63%);
+    background-size: 400% 100%;
+  }
+
   .pdp-back, .pdp-viewall { color: #9a6838; }
   .pdp-title { color: #1e0e06; }
   .pdp-price { color: #5a3400; }
@@ -1082,12 +1201,21 @@ footer {
 </nav>
 
 <p class="section-label">Merch</p>
-<p class="trust-line">Designed &amp; sold by Bob Davis &middot; Ships 3&ndash;5 business days</p>
+<!-- No delivery promise here. Timing varies by product (embroidery takes longer than
+     print) and the honest per-product figure lives on each product page. -->
+<p class="trust-line">Designed &amp; sold by Bob Davis &middot; Every item made to order</p>
 
 <div id="grid-view">
   <div class="filter-row" id="filter-row" hidden></div>
+  <!-- Skeletons, not the word "Loading". On a first visit there is no cached catalogue,
+       so something has to occupy the wait; a grid of card-shaped placeholders reads as a
+       shop that is nearly ready instead of a blank page with a status message, and it
+       stops the layout jumping when the real cards arrive. -->
   <div class="product-grid" id="product-grid">
-    <p class="status-msg">Loading...</p>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
+    <div class="skeleton-card"><div class="sk sk-img"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
   </div>
   <p class="status-msg" id="empty-cat" hidden>Nothing in this category yet.</p>
 </div>
@@ -1095,7 +1223,8 @@ footer {
 <div id="product-view" hidden></div>
 <p class="error-msg" id="error-msg" hidden>Something went wrong loading the store. Try refreshing.</p>
 
-<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)"
+     role="dialog" aria-modal="true" aria-label="Product photos" aria-hidden="true">
   <button class="lb-close" onclick="closeLightbox()" aria-label="Close">&#10005;</button>
   <button class="lb-prev" onclick="stepLightbox(event,-1)" aria-label="Previous">&#8249;</button>
   <img id="lb-img" src="" alt="">
@@ -1106,10 +1235,11 @@ footer {
 
 <div class="cart-overlay" id="cart-overlay" onclick="closeCart()"></div>
 
-<div class="cart-drawer" id="cart-drawer">
+<div class="cart-drawer" id="cart-drawer" role="dialog" aria-modal="true"
+     aria-labelledby="cart-title" aria-hidden="true">
   <div class="cart-header">
-    <span>Your Cart</span>
-    <button class="cart-close" onclick="closeCart()">&#10005;</button>
+    <span id="cart-title">Your Cart</span>
+    <button class="cart-close" onclick="closeCart()" aria-label="Close cart">&#10005;</button>
   </div>
   <div class="cart-items" id="cart-items"></div>
   <p class="cart-empty" id="cart-empty">Your cart is empty.</p>
@@ -1127,9 +1257,8 @@ footer {
 <footer>&#169; Bob Davis Music</footer>
 
 <script>
-const SHOP_DOMAIN = '6anqxb-rt.myshopify.com';
-const STOREFRONT_TOKEN = '2a7e0382b6e5915658809f9549bb28a7';
-const GQL = `https://${SHOP_DOMAIN}/api/2024-01/graphql.json`;
+// SHOP_DOMAIN, STOREFRONT_TOKEN and GQL are declared in the head, where the catalogue
+// request is kicked off before this script is even parsed.
 
 let cartId = localStorage.getItem('bd_cart_id');
 let currentCart = null;
@@ -1156,35 +1285,63 @@ function fmt(amount, currency) {
 
 // ── Products ──────────────────────────────────────────────
 
-async function loadProducts() {
+/* Render from the last known catalogue immediately, then refresh in the background.
+   The Shopify round trip is the entire "Loading..." window, so a returning visitor
+   should never see it. Cached for a day; a shorter window would refetch constantly and
+   a longer one risks showing a price that has changed. The background refresh always
+   runs, so a stale render is corrected within the same visit. */
+const CATALOG_KEY = 'bd_catalog_v1';
+const CATALOG_TTL = 24 * 60 * 60 * 1000;
+
+function readCatalog() {
   try {
-    const data = await shopify(`{
-      products(first: 20, sortKey: CREATED_AT, reverse: true) {
-        edges {
-          node {
-            id title description productType tags
-            priceRange { minVariantPrice { amount currencyCode } }
-            options { name values }
-            images(first: 60) { edges { node { url altText } } }
-            variants(first: 100) {
-              edges {
-                node {
-                  id title availableForSale
-                  selectedOptions { name value }
-                  image { url altText }
-                  priceV2 { amount currencyCode }
-                }
-              }
-            }
-          }
-        }
-      }
-    }`);
-    renderProducts(mergeProducts(data.products.edges.map(e => e.node)));
+    const raw = localStorage.getItem(CATALOG_KEY);
+    if (!raw) return null;
+    const { at, products } = JSON.parse(raw);
+    if (!at || !Array.isArray(products) || Date.now() - at > CATALOG_TTL) return null;
+    return products;
+  } catch { return null; }
+}
+
+function writeCatalog(products) {
+  // Quota is ~5MB and the catalogue is large; failing to cache must never break the page.
+  try { localStorage.setItem(CATALOG_KEY, JSON.stringify({ at: Date.now(), products })); }
+  catch { try { localStorage.removeItem(CATALOG_KEY); } catch {} }
+}
+
+async function loadProducts() {
+  const cached = readCatalog();
+  if (cached) {
+    window.__renderSource = 'cache';
+    try { renderProducts(mergeProducts(cached)); } catch { /* fall through to the network */ }
+    window.__renderSource = 'network';
+  }
+  try {
+    // Await the request the head already started, rather than issuing a second one.
+    const json = await (window.__catalogRequest || shopify(CATALOG_QUERY).then(d => ({ data: d })));
+    if (json.__error) throw json.__error;
+    if (json.errors) throw new Error(json.errors[0].message);
+    const data = json.data;
+    const fresh = data.products.edges.map(e => e.node);
+    writeCatalog(fresh);
+    _products = mergeProducts(fresh);
+
+    /* Skip the repaint ONLY when there is already something on screen to preserve, i.e.
+       a product page drawn from cache. Testing the hash alone was wrong: on a cold load
+       of a direct product link there is no cached render, so skipping meant nothing was
+       ever drawn and route() never ran, because route() is only called from
+       renderProducts. The page sat on skeletons forever. Loading the grid first seeded
+       the cache, which is why the same link worked on a second visit. */
+    const alreadyDrawn = !!document.querySelector('.product-card, .pdp');
+    const onProduct = /^#\/product\//.test(location.hash || '');
+    if (!(alreadyDrawn && onProduct)) renderProducts(_products);
   } catch (err) {
     console.error(err);
-    document.getElementById('product-grid').innerHTML = '';
-    document.getElementById('error-msg').hidden = false;
+    // A cached render is better than an error screen when the network is the problem.
+    if (!document.querySelector('.product-card')) {
+      document.getElementById('product-grid').innerHTML = '';
+      document.getElementById('error-msg').hidden = false;
+    }
   }
 }
 
@@ -1207,6 +1364,22 @@ const CATEGORIES = [
   { key: 'hats',      label: 'Hats',      test: s => /cap|hat|trucker|beanie|snapback/.test(s) },
   { key: 'drinkware', label: 'Drinkware', test: s => /bottle|tumbler|mug|glass|koozie|cooler|drinkware/.test(s) },
 ];
+/* Production time before anything ships, from Printful's published fulfillment ranges:
+   2-5 business days for DTG apparel, 3-7 for embroidery, 1-3 for non-print items. US
+   transit adds roughly 3-8 business days on top.
+
+   The old copy said "ships 3-5 business days" for everything, which understated the
+   embroidered caps even before transit, and read to a shopper as a delivery estimate
+   when door to door is really 5-13 business days. State production honestly and let
+   Shopify's checkout, which has automated delivery dates turned on, give the arrival
+   estimate: that is the only figure guaranteed to match what they see next. */
+const MAKE_TIME = {
+  shirts:    'printed in 2 to 5 business days',
+  hats:      'embroidered in 3 to 7 business days',
+  drinkware: 'made in 1 to 3 business days',
+  other:     'made to order',
+};
+
 function categoryOf(p) {
   const hay = [p.productType, (p.tags || []).join(' '), p.title].filter(Boolean).join(' ').toLowerCase();
   return (CATEGORIES.find(c => c.test(hay)) || { key: 'other' }).key;
@@ -1303,6 +1476,42 @@ function mergeProducts(products) {
   return [...merged, ...rest];
 }
 
+/* Pull the measurement table out of Shopify's description HTML. Printful ships one for
+   garments (the tee has an eight row table) and not for everything, so this returns null
+   when there is nothing to show rather than rendering an empty panel.
+
+   Parsed with DOMParser rather than innerHTML so nothing in the fetched markup can run,
+   and rebuilt cell by cell into a clean table instead of trusting their attributes. */
+function sizeTableFrom(html) {
+  if (!html || !/<table/i.test(html)) return null;
+  let doc;
+  try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch { return null; }
+  const table = doc.querySelector('table');
+  if (!table) return null;
+  const rows = [...table.querySelectorAll('tr')]
+    .map(tr => [...tr.querySelectorAll('th,td')].map(c => c.textContent.trim()))
+    .filter(cells => cells.some(c => c));
+  if (rows.length < 2) return null;
+  return rows;
+}
+
+function sizeGuideMarkup(p, sid) {
+  const rows = sizeTableFrom(p.descriptionHtml);
+  if (!rows) return '';
+  const [head, ...body] = rows;
+  return `<details class="size-guide" id="sizeguide-${sid}">
+      <summary>Size guide</summary>
+      <div class="size-guide-scroll">
+        <table>
+          <thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+          <tbody>${body.map(r => `<tr>${r.map((c, i) =>
+            i === 0 ? `<th scope="row">${esc(c)}</th>` : `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <p class="size-guide-note">Measurements are of the garment, not the body.</p>
+    </details>`;
+}
+
 /* ── Gallery filtering ────────────────────────────────────
    Colour is the primary thing a shopper is choosing, so the gallery should show that
    colour and nothing else. Printful names every file after its variant, which is the
@@ -1376,14 +1585,165 @@ function galleryFor(p, options, selected) {
 
 function thumbsMarkup(imgs, sid, activeUrl) {
   if (imgs.length < 2) return '';
+  /* Ask the CDN for the size actually shown. These render at 50px but were pulling the
+     2000px original, about 135KB each, so the tee's rail alone was ~3.8MB. 150px covers
+     a 3x screen and costs about 3KB. data-img-url keeps the ORIGINAL url, because every
+     comparison in the page matches on that. */
   return `<div class="img-thumbs pdp-thumbs" id="ithumbs-${sid}">
-      ${imgs.map(img => `<button class="img-thumb${img.url === activeUrl ? ' active' : ''}"
+      ${imgs.map((img, n) => `<button class="img-thumb${img.url === activeUrl ? ' active' : ''}"
         data-img-url="${esc(img.url)}" data-img-alt="${esc(img.altText)}"
         onclick="selectThumb(this,'${sid}')">
-        <img src="${esc(img.url)}" alt="${esc(img.altText)}" loading="lazy">
+        <img src="${esc(cdnThumb(img.url, 150))}" alt="${esc(img.altText)}"
+             ${n < 8 ? '' : 'loading="lazy"'}>
       </button>`).join('')}
     </div>
     <button class="pdp-viewall" id="viewall-${sid}" onclick="openLightbox('${sid}')">View all ${imgs.length} photos</button>`;
+}
+
+/* ── Prefetching ──────────────────────────────────────────
+   Worth doing only because the images are right-sized now: a hero is about 46KB rather
+   than the 135KB original, so warming a handful costs less than one old thumbnail did.
+
+   Deliberately narrow. Prefetching every photo of every colour would be megabytes for
+   choices most shoppers never make, so this warms exactly two things: the first photo of
+   a product the pointer is hovering, and the remaining colours of the product already
+   open. Both are things the shopper has shown intent toward. */
+const _warmed = new Set();
+
+function warm(url, px) {
+  if (!url) return;
+  const sized = cdnThumb(url, px);
+  if (_warmed.has(sized)) return;
+  _warmed.add(sized);
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = sized;
+}
+
+// Hovering a card usually precedes the click by a few hundred ms, which is enough.
+function warmProduct(sid) {
+  const p = _products.find(x => safeId(x.id) === sid);
+  if (!p) return;
+  warm(p.variants.edges[0]?.node?.image?.url || p.images.edges[0]?.node?.url, 1000);
+}
+
+/* Warm what a colour switch actually requests, which is not what the variant record
+   points at. Switching colour rebuilds the thumbnail rail, so the visible cost is that
+   colour's THUMBNAILS at 150px, plus whichever gallery photo the held position lands on
+   at 1000px. Warming only the variant's own hero, as this did at first, warmed a file
+   the switch frequently never asks for and left the rail to fetch cold.
+
+   Thumbnails are about 3KB each, so every colour's full rail is affordable at idle: 13
+   colours of a cap is roughly 150KB. Heroes are 46KB, so only the first photo per colour
+   is warmed here and the rest are left to the hover handler. */
+/* Warm everything a shopper can reach from an open product page, in the order they are
+   likely to reach it. Queued rather than fired at once: a cap with 13 colours is a few
+   megabytes at full size, and dumping that into the network the moment a page opens
+   would compete with the photos actually on screen. One item per idle slice keeps it
+   invisible, and the browser drops the whole thing the moment the page is left.
+
+   Priority order, limited to what is genuinely one interaction away:
+     1. Full size for every photo of the CURRENT colour. These are one click away on the
+        thumbnail rail, so they are the most likely next request.
+     2. Thumbnails for every other colour, about 3KB each. Cheap, and they are what a
+        colour switch rebuilds.
+     3. Full size for the first photo of every other colour, the hero a switch lands on.
+
+   Deliberately NOT the rest of every other colour at full size. Reaching one of those
+   takes TWO interactions, selecting the colour and then picking a thumbnail, and none of
+   them is on screen until the first happens. Warming them here was the difference
+   between 10 and 28 full-size files on the tee, spent mostly on photos nobody opens.
+   They are warmed instead the moment a colour is actually selected. */
+function warmOtherColors(sid) {
+  const card = _cards[sid];
+  if (!card || !card.product) return;
+
+  const queue = [];
+  (card.images || []).forEach(im => queue.push([im.url, 1000]));
+
+  /* One click away means changing exactly ONE option. On a merged cap that is both the
+     other thread colour at the current cap colour, and every other cap colour at the
+     current thread colour. Combinations needing two clicks are left alone: warming the
+     other embroidery's twelve other colours would be most of the catalogue.
+
+     Driven off the options themselves rather than naming colour explicitly, so it stays
+     correct if a product ever carries a third image-affecting option. Size is excluded
+     because it does not change the photos. */
+  const visualOpts = (card.options || []).filter(o => /^(colou?r|embroidery)$/i.test(o.name));
+  const neighbours = [];
+  for (const opt of visualOpts) {
+    for (const value of opt.values) {
+      if (value === card.selected[opt.name]) continue;
+      const imgs = galleryFor(card.product, card.options, { ...card.selected, [opt.name]: value });
+      if (imgs.length) neighbours.push(imgs);
+    }
+  }
+  /* Which photo a neighbour opens on depends on where the shopper is NOW, because a
+     switch preserves their position in the gallery. Warming each neighbour's first photo
+     was only right when they happened to be on the first photo; anyone looking at the
+     third shot switched and then waited for the third shot to download. Warm the photo at
+     the CURRENT index instead, which is what a click would actually display. */
+  const rail = document.getElementById('ithumbs-' + sid);
+  const at = rail
+    ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
+    : 0;
+
+  // Thumbnails first: they are what a switch rebuilds, and they are ~3KB each.
+  neighbours.forEach(imgs => imgs.forEach(im => queue.push([im.url, 150])));
+  neighbours.forEach(imgs => queue.push([imgs[Math.min(at, imgs.length - 1)].url, 1000]));
+
+  warmQueue(sid, card, queue);
+}
+
+/* Drain a warm list one item per idle slice, so it never competes with the photos on
+   screen, and abandon it if the shopper leaves the product. */
+function warmQueue(sid, card, queue) {
+  let i = 0;
+  const pump = deadline => {
+    if (_cards[sid] !== card) return;
+    do { const item = queue[i++]; if (item) warm(item[0], item[1]); }
+    while (i < queue.length && deadline && deadline.timeRemaining && deadline.timeRemaining() > 8);
+    if (i < queue.length) schedule();
+  };
+  const schedule = () => window.requestIdleCallback
+    ? requestIdleCallback(pump, { timeout: 3000 })
+    : setTimeout(() => pump(null), 120);
+  schedule();
+}
+
+/* Hovering a colour pill is a strong signal and precedes the click by a few hundred ms,
+   which is enough to have the full-size photo decoded before it is needed. */
+function warmColor(sid, value) {
+  const card = _cards[sid];
+  if (!card || !card.product) return;
+  const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
+  if (!colorOpt) return;
+  const imgs = galleryFor(card.product, card.options, { ...card.selected, [colorOpt.name]: value });
+  imgs.slice(0, 4).forEach((im, i) => warm(im.url, i === 0 ? 1000 : 150));
+}
+
+/* The original url of whatever the hero is showing. src carries a CDN-resized variant,
+   so it can never be compared against the image list directly. */
+function heroRaw(sid) {
+  return document.getElementById('img-' + sid)?.dataset.raw || null;
+}
+
+/* Swap the hero without letting it go blank. Assigning src directly clears the element
+   while the new file downloads, which is the flash of nothing between colours. Decode
+   the replacement off-screen first, then swap; the old photo stays up until the new one
+   is ready. Costs no extra bandwidth, the browser fetches the same file either way. */
+function setHero(sid, img) {
+  const el = document.getElementById('img-' + sid);
+  if (!el || !img) return;
+  const url = cdnThumb(img.url, 1000);
+  el.dataset.raw = img.url;              // set immediately so state reads stay correct
+  el.alt = img.altText || '';
+  const pre = new Image();
+  const show = () => { el.src = url; el.classList.remove('fading'); };
+  pre.onload = show;
+  pre.onerror = show;                     // never strand the shopper on a stale photo
+  pre.src = url;
+  if (pre.complete) show();               // already cached, swap now, no flicker at all
 }
 
 /* Show the nth photo of the current gallery, updating the hero and the active thumb. */
@@ -1392,8 +1752,7 @@ function jumpGalleryTo(sid, n) {
   const imgs = card?.images || [];
   if (!imgs.length) return;
   const pick = imgs[Math.min(Math.max(0, n), imgs.length - 1)];
-  const hero = document.getElementById('img-' + sid);
-  if (hero && pick) { hero.src = pick.url; hero.alt = pick.altText || ''; }
+  setHero(sid, pick);
   document.querySelectorAll('#ithumbs-' + sid + ' .img-thumb').forEach(b =>
     b.classList.toggle('active', b.dataset.imgUrl === pick.url));
 }
@@ -1408,7 +1767,6 @@ function jumpGalleryTo(sid, n) {
 function refreshGallery(sid) {
   const card = _cards[sid];
   if (!card) return;
-  const heroEl = document.getElementById('img-' + sid);
   const rail = document.getElementById('ithumbs-' + sid);
   const wrap = rail?.parentElement;
 
@@ -1429,10 +1787,18 @@ function refreshGallery(sid) {
      photo per colour, so filtering would leave a gallery of one. Holding position there
      means picking a colour changes nothing at all, which is what it did. Jump to the
      chosen colour's photo instead. */
+  /* If the photo on screen survives into the new gallery, keep it. Clicking a thumbnail
+     also applies that photo's colour, which lands here; without this the gallery would
+     re-point the hero to the held position and visibly flash the default image over the
+     one just clicked. An explicit choice outranks any positional rule. */
+  const showing = heroRaw(sid);
+  const keptIndex = showing ? imgs.findIndex(im => im.url === showing) : -1;
+
   const colorOpt = card.options.find(o => /^colou?r$/i.test(o.name));
   const chosen = colorOpt && card.selected[colorOpt.name];
   let at = Math.min(wasAt, imgs.length - 1);
-  if (chosen) {
+  if (keptIndex >= 0) at = keptIndex;
+  else if (chosen) {
     const colorOf = im => colorOfImage(im.url, colorOpt.values);
     const mixed = imgs.some(im => colorOf(im) && colorOf(im) !== chosen);
     if (mixed) {
@@ -1442,14 +1808,18 @@ function refreshGallery(sid) {
   }
 
   const pick = imgs[at];
-  if (heroEl && pick) {
-    heroEl.src = pick.url;
-    heroEl.alt = pick.altText || '';
-  }
+  setHero(sid, pick);
 
   rail.remove();
   document.getElementById('viewall-' + sid)?.remove();
   wrap.insertAdjacentHTML('beforeend', thumbsMarkup(imgs, sid, pick?.url));
+
+  /* Re-warm the whole neighbourhood, not just this colour's photos. Changing colour moves
+     what is one click away: on a cap, "the other embroidery at THIS colour" only becomes
+     adjacent once this colour is selected, and warming the current gallery alone left it
+     cold. warmOtherColors already covers the current gallery as its first tier, and the
+     _warmed set means everything reached before is skipped rather than refetched. */
+  warmOtherColors(sid);
 }
 
 function safeId(gid) { return gid.replace(/[^a-z0-9]/gi, ''); }
@@ -1465,6 +1835,8 @@ function renderProducts(products) {
     grid.innerHTML = '<p class="status-msg">No products yet, check back soon.</p>';
     return;
   }
+  // When the grid first painted, and whether that came from cache or the network.
+  if (!window.__firstPaint) window.__firstPaint = { at: Math.round(performance.now()), source: window.__renderSource || 'network' };
   _products = products;
   if (products.length === 1) grid.classList.add('single');
   grid.innerHTML = products.map(buildGridCard).join('');
@@ -1503,6 +1875,7 @@ function showProduct(id) {
   view.innerHTML = buildProductPage(p, _pendingPreselect);
   _pendingPreselect = null;
   window.scrollTo(0, 0);
+  warmOtherColors(safeId(p.id));
   gtag('event', 'view_item', {
     items: [{ item_id: p.id, item_name: p.title,
       price: parseFloat(p.priceRange.minVariantPrice.amount),
@@ -1560,7 +1933,7 @@ function buildGridCard(p) {
       swatches = `<div class="g-swatches">${[...seen].map(([val, v]) =>
         `<button class="g-swatch" title="${esc(val)}" aria-label="${esc(val)}"
            onclick="event.stopPropagation();openProduct('${sid}',{${esc(JSON.stringify(colorOpt.name))}:${esc(JSON.stringify(val))}})">
-           <img src="${esc(v.image.url)}" alt="" loading="lazy"></button>`).join('')}
+           <img src="${esc(cdnThumb(v.image.url, 90))}" alt="" loading="lazy"></button>`).join('')}
         </div>`;
     }
   }
@@ -1571,9 +1944,10 @@ function buildGridCard(p) {
   return `
     <div class="product-card" id="card-${sid}" data-cat="${categoryOf(p)}"
          onclick="openProduct('${sid}')" role="link" tabindex="0"
+         onmouseenter="warmProduct('${sid}')" onfocus="warmProduct('${sid}')"
          onkeydown="if(event.key==='Enter')openProduct('${sid}')">
       <div class="product-img-wrap">
-        ${hero ? `<img class="product-img" src="${esc(hero.url)}" alt="${esc(hero.altText || p.title)}" loading="lazy">`
+        ${hero ? `<img class="product-img" src="${esc(cdnThumb(hero.url, 600))}" alt="${esc(hero.altText || p.title)}" loading="lazy">`
                : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`}
       </div>
       <div class="product-name">${esc(p.title)}</div>
@@ -1640,8 +2014,15 @@ function selectEmbroidery(sid, val) {
     ? Math.max(0, [...rail.querySelectorAll('.img-thumb')].findIndex(b => b.classList.contains('active')))
     : 0;
 
-  el.outerHTML = buildProductPage(card.product, keep);
-  jumpGalleryTo(sid, wasAt);
+  /* Work out which photo the new thread colour should open on BEFORE rebuilding, and
+     hand it to the builder. Rebuilding first and correcting afterwards is what produced
+     the flash: the page painted the default shot, then swapped to this one. */
+  const nextImgs = galleryFor(card.product, card.options, keep);
+  const target = nextImgs[Math.min(wasAt, Math.max(0, nextImgs.length - 1))];
+
+  el.outerHTML = buildProductPage(card.product, keep, target?.url);
+  // The neighbours changed with the thread colour, so re-warm what is now one click away.
+  warmOtherColors(sid);
 }
 
 /* ── Lightbox ─────────────────────── */
@@ -1650,18 +2031,24 @@ let _lb = { imgs: [], i: 0 };
 function openLightbox(sid) {
   const card = _cards[sid];
   if (!card || !card.images || !card.images.length) return;
-  const current = document.getElementById('img-' + sid)?.getAttribute('src');
+  const current = heroRaw(sid);
   const at = card.images.findIndex(im => im.url === current);
   _lb = { imgs: card.images, i: at === -1 ? 0 : at };
   paintLightbox();
-  document.getElementById('lightbox').classList.add('open');
+  const lb = document.getElementById('lightbox');
+  _focusReturn = document.activeElement;
+  lb.classList.add('open');
+  lb.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
+  lb._close = closeLightbox;
+  trapFocus(lb);
+  lb.querySelector('.lb-close')?.focus();
 }
 
 function paintLightbox() {
   const im = _lb.imgs[_lb.i];
   const el = document.getElementById('lb-img');
-  el.src = im.url;
+  el.src = cdnThumb(im.url, 1600);
   el.alt = im.altText || '';
   document.getElementById('lb-count').textContent = `${_lb.i + 1} / ${_lb.imgs.length}`;
 
@@ -1673,7 +2060,7 @@ function paintLightbox() {
   if (strip.dataset.key !== key) {
     strip.dataset.key = key;
     strip.innerHTML = _lb.imgs.map((img, n) =>
-      `<button onclick="jumpLightbox(${n})"><img src="${esc(img.url)}" alt="" loading="lazy"></button>`).join('');
+      `<button onclick="jumpLightbox(${n})"><img src="${esc(cdnThumb(img.url, 150))}" alt="" loading="lazy"></button>`).join('');
   }
   [...strip.children].forEach((b, n) => b.classList.toggle('active', n === _lb.i));
   strip.children[_lb.i]?.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -1691,8 +2078,11 @@ function stepLightbox(e, d) {
 function closeLightbox(e) {
   // Clicking the image itself should not close it, only the backdrop or the X.
   if (e && e.target && e.target.id === 'lb-img') return;
-  document.getElementById('lightbox').classList.remove('open');
+  const lb = document.getElementById('lightbox');
+  lb.classList.remove('open');
+  lb.setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
+  releaseFocus(lb);
 }
 
 document.addEventListener('keydown', e => {
@@ -1702,7 +2092,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') stepLightbox(null, 1);
 });
 
-function buildProductPage(p, preselect) {
+/* heroUrl lets the caller name the photo to open on. Without it a rebuild always paints
+   the variant's default shot, so switching embroidery flashed that default before
+   jumping to the photo the shopper was actually looking at. */
+function buildProductPage(p, preselect, heroUrl) {
   const sid = safeId(p.id);
   const variants = p.variants.edges.map(e => e.node);
   const options = p.options || [];
@@ -1735,13 +2128,23 @@ function buildProductPage(p, preselect) {
   if (!isDefault && seedVariant?.selectedOptions) {
     seedVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
   }
-  const mainImg = seedVariant?.image || null;
+  let mainImg = seedVariant?.image || null;
   // Thumbnail list: put the selected image first so it appears leftmost
   const allImages = galleryFor(p, options, initSelected);
+  // Open on the requested photo when it exists in this gallery, so the page paints the
+  // right image once instead of painting a default and then correcting itself.
+  if (heroUrl) {
+    const want = allImages.find(im => im.url === heroUrl);
+    if (want) mainImg = want;
+  }
   _cards[sid] = { variants, options, selected: initSelected, images: allImages, product: p };
 
+  /* The hero renders about 533px wide; 1000 covers a 2x screen at a third of the bytes
+     of the 2000px original. data-raw carries the untouched url, which openLightbox and
+     the gallery use to work out which photo is on screen. */
   const mainImgHtml = mainImg
-    ? `<img class="product-img" id="img-${sid}" src="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}"
+    ? `<img class="product-img" id="img-${sid}" src="${esc(cdnThumb(mainImg.url, 1000))}"
+         data-raw="${esc(mainImg.url)}" alt="${esc(mainImg.altText || p.title)}"
          onclick="openLightbox('${sid}')" title="Click to enlarge">`
     : `<div class="product-img" style="background:rgba(255,215,0,0.04)"></div>`;
 
@@ -1779,6 +2182,7 @@ function buildProductPage(p, preselect) {
         class="size-btn${val === initColor ? ' active' : ''}"
         data-opt="${esc(colorOpt.name)}" data-val="${esc(val)}"
         data-img-url="${esc(v.image?.url)}" data-img-alt="${esc(v.image?.altText)}"
+        onmouseenter="warmColor('${sid}',this.dataset.val)"
         onclick="selectOpt(this,'${sid}')">${esc(val)}</button>`;
       colorHtml = `<div class="option-label">Color: <span class="opt-current" id="clabel-${sid}">${esc(initColor)}</span></div>
         <div class="size-picker" id="cthumbs-${sid}">
@@ -1852,8 +2256,14 @@ function buildProductPage(p, preselect) {
         <div class="pdp-info">
           <h1 class="pdp-title">${esc(p.title)}</h1>
           <div class="pdp-price">${price}</div>
-          <p class="pdp-ship">Ships in 3&ndash;5 business days &middot; flat-rate US shipping</p>
+          <!-- "flat rate" implied one price no matter how many items, which is not true:
+               Printful charges per additional item. Neither cost nor arrival date can be
+               known here, and only Shopify's checkout figures are guaranteed to match
+               what the shopper sees next, so quote production time and defer the rest. -->
+          <p class="pdp-ship">Made to order, ${MAKE_TIME[categoryOf(p)] || MAKE_TIME.other},
+            then shipped &middot; delivery and shipping cost calculated at checkout</p>
           ${embHtml}${colorHtml}${sizeHtml}${legacyHtml}
+          ${sizeGuideMarkup(p, sid)}
           <button class="add-btn pdp-add" id="add-${sid}"
             data-sid="${sid}" data-vid="${seedVariant?.id || ''}"
             data-product-name="${esc(p.title)}"
@@ -1863,6 +2273,19 @@ function buildProductPage(p, preselect) {
             ${available ? 'Add to Cart' : 'Sold Out'}
           </button>
           ${descHtml}
+          <!-- Every item is printed or embroidered per order, so there is no stock to
+               take anything back into. Say so plainly on the product page: 60% of
+               shoppers look for the returns terms before buying, and a policy found
+               after the fact is where chargebacks come from. -->
+          <details class="pdp-policy">
+            <summary>Returns &amp; exchanges</summary>
+            <p>Every item is made to order, printed or embroidered once you buy it. Because
+            nothing is held in stock, <strong>we cannot accept returns or exchanges for size,
+            fit, or change of mind</strong>. Please check the size guide before ordering.</p>
+            <p>If your order arrives <strong>damaged, misprinted, or not what you ordered</strong>,
+            it gets replaced free. Reply to your order confirmation email within 30 days of
+            delivery with a photo and we will sort it out.</p>
+          </details>
         </div>
       </div>
     </article>`;
@@ -1989,6 +2412,9 @@ function selectThumb(btn, sid) {
     .forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt, true);
+  // Moving down the rail changes which photo every neighbour would open on, so the warm
+  // set has to follow. Already-fetched urls are skipped, so this is cheap to repeat.
+  warmOtherColors(sid);
 
   // Picking a photo should also pick the thing in the photo. This used to scan the
   // colour pills only, so hats followed the gallery but the can cooler -- whose only
@@ -2063,14 +2489,18 @@ function selectThumb(btn, sid) {
 
 function swapMainImage(sid, url, alt, skipThumbSync) {
   const imgEl = document.getElementById(`img-${sid}`);
-  if (!imgEl || imgEl.src === url) return;
+  // Compare against the ORIGINAL url: src now carries a CDN-resized variant, so
+  // comparing src would never match and would re-fetch the full-size original.
+  if (!imgEl || imgEl.dataset.raw === url) return;
+  const sized = cdnThumb(url, 1000);
   imgEl.classList.add('fading');
   const start = Date.now();
   const preload = new Image();
   preload.onload = preload.onerror = () => {
     const wait = Math.max(0, 150 - (Date.now() - start));
     setTimeout(() => {
-      imgEl.src = url;
+      imgEl.src = sized;
+      imgEl.dataset.raw = url;
       imgEl.alt = alt || '';
       imgEl.classList.remove('fading');
       if (!skipThumbSync) {
@@ -2083,7 +2513,10 @@ function swapMainImage(sid, url, alt, skipThumbSync) {
       }
     }, wait);
   };
-  preload.src = url;
+  // Preload the file that will actually be displayed. This warmed the 2000px original
+  // while the element was then pointed at the 1000px variant, so the swap happened
+  // against a file that had never been fetched and the image blanked while it loaded.
+  preload.src = sized;
 }
 
 
@@ -2317,13 +2750,51 @@ function trackCheckout() {
   });
 }
 
+/* ── Overlay focus handling ───────────────────────────────
+   Purely additive: it only reacts to Tab and Escape, and only while an overlay is open,
+   so pointer users see no change at all. Without it a keyboard user tabs straight past
+   the drawer into the page behind it, which is still fully interactive underneath. */
+let _focusReturn = null;
+
+function trapFocus(container) {
+  const SEL = 'a[href],button:not([disabled]),input,select,textarea,summary,[tabindex]:not([tabindex="-1"])';
+  const onKey = e => {
+    if (e.key === 'Escape') { container._close?.(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...container.querySelectorAll(SEL)].filter(el => el.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  container._onKey = onKey;
+  document.addEventListener('keydown', onKey);
+}
+
+function releaseFocus(container) {
+  if (container._onKey) document.removeEventListener('keydown', container._onKey);
+  container._onKey = null;
+  // Send the caret back where it came from, so Tab resumes from the button they pressed.
+  if (_focusReturn && document.contains(_focusReturn)) _focusReturn.focus();
+  _focusReturn = null;
+}
+
 function openCart() {
-  document.getElementById('cart-drawer').classList.add('open');
+  const d = document.getElementById('cart-drawer');
+  _focusReturn = document.activeElement;
+  d.classList.add('open');
+  d.setAttribute('aria-hidden', 'false');
   document.getElementById('cart-overlay').classList.add('visible');
+  d._close = closeCart;
+  trapFocus(d);
+  d.querySelector('.cart-close')?.focus();
 }
 function closeCart() {
-  document.getElementById('cart-drawer').classList.remove('open');
+  const d = document.getElementById('cart-drawer');
+  d.classList.remove('open');
+  d.setAttribute('aria-hidden', 'true');
   document.getElementById('cart-overlay').classList.remove('visible');
+  releaseFocus(d);
 }
 
 async function restoreCart() {
