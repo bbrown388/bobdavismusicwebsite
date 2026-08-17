@@ -29,7 +29,7 @@ const CATALOG_QUERY = `{
     edges {
       node {
         id title description descriptionHtml productType tags
-        priceRange { minVariantPrice { amount currencyCode } }
+        priceRange { minVariantPrice { amount currencyCode } maxVariantPrice { amount currencyCode } }
         options { name values }
         images(first: 60) { edges { node { url altText width height } } }
         variants(first: 100) {
@@ -1327,6 +1327,24 @@ function fmt(amount, currency) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
 }
 
+/* Price of one specific variant, falling back to the product minimum only when a variant
+   carries no price of its own. Sizes are not priced equally (the tee costs more from 2XL
+   up), so anything that shows a single product-level number is wrong the moment the
+   shopper picks a size. */
+function variantPrice(p, variant) {
+  const base = p.priceRange.minVariantPrice;
+  return fmt(variant?.priceV2?.amount ?? base.amount,
+             variant?.priceV2?.currencyCode ?? base.currencyCode);
+}
+
+/* Repaint the visible price on an open product page. Scoped to the product page's own id
+   because the hidden grid card for the same product is still in the DOM and carries its
+   own price element. */
+function setPdpPrice(sid, text) {
+  const el = document.querySelector(`#pdp-${sid} .pdp-price`);
+  if (el && text) el.textContent = text;
+}
+
 // ── Products ──────────────────────────────────────────────
 
 /* Render from the last known catalogue immediately, then refresh in the background.
@@ -2008,7 +2026,13 @@ function buildGridCard(p) {
   const variants = p.variants.edges.map(e => e.node);
   const options = p.options || [];
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
-  const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
+  /* "From $30" when the variants are not all one price, because the grid cannot know which
+     size the shopper wants and a bare number reads as a promise. The tee is $30 through XL
+     and more above it, so the flat figure was setting up a surprise at the cart. */
+  const lo = p.priceRange.minVariantPrice;
+  const hi = p.priceRange.maxVariantPrice;
+  const ranged = hi && Number(hi.amount) > Number(lo.amount);
+  const price = (ranged ? 'From ' : '') + fmt(lo.amount, lo.currencyCode);
   const available = variants.some(v => v.availableForSale);
   // Grid hero follows the same default, so the card and its product page agree.
   const want = defaultSelectionFor(p, options);
@@ -2210,7 +2234,6 @@ function buildProductPage(p, preselect, heroUrl) {
   const sid = safeId(p.id);
   const variants = p.variants.edges.map(e => e.node);
   const options = p.options || [];
-  const price = fmt(p.priceRange.minVariantPrice.amount, p.priceRange.minVariantPrice.currencyCode);
   const available = variants.some(v => v.availableForSale);
   const firstVariant = variants[0];
   const colorOpt = options.find(o => /^colou?r$/i.test(o.name));
@@ -2235,6 +2258,12 @@ function buildProductPage(p, preselect, heroUrl) {
     }
   }
   seedVariant = seedVariant || firstVariant;
+
+  /* Price the SELECTED variant, not the product minimum. The tee costs more in the larger
+     sizes, so a fixed minVariantPrice showed one number and the cart charged another, which
+     the shopper only discovered after committing. Computed here rather than at the top of
+     the function because it depends on which variant we seeded. */
+  const price = variantPrice(p, seedVariant);
   const initSelected = {};
   if (!isDefault && seedVariant?.selectedOptions) {
     seedVariant.selectedOptions.forEach(o => { initSelected[o.name] = o.value; });
@@ -2328,7 +2357,8 @@ function buildProductPage(p, preselect, heroUrl) {
     legacyHtml = `<div class="variant-buttons" id="vbtns-${sid}">
       ${variants.map((v, i) => `<button class="variant-btn${i === 0 ? ' active' : ''}"
         data-vid="${esc(v.id)}" data-img-url="${esc(v.image?.url)}" data-img-alt="${esc(v.image?.altText)}"
-        data-price="${esc(v.priceV2?.amount)}" onclick="selectVariant(this,'${sid}')"
+        data-price="${esc(v.priceV2?.amount)}" data-currency="${esc(v.priceV2?.currencyCode)}"
+        onclick="selectVariant(this,'${sid}')"
         ${!v.availableForSale ? 'disabled' : ''}>${esc(v.title)}</button>`).join('')}
     </div>`;
   }
@@ -2489,6 +2519,9 @@ function selectOpt(btn, sid, skipImageSwap) {
     addBtn.dataset.vid = match.id;
     if (match.priceV2?.amount) addBtn.dataset.price = match.priceV2.amount;
   }
+  // The button already knew the right price; the shopper did not. Keep the headline price
+  // in step with the selection so the cart never introduces a new number.
+  if (match) setPdpPrice(sid, variantPrice(card.product, match));
 }
 
 function selectVariant(btn, sid) {
@@ -2496,7 +2529,12 @@ function selectVariant(btn, sid) {
   btn.classList.add('active');
   const addBtn = document.getElementById(`add-${sid}`);
   addBtn.dataset.vid = btn.dataset.vid;
-  if (btn.dataset.price) addBtn.dataset.price = btn.dataset.price;
+  if (btn.dataset.price) {
+    addBtn.dataset.price = btn.dataset.price;
+    // Legacy single-list variant picker, used by products whose options Shopify did not
+    // split. Same rule as the option buttons: what is shown must be what is charged.
+    setPdpPrice(sid, fmt(btn.dataset.price, btn.dataset.currency || 'USD'));
+  }
   if (btn.dataset.imgUrl) swapMainImage(sid, btn.dataset.imgUrl, btn.dataset.imgAlt);
 }
 
