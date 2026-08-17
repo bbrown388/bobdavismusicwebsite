@@ -1337,6 +1337,21 @@ function variantPrice(p, variant) {
              variant?.priceV2?.currencyCode ?? base.currencyCode);
 }
 
+/* Price span across a set of variants. Merged products previously inherited the first
+   member's priceRange, so if two merged designs were ever priced differently the card would
+   quote only one of them. Derived from the variants themselves, so it stays right whatever
+   gets merged later. */
+function spanOf(variants, fallback) {
+  const amounts = variants.map(v => Number(v.priceV2?.amount)).filter(Number.isFinite);
+  if (!amounts.length) return fallback;
+  const currency = variants.find(v => v.priceV2?.currencyCode)?.priceV2.currencyCode
+    || fallback.minVariantPrice.currencyCode;
+  return {
+    minVariantPrice: { amount: String(Math.min(...amounts)), currencyCode: currency },
+    maxVariantPrice: { amount: String(Math.max(...amounts)), currencyCode: currency },
+  };
+}
+
 /* Repaint the visible price on an open product page. Scoped to the product page's own id
    because the hidden grid card for the same product is still in the DOM and carries its
    own price element. */
@@ -1545,7 +1560,8 @@ function mergeProducts(products) {
       // hero image while the thumbnails keep showing the other design.
       images: { edges: parts.flatMap(({ label, p }) =>
         p.images.edges.map(e => ({ node: { ...e.node, emb: label } }))) },
-      priceRange: base.priceRange,
+      // Across BOTH members, not just the first, so a merged card quotes the full span.
+      priceRange: spanOf(variants, base.priceRange),
     });
   }
 
