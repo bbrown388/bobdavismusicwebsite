@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2 Dolla Bill | Bob Davis</title>
+<meta name="description" content="Listen to 2 Dolla Bill by Bob Davis on your music service of choice.">
+
+<!-- Search engines should index the destination, not this hop. -->
+<meta name="robots" content="noindex, follow">
+<link rel="canonical" href="https://bobdavismusic.com/">
+
+<meta property="og:title" content="2 Dolla Bill | Bob Davis">
+<meta property="og:description" content="The debut single from Bob Davis. Out October 2.">
+<meta property="og:image" content="https://bobdavismusic.com/images/2-dolla-bill-cover.jpg">
+<meta property="og:url" content="https://bobdavismusic.com/2dollabill/">
+<meta name="twitter:card" content="summary_large_image">
+
+<!-- WHY THIS PAGE EXISTS
+     HyperFollow cannot use a custom domain, DistroKid locks pages to distrokid.com, so a link
+     straight to HyperFollow is invisible to this site's Google Analytics. Radio label copy,
+     printed material and anywhere else off-site now points here instead, so the click is
+     counted alongside the rest of the site before the visitor is handed on.
+
+     The redirect deliberately waits for the analytics hit rather than firing instantly:
+     gtag's event_callback fires once the hit is sent, with a timeout in case it never does,
+     a meta refresh for no-JS, and a visible link if everything fails. A redirect that beats
+     its own tracking call defeats the point of the page. -->
+
+<!-- No-JS fallback. Long enough that JS normally wins the race. -->
+<noscript><meta http-equiv="refresh" content="0; url=https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/"></noscript>
+
+<!-- Deliberately NOT async, unlike the rest of the site. Async means gtag.js may still be
+     loading when the event below runs, leaving it queued in dataLayer while the redirect
+     fires, so the hit is never sent and event_callback never runs. On a page whose only job
+     is to record the click before handing off, a few ms of blocking is the correct trade. -->
+<script src="https://www.googletagmanager.com/gtag/js?id=G-X1W0TNHM51"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X1W0TNHM51');
+</script>
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0608;
+    color: #E8DCC8;
+    font-family: Georgia, serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+    text-align: center;
+  }
+  img {
+    width: 100%;
+    max-width: 260px;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  }
+  h1 { font-size: 22px; letter-spacing: 1px; margin: 22px 0 4px; color: #E7B24B; }
+  .artist { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: #b49a86; }
+  .status { font-size: 14px; color: #907860; margin-top: 26px; font-style: italic; }
+  a.manual { color: #C9A227; font-size: 14px; margin-top: 14px; display: inline-block; }
+  a.manual:hover { color: #FFD700; }
+  @media (prefers-color-scheme: light) {
+    body { background: #f3e9d6; color: #3a2a1c; }
+    h1 { color: #8a5a10; }
+    .artist, .status { color: #7a5030; }
+  }
+</style>
+</head>
+<body>
+
+  <img src="../images/2-dolla-bill-cover.jpg" alt="2 Dolla Bill single cover" width="900" height="900">
+  <h1>2 Dolla Bill</h1>
+  <p class="artist">Bob Davis</p>
+  <p class="status" id="status">Taking you to your music service...</p>
+  <a class="manual" id="manual" href="https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/">Continue</a>
+
+<script>
+(function () {
+  var DEST = 'https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/';
+  var gone = false;
+
+  function go() {
+    if (gone) return;
+    gone = true;
+    // replace() so Back returns to wherever they came from rather than bouncing
+    // through this page again.
+    location.replace(DEST);
+  }
+
+  // Named to match the homepage card, which already distinguishes presave from listen so the
+  // two entry points aggregate in the same report.
+  var released = new Date() >= new Date('2026-10-02T00:00:00-05:00');
+
+  gtag('event', released ? 'listen_click' : 'presave_click', {
+    single: '2 Dolla Bill',
+    source: 'domain_redirect',
+    event_callback: go,
+    event_timeout: 900
+  });
+
+  // Belt and braces: if the callback never fires, leave anyway.
+  setTimeout(go, 1500);
+
+  document.getElementById('manual').addEventListener('click', function () { gone = true; });
+})();
+</script>
+
+</body>
+</html>
