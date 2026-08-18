@@ -261,6 +261,10 @@ body {
   font-size: 13px;
   color: #b49a86;
 }
+/* The size guide sits directly above Add to Cart and had margin on its top edge only, so
+   the link ended up nearly touching the primary button. Matching the top margin gives the
+   button its own space and stops the link reading as part of the button. */
+.size-guide { margin-bottom: 18px; }
 .size-guide summary, .pdp-policy summary {
   cursor: pointer;
   color: #C9A227;
@@ -898,6 +902,14 @@ footer {
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
+/* Quieter than the size itself: the size is what you are choosing, the surcharge is a
+   caveat on it. Nudged up so it reads as an annotation rather than part of the name. */
+.size-up {
+  font-size: 10px;
+  margin-left: 4px;
+  opacity: 0.7;
+  vertical-align: 1px;
+}
 .size-btn:hover:not(:disabled) {
   background: rgba(255,215,0,0.08);
   border-color: rgba(255,215,0,0.3);
@@ -1350,6 +1362,31 @@ function spanOf(variants, fallback) {
     minVariantPrice: { amount: String(Math.min(...amounts)), currencyCode: currency },
     maxVariantPrice: { amount: String(Math.max(...amounts)), currencyCode: currency },
   };
+}
+
+/* What each size costs over the product's cheapest, so the size row can say "3XL +$3"
+   BEFORE it is clicked rather than moving the headline price afterwards. Takes the cheapest
+   variant per size, so a colour that happens to be sold out cannot skew the figure. Returns
+   only the sizes that actually cost more, so the common sizes stay unlabelled. */
+function sizeUpcharges(variants, sizeName) {
+  const cheapest = new Map();
+  variants.forEach(v => {
+    const sv = v.selectedOptions?.find(o => o.name === sizeName)?.value;
+    const amt = Number(v.priceV2?.amount);
+    if (!sv || !Number.isFinite(amt)) return;
+    if (!cheapest.has(sv) || amt < cheapest.get(sv)) cheapest.set(sv, amt);
+  });
+  if (!cheapest.size) return new Map();
+  const base = Math.min(...cheapest.values());
+  const extra = new Map();
+  cheapest.forEach((amt, sv) => { if (amt > base) extra.set(sv, amt - base); });
+  return extra;
+}
+
+// "+$3" rather than "+$3.00": these sit on a small button and the cents are almost always
+// zero. Goes through fmt so the currency symbol stays correct rather than assuming dollars.
+function fmtDelta(amount, currency) {
+  return '+' + fmt(amount, currency).replace(/\.00$/, '');
 }
 
 /* Repaint the visible price on an open product page. Scoped to the product page's own id
@@ -2352,6 +2389,8 @@ function buildProductPage(p, preselect, heroUrl) {
   if (sizeOpt && !isDefault) {
     const initColor = initSelected[colorOpt?.name];
     const initSize  = initSelected[sizeOpt.name];
+    const upcharges = sizeUpcharges(variants, sizeOpt.name);
+    const cur = p.priceRange.minVariantPrice.currencyCode;
     sizeHtml = `<div class="option-label">Size: <span class="opt-current" id="slabel-${sid}">${esc(initSize)}</span></div>
       <div class="size-picker" id="spicker-${sid}">
         ${sortSizes(sizeOpt.values).map(sv => {
@@ -2360,9 +2399,16 @@ function buildProductPage(p, preselect, heroUrl) {
             const hasColor = !colorOpt || !initColor || v.selectedOptions?.some(o => o.name === colorOpt.name && o.value === initColor);
             return hasSize && hasColor && v.availableForSale;
           });
+          /* The label is decoration on top of data-val, which is what every matcher reads,
+             so the extra text cannot affect selection. aria-label carries it in words
+             because "+$3" appended to the size reads poorly when spoken. */
+          const up = upcharges.get(sv);
+          const upText = up ? fmtDelta(up, cur) : '';
           return `<button class="size-btn${sv === initSize ? ' active' : ''}"
             data-opt="${esc(sizeOpt.name)}" data-val="${esc(sv)}"
-            onclick="selectOpt(this,'${sid}')" ${!ok ? 'disabled' : ''}>${esc(sv)}</button>`;
+            ${up ? `aria-label="${esc(sv)}, ${esc(fmt(up, cur))} more"` : ''}
+            onclick="selectOpt(this,'${sid}')" ${!ok ? 'disabled' : ''}>${esc(sv)}${
+              upText ? `<span class="size-up">${esc(upText)}</span>` : ''}</button>`;
         }).join('')}
       </div>`;
   }
