@@ -2478,7 +2478,23 @@ function buildProductPage(p, preselect, heroUrl) {
           <!-- Every item is printed or embroidered per order, so there is no stock to
                take anything back into. Say so plainly on the product page: 60% of
                shoppers look for the returns terms before buying, and a policy found
-               after the fact is where chargebacks come from. -->
+               after the fact is where chargebacks come from.
+
+               Mirrors Printful's actual policy rather than a generic one, because they are
+               who ultimately pays. Their windows: 30 days after the product is received for
+               misprint/damage/defect, and 30 days after the ESTIMATED delivery date for a
+               package lost in transit, which is a different clock because nothing arrived.
+               Lost packages were previously unmentioned, so a customer whose order vanished
+               read "damaged or misprinted" and concluded they had no recourse, which is how
+               a chargeback happens instead of an email.
+
+               The address line is here because Printful returns undeliverable and unclaimed
+               shipments to their facility and bills US for the reshipment, so a wrong address
+               is our cost, not theirs.
+
+               Note "replaced free" is deliberately a stronger promise than Printful gives:
+               they cover claims "deemed an error on our part", their judgement. When they
+               decline, we absorb it. That is the intended stance, not an oversight. -->
           <details class="pdp-policy">
             <summary>Returns &amp; exchanges</summary>
             <p>Every item is made to order, printed or embroidered once you buy it. Because
@@ -2486,7 +2502,11 @@ function buildProductPage(p, preselect, heroUrl) {
             fit, or change of mind</strong>. Please check the size guide before ordering.</p>
             <p>If your order arrives <strong>damaged, misprinted, or not what you ordered</strong>,
             it gets replaced free. Reply to your order confirmation email within 30 days of
-            delivery with a photo and we will sort it out.</p>
+            delivery with a photo and we will sort it out. <strong>If your package never
+            arrives</strong>, tell us within 30 days of the expected delivery date and we will
+            replace it.</p>
+            <p><strong>Please double check your shipping address at checkout.</strong> Packages
+            returned for a bad address or left unclaimed have to be reshipped at cost.</p>
           </details>
         </div>
       </div>
