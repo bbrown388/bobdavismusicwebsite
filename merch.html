@@ -835,6 +835,9 @@ footer {
   letter-spacing: 1px;
 }
 
+footer a { color: inherit; text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+
 /* ── Image thumbnail gallery ──────── */
 /* min-width: 0 is load-bearing. A grid/flex item defaults to min-width: auto, which is
    its min-content width, so this strip refused to shrink below the full row of thumbs
@@ -1310,7 +1313,8 @@ footer {
   Cart <span class="cart-count" id="cart-count">0</span>
 </button>
 
-<footer>&#169; Bob Davis Music</footer>
+<footer>&#169; Bob Davis Music<br>
+  <a href="mailto:merch@bobdavismusic.com">merch@bobdavismusic.com</a></footer>
 
 <script>
 // SHOP_DOMAIN, STOREFRONT_TOKEN and GQL are declared in the head, where the catalogue
@@ -2502,7 +2506,8 @@ function buildProductPage(p, preselect, heroUrl) {
             fit, or change of mind</strong>. Please check the size guide before ordering.</p>
             <p>If your order arrives <strong>damaged, misprinted, or not what you ordered</strong>,
             it gets replaced free. Reply to your order confirmation email within 30 days of
-            delivery with a photo and we will sort it out. <strong>If your package never
+            delivery with a photo, or email <a href="mailto:merch@bobdavismusic.com">merch@bobdavismusic.com</a>,
+            and we will sort it out. <strong>If your package never
             arrives</strong>, tell us within 30 days of the expected delivery date and we will
             replace it.</p>
             <p><strong>Please double check your shipping address at checkout.</strong> Packages
