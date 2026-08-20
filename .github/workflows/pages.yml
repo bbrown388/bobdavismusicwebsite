@@ -37,6 +37,10 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      # Exposed so the notify job can say whether a preview was actually published
+      # rather than linking to a directory that does not exist.
+      ahead: ${{ steps.review.outputs.ahead }}
     steps:
       - name: Check out main (the live site)
         uses: actions/checkout@v4
@@ -116,3 +120,72 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # A push to staging means something is waiting on review. Opening the PR and
+  # sending the alert by hand was the missing half: on 2026-08-19 a staging push
+  # produced no notification at all, because nothing in this repo has ever sent one.
+  #
+  # Runs AFTER deploy on purpose. Notifying first would hand over a /preview/ link
+  # that 404s until Pages finishes, which trains you to ignore the alert.
+  notify-review:
+    needs: deploy
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      # Job level, not step level: the secrets context is NOT available in a
+      # step-level `if:`, which is what broke the merch-mockup workflow in
+      # bobdavismusic-data. Read it here and test it inside the shell instead.
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      GH_TOKEN: ${{ github.token }}
+      AHEAD: ${{ needs.deploy.outputs.ahead }}
+      PREVIEW_URL: https://bobdavismusic.com/preview/
+    steps:
+      - name: Open the review PR, or reuse the one already open
+        id: pr
+        run: |
+          set -e
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --head staging --base main --state open --json url --jq '.[0].url // empty')
+          if [ -n "$existing" ]; then
+            echo "reusing open PR: $existing"
+            echo "url=$existing" >> "$GITHUB_OUTPUT"
+          elif [ "${AHEAD:-0}" = "0" ]; then
+            echo "staging is not ahead of main, so there is nothing to open a PR for"
+            echo "url=" >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "Opened automatically when staging was deployed."
+              echo ""
+              echo "Preview: $PREVIEW_URL"
+              echo ""
+              echo "Merging publishes to production and drops the preview on the next deploy."
+            } > pr-body.md
+            url=$(gh pr create --repo "$GITHUB_REPOSITORY" --head staging --base main --title "Review: staging into main" --body-file pr-body.md)
+            echo "opened PR: $url"
+            echo "url=$url" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify
+        env:
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          set -e
+          if [ -z "$NTFY_TOPIC" ]; then
+            echo "NTFY_TOPIC secret is not set on this repo, so no alert was sent."
+            echo "Add it under Settings, Secrets and variables, Actions."
+            exit 0
+          fi
+          if [ "${AHEAD:-0}" = "0" ]; then
+            echo "Staging deployed but is not ahead of main, so no preview and no PR." > body.txt
+          else
+            {
+              echo "Staging is ${AHEAD} commit(s) ahead, preview is live."
+              echo ""
+              echo "Preview: $PREVIEW_URL"
+              echo "PR: ${PR_URL:-none}"
+            } > body.txt
+          fi
+          curl -sS -X POST "https://ntfy.sh/${NTFY_TOPIC}" -H "Title: bobdavismusic staging ready to review" -H "Tags: eyes" -H "Click: $PREVIEW_URL" --data-binary @body.txt > /dev/null
+          echo "alert sent"
