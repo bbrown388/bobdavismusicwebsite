@@ -168,6 +168,11 @@ jobs:
           fi
 
       - name: Notify
+        # always(): a failed PR step must not silently swallow the alert too. That is
+        # exactly what happened on 2026-08-23, when the repo still blocked Actions from
+        # creating PRs (Settings > Actions > General, off by default) and the whole job
+        # died before notifying, so the push went out with no signal at all.
+        if: always()
         env:
           PR_URL: ${{ steps.pr.outputs.url }}
         run: |
