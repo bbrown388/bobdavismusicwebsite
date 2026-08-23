@@ -192,5 +192,8 @@ jobs:
               echo "PR: ${PR_URL:-none}"
             } > body.txt
           fi
-          curl -sS -X POST "https://ntfy.sh/${NTFY_TOPIC}" -H "Title: bobdavismusic staging ready to review" -H "Tags: eyes" -H "Click: $PREVIEW_URL" --data-binary @body.txt > /dev/null
+          # Tapping the alert should land where the ACTION is: the PR. The preview stays
+          # in the body. Fall back to the preview only when there is no PR to open.
+          CLICK_URL="${PR_URL:-$PREVIEW_URL}"
+          curl -sS -X POST "https://ntfy.sh/${NTFY_TOPIC}" -H "Title: bobdavismusic staging ready to review" -H "Tags: eyes" -H "Click: $CLICK_URL" --data-binary @body.txt > /dev/null
           echo "alert sent"
