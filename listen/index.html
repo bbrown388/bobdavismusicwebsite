@@ -103,7 +103,10 @@
 
   // Named to match the homepage card, which already distinguishes presave from listen so the
   // two entry points aggregate in the same report.
-  var released = new Date() >= new Date('2026-10-02T00:00:00-05:00');
+  // Viewer-local midnight, matching the homepage. The release rolls by listener
+  // time zone, so a single -05:00 instant mislabels the event for anyone outside
+  // Central. DEST is unaffected either way; HyperFollow handles presave vs listen.
+  var released = new Date() >= new Date(2026, 9, 2, 0, 0, 0);
 
   gtag('event', released ? 'listen_click' : 'presave_click', {
     single: '2 Dolla Bill',
