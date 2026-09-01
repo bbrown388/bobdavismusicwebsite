@@ -21,10 +21,10 @@
      PER-PLATFORM PERMANENT REDIRECT for radio label copy and anything else that persists and
      cannot be edited later. Submitted once, repointable forever.
 
-     DESTINATION STATUS: LIVE as of 1 Sep, ASIN B0HDH3GH22. Deliberately the music.amazon.com url, NOT the amazon.com/gp/product/B0HDH3GH22 link DistroKid put on HyperFollow. That one is a RETAIL url: Amazon's shopping app intercepts any amazon.com link, opens it in its own webview, and that webview cannot render a music page. Bob hit exactly that failure, landing in the shopping app with 'We had trouble loading the content of this page'. -->
+     DESTINATION STATUS: PRE-RELEASE. ASIN B0HDH3GH22 exists and HyperFollow now shows Amazon, but NEITHER direct url reaches the song: amazon.com/gp/product/B0HDH3GH22 is a RETAIL link that Amazon's shopping app intercepts into a webview that cannot render music, and music.amazon.com/albums/B0HDH3GH22 does not resolve to the album either, almost certainly because the browsable album page is not published until release. Both were tested by Bob on 1 Sep and both failed. HyperFollow handles the pre-save correctly, so it stays the destination. REPOINT to music.amazon.com AFTER 2 Oct, and only once the link has actually been opened and confirmed. -->
 
 <!-- No-JS fallback. Long enough that JS normally wins the race. -->
-<noscript><meta http-equiv="refresh" content="0; url=https://music.amazon.com/albums/B0HDH3GH22"></noscript>
+<noscript><meta http-equiv="refresh" content="0; url=https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/"></noscript>
 
 <!-- Deliberately NOT async. Async means gtag.js may still be loading when the event below
      runs, leaving it queued while the redirect fires, so the hit is never sent. On a page
@@ -76,11 +76,11 @@
   <h1>2 Dolla Bill</h1>
   <p class="artist">Bob Davis</p>
   <p class="status">Taking you to Amazon Music...</p>
-  <a class="manual" id="manual" href="https://music.amazon.com/albums/B0HDH3GH22">Continue to Amazon Music</a>
+  <a class="manual" id="manual" href="https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/">Continue to Amazon Music</a>
 
 <script>
 (function () {
-  var DEST = 'https://music.amazon.com/albums/B0HDH3GH22';
+  var DEST = 'https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/';
   var gone = false;
 
   function go() {
