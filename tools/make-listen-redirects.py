@@ -42,10 +42,12 @@ PLATFORMS = {
         "LIVE. Apple folded the iTunes Store into Apple Music; ?app=itunes is how DistroKid "
         "itself distinguishes them."),
     "amazon": (
-        "Amazon Music", HYPERFOLLOW,
-        "PENDING. Amazon IS a selected store but had not ingested as of 27 Aug; Amazon "
-        "typically exposes a catalogue page at release rather than during preorder. REPOINT "
-        "once it appears."),
+        "Amazon Music", "https://music.amazon.com/albums/B0HDH3GH22",
+        "LIVE as of 1 Sep, ASIN B0HDH3GH22. Deliberately the music.amazon.com url, NOT the "
+        "amazon.com/gp/product/B0HDH3GH22 link DistroKid put on HyperFollow. That one is a "
+        "RETAIL url: Amazon's shopping app intercepts any amazon.com link, opens it in its own "
+        "webview, and that webview cannot render a music page. Bob hit exactly that failure, "
+        "landing in the shopping app with 'We had trouble loading the content of this page'."),
 }
 
 TEMPLATE = """<!DOCTYPE html>
