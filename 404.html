@@ -23,7 +23,21 @@
       // Only redirect when the ONLY problem is letter case. If the lowercase
       // path 404s too the page is not deployed, and bouncing there again would
       // loop forever, so fall through to the homepage instead.
-      location.replace(target && raw !== raw.toLowerCase() ? target : '/');
+      var fromQr = !!target && raw !== raw.toLowerCase();
+      var dest = fromQr ? target : '/';
+      if (!fromQr) { location.replace(dest); return; }
+      // Only the printed QR produces the uppercase path, so count it as a scan.
+      // Wait for the hit to send before leaving, or the redirect beats gtag.js
+      // and nothing is recorded. The timeout covers ad blockers.
+      var left = false;
+      function go() { if (!left) { left = true; location.replace(dest); } }
+      gtag('event', 'tcma_qr_scan', {
+        qr_path: raw,
+        transport_type: 'beacon',
+        event_callback: go,
+        event_timeout: 1500
+      });
+      setTimeout(go, 2000);
     })();
   </script>
 </head>
