@@ -263,19 +263,33 @@ body {
 .hero .hero-social a:focus-visible { color: #FFD700; opacity: 1; }
 .hero-social svg { width: 22px; height: 22px; fill: currentColor; display: block; }
 
-@media (max-width: 480px) {
-  /* Phone: the face and the bill sit too far apart to both fit a cover crop,
-     so show the WHOLE photo as a band across the top (bill included) and put the
-     type in the dark below it. A full-width image is 100vw * 933/1104 = 84.5vw
-     tall, so padding-top 88vw clears it. */
+/* Show the whole photo (bill and all) as a band across the top, with the type in
+   the dark below, on any PORTRAIT-ish viewport. This is keyed to aspect ratio, not
+   width, because that is what decides the crop: when the viewport is wider than the
+   photo (aspect > ~1.18) cover crops vertically and the full width incl. the bill
+   shows, but when it is portrait or square cover crops horizontally and the
+   right-side headstock is lost. So: portrait gets the band, landscape gets the
+   immersive cover. A full-width image is 100vw * 933/1104 = 84.5vw tall. */
+@media (max-aspect-ratio: 6/5) {
   .hero {
     min-height: 0;
     align-items: flex-start;
-    background-size: 100vw auto;
-    background-position: top center;
+    /* Two layers: a gradient that fades the photo's lower edge into the dark
+       base so the band dissolves instead of ending on a hard line, over the
+       photo itself. The image is 84.5vw tall, so the fade runs 60->84vw. */
+    background-image:
+      linear-gradient(to bottom, rgba(13,6,8,0) 60vw, rgba(13,6,8,1) 84vw),
+      url('images/hero-bill.jpg');
+    background-size: 100vw 84.6vw, 100vw auto;
+    background-position: top center, top center;
+    background-repeat: no-repeat, no-repeat;
     background-origin: border-box;
-    padding: 87vw 18px 48px;
+    padding: 84vw 20px 52px;
   }
+}
+
+@media (max-width: 480px) {
+  .hero { padding-left: 18px; padding-right: 18px; padding-bottom: 48px; }
   .hero .hero-name { font-size: 12px; margin-bottom: 16px; }
   .hero-title { margin-bottom: 12px; }
   .hero .release-when { font-size: 13px; margin-bottom: 20px; }
