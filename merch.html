@@ -121,7 +121,8 @@ body {
 }
 /* The product page is 1080 wide against the grid's 1180, so the bar has to follow the view
    it sits above, otherwise the back link hangs 50px to the left of the product it belongs to. */
-.back-nav.on-product { max-width: 1080px; }
+.back-nav.on-product { display: flex; max-width: 1080px; }
+.back-nav:not(.on-product) { display: none; }
 
 .back-link {
   font-size: 13px;
@@ -1251,8 +1252,20 @@ footer a:hover { text-decoration: underline; }
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
   gtag('config', 'G-X1W0TNHM51');
-</script></head>
-<body>
+</script>
+<link rel="stylesheet" href="site-nav.css">
+</head>
+<body class="nav-offset">
+<nav class="sitenav scrolled" aria-label="Primary">
+  <a href="index.html" class="nav-mark">Bob Davis</a>
+  <div class="nav-links">
+    <a href="index.html#single">Single</a>
+    <a href="index.html#connect">Connect</a>
+    <a href="live/">Live</a>
+    <a href="merch.html">Merch</a>
+    <a href="index.html#about">About</a>
+  </div>
+</nav>
 
 <!-- Default is the grid's version, which is also the right thing if scripting never runs. -->
 <nav class="back-nav" id="back-nav">
@@ -2027,7 +2040,6 @@ function updateBackNav(onProduct) {
     ? '<a class="back-link" href="merch.html" '
       + 'onclick="if(!event.metaKey&&!event.ctrlKey&&event.button===0){event.preventDefault();location.hash=\'\';}">'
       + '&#8592; All merch</a>'
-      + '<a class="home-link" href="index.html">Bob Davis home</a>'
     : '<a class="back-link" href="index.html">&#8592; Bob Davis</a>';
 }
 

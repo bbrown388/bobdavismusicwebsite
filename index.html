@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="site-nav.css">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Rye&display=swap" rel="stylesheet">
 <title>Bob Davis Music</title>
 <meta name="description" content="Bob Davis. Texas country singer-songwriter. Honest, road-worn songs.">
@@ -31,81 +32,6 @@
   --hero-fade: #0d0608;
 }
 
-/* -- Site nav ---------------------------------------------------------- */
-/* Fixed overlay so the hero stays full-bleed to the top edge. It floats
-   transparent over the photo, and a scroll handler adds .scrolled once the
-   hero is behind you, at which point it gets a dark translucent bar so the
-   links stay readable over the cream sections below. */
-.sitenav {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 15px clamp(18px, 4vw, 40px);
-  background: transparent;
-  transition: background .25s ease, border-color .25s ease, padding .25s ease;
-  border-bottom: 1px solid transparent;
-}
-.sitenav.scrolled {
-  background: rgba(13,6,8,0.86);
-  backdrop-filter: blur(9px);
-  -webkit-backdrop-filter: blur(9px);
-  border-bottom-color: rgba(255,215,0,0.16);
-  padding-top: 11px;
-  padding-bottom: 11px;
-}
-
-.sitenav .nav-mark {
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 15px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: #F2EADC;
-  text-decoration: none;
-  text-shadow: 0 1px 12px rgba(0,0,0,0.85);
-  white-space: nowrap;
-}
-
-.nav-links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: clamp(14px, 2.4vw, 30px);
-}
-
-.nav-links a {
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 13.5px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #F2EADC;
-  text-decoration: none;
-  text-shadow: 0 1px 12px rgba(0,0,0,0.85);
-  transition: color .15s ease;
-}
-.nav-links a:hover, .nav-links a:focus-visible { color: var(--gold); }
-
-/* Phone: the wordmark would crowd five links, so it drops and the links
-   center. Five short caps fit one row at 390px. */
-@media (max-width: 560px) {
-  .sitenav { justify-content: center; padding: 12px 10px; }
-  .sitenav .nav-mark { display: none; }
-  .nav-links { gap: 6px 13px; }
-  .nav-links a { font-size: 14px; letter-spacing: 0.05em; }
-}
-
-
-html {
-  scroll-behavior: smooth;
-  /* so an anchor jump clears the fixed nav */
-  scroll-padding-top: 66px;
-}
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
   background: #0d0608;
