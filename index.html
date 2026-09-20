@@ -44,7 +44,12 @@ body {
 
 /* â"€â"€ Hero â"€â"€ */
 /* -- Hero -------------------------------------------------------------- */
-/* Full-bleed photo hero in the Texas-country convention: one picture edge to
+/* NOTE the RELATIVE image path below. The rest of the page uses root-relative
+   /images/... paths, which only work on the /preview/ build because those files
+   already exist on production. A NEW asset referenced root-relatively is a 404
+   on the preview until the PR merges, which defeats the preview. Relative paths
+   resolve correctly under both / and /preview/.
+   Full-bleed photo hero in the Texas-country convention: one picture edge to
    edge, a dark scrim, the release as the headline, socials at the foot. The
    photo is a caption-free frame from the 20 Aug video shoot and is only about
    1MP, so it is deliberately positioned to keep the face in the upper half
@@ -58,7 +63,7 @@ body {
   justify-content: center;
   text-align: center;
   padding: 120px 20px 44px;
-  background: #0d0608 url('/images/hero-2-dolla-bill.jpg') 50% 20% / cover no-repeat;
+  background: #0d0608 url('images/hero-2-dolla-bill.jpg') 50% 20% / cover no-repeat;
   overflow: hidden;
 }
 
