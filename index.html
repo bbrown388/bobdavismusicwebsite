@@ -277,14 +277,19 @@ body {
     /* Two layers: a gradient that fades the photo's lower edge into the dark
        base so the band dissolves instead of ending on a hard line, over the
        photo itself. The image is 84.5vw tall, so the fade runs 60->84vw. */
+    /* Fade starts BELOW the face and bill (they live in the top ~38vw and stay
+       bright) and darkens the lower guitar/torso, so the type can sit OVER that
+       lower area and read, without ever touching the face or the bill. */
     background-image:
-      linear-gradient(to bottom, rgba(13,6,8,0) 60vw, rgba(13,6,8,1) 84vw),
+      linear-gradient(to bottom, rgba(13,6,8,0) 38vw, rgba(13,6,8,0.78) 60vw, rgba(13,6,8,1) 80vw),
       url('images/hero-bill.jpg');
     background-size: 100vw 84.6vw, 100vw auto;
     background-position: top center, top center;
     background-repeat: no-repeat, no-repeat;
     background-origin: border-box;
-    padding: 84vw 20px 52px;
+    /* Type overlaps the lower third of the photo instead of sitting in a
+       separate block below it. */
+    padding: 50vw 20px 52px;
   }
 }
 
