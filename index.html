@@ -264,9 +264,18 @@ body {
 .hero-social svg { width: 22px; height: 22px; fill: currentColor; display: block; }
 
 @media (max-width: 480px) {
-  /* He sits left of centre in the source; portrait cover crops the sides evenly,
-     which clipped the cap. Anchoring left of centre keeps the whole head in. */
-  .hero { padding: 96px 18px 36px; background-position: 50% 28%; }
+  /* Phone: the face and the bill sit too far apart to both fit a cover crop,
+     so show the WHOLE photo as a band across the top (bill included) and put the
+     type in the dark below it. A full-width image is 100vw * 933/1104 = 84.5vw
+     tall, so padding-top 88vw clears it. */
+  .hero {
+    min-height: 0;
+    align-items: flex-start;
+    background-size: 100vw auto;
+    background-position: top center;
+    background-origin: border-box;
+    padding: 87vw 18px 48px;
+  }
   .hero .hero-name { font-size: 12px; margin-bottom: 16px; }
   .hero-title { margin-bottom: 12px; }
   .hero .release-when { font-size: 13px; margin-bottom: 20px; }
