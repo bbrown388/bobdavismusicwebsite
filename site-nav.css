@@ -72,6 +72,23 @@
   .sitenav .nav-links a { font-size: 14px; letter-spacing: 0.05em; }
 }
 
+/* Narrow phones (360px Android, 320px SE). The five links need about 336px but a
+   360px screen only offers 325, so ABOUT dropped to a second row. That also grew
+   the bar to 66px while body.nav-offset stays 52px, which let the bar sit over
+   the top of the sub-pages' content. Reclaiming the side padding, the gap and the
+   tracking buys back roughly 28px, enough to hold one row. */
+@media (max-width: 374px) {
+  .sitenav { padding-left: 6px; padding-right: 6px; }
+  .sitenav .nav-links { gap: 6px 8px; }
+  .sitenav .nav-links a { letter-spacing: 0.02em; }
+}
+
+/* Below 340px the tracking and gap are already spent, so the type gives up the
+   last point and a half. Still the largest the row can be and stay on one line. */
+@media (max-width: 340px) {
+  .sitenav .nav-links a { font-size: 12.5px; }
+}
+
 html { scroll-behavior: smooth; scroll-padding-top: 66px; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 

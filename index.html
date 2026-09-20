@@ -123,12 +123,14 @@ body {
 }
 
 .hero-title {
-  /* Rye is wide and ornate, so it runs smaller than a condensed face would and
-     is allowed to wrap on a phone. The colour is sampled from the cover's own
-     title so the two read as the same object. */
+  /* Rye is wide and ornate, so it runs smaller than a condensed face would. The
+     colour is sampled from the cover's own title so the two read as the same
+     object. The 36px floor (it was 42) keeps the title on ONE line down to a
+     320px screen: at 42px it needed about 315px and a 360px Android offers 309,
+     so it broke after "2 DOLLA". Only widths under 400px change at all. */
   font-family: var(--title);
   font-weight: 400;
-  font-size: clamp(42px, 10.5vw, 96px);
+  font-size: clamp(36px, 10.5vw, 96px);
   line-height: 1.0;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -223,6 +225,50 @@ body {
   .hero .release-when { font-size: 13px; margin-bottom: 20px; }
   .hero .link-btn.presave { min-width: 0; width: 100%; padding: 15px 20px; }
   .hero-social { gap: 22px; margin-top: 28px; }
+}
+
+/* Wide and SHORT laptop windows, the case a full-screen test never shows.
+   Cover scales the photo by WIDTH, so as a window gets wider and shorter the
+   face grows and moves down, while the bottom-anchored type stays a fixed
+   distance off the floor. Under roughly 860px tall the two meet and the name
+   and kicker land on the beard and chin. Measured clearance runs about
+   0.58*height - 0.059*width - 371, which goes negative at 1280x720, 1346x731,
+   1366x768 and 1440x780. Reclaiming the title's size and the stack's margins
+   buys back about 60px, enough to clear the chin across the whole band.
+   Taller windows keep the larger type exactly as it is. */
+@media (min-aspect-ratio: 6/5) and (max-height: 860px) {
+  .hero { padding-bottom: 32px; }
+  .hero .hero-name { margin-bottom: 12px; }
+  .hero-title { font-size: clamp(36px, 6.4vw, 68px); }
+  .hero .release-when { margin-bottom: 16px; }
+}
+
+/* Shorter still: a part-screen window on a laptop, around 1024x600 or 1280x620.
+   The band above recovers 60px and these need about 100, so the type gives up
+   another 56. Same idea, one notch harder. */
+@media (min-aspect-ratio: 6/5) and (max-height: 700px) {
+  .hero { padding-top: 76px; padding-bottom: 24px; }
+  .hero .hero-name { margin-bottom: 8px; }
+  .hero-kicker { margin-bottom: 4px; }
+  .hero-title { font-size: clamp(36px, 5vw, 48px); }
+  .hero .release-when { margin-bottom: 10px; }
+  .hero .link-btn.presave { padding-top: 12px; padding-bottom: 12px; }
+  .hero-social { margin-top: 18px; }
+}
+
+/* A phone held sideways, or any window under about 520px tall. Here the head
+   fills the top half and there is no room to stack six rows of type beneath the
+   chin at any size, so the hero keeps only the three rows that carry the
+   release (title, date, pre-save) and drops the wordmark, the kicker and the
+   social row. All three still appear further down the page, and the nav keeps
+   the wordmark at this width, so nothing is actually lost. */
+@media (min-aspect-ratio: 6/5) and (max-height: 520px) {
+  .hero { padding-top: 56px; padding-bottom: 16px; }
+  .hero .hero-name,
+  .hero-kicker,
+  .hero-social { display: none; }
+  .hero-title { font-size: clamp(32px, 4.6vw, 44px); }
+  .hero .release-when { margin-bottom: 10px; }
 }
 
 .genre {
