@@ -89,42 +89,10 @@ body {
     rgba(13,6,8,0.34) 52%,
     rgba(13,6,8,0.78) 80%,
     var(--hero-fade) 100%);
-  z-index: 1;
-}
-
-/* Optional motion layer. The still above is untouched and stays both the poster
-   and the fallback, so if the video is blocked, still downloading, or the viewer
-   prefers reduced motion, the hero looks exactly as it did before. The clip is a
-   6.5s silent loop cut from the same frame the still came from, cropped to the
-   same 1104x932 caption-free band, which is why object-position repeats the
-   still's background-position. */
-.hero-video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 50% 42%;
-  z-index: 0;
-}
-@media (prefers-reduced-motion: reduce) { .hero-video { display: none; } }
-
-/* Portrait draws the still as a zoomed band across the top (128vw wide, pinned
-   right) with the type below it rather than as a full cover, so the video has to
-   be laid out the same way or the framing would not match on a phone. */
-@media (max-aspect-ratio: 6/5) {
-  .hero-video {
-    inset: 0 0 auto auto;
-    width: 128vw;
-    height: auto;
-    max-width: none;
-    object-fit: fill;
-  }
 }
 
 .hero-inner {
   position: relative;
-  z-index: 2;
   width: 100%;
   /* Wide enough that the Rye title holds ONE line at its desktop size; it was
      wrapping at 720px and the extra line climbed into the face. */
@@ -907,14 +875,6 @@ footer {
 <!-- Hero: full-bleed photo, release-first. The countdown text and the pre-save
      button live here now; the script at the foot of the page finds them by id. -->
 <header class="hero">
-  <!-- Decorative motion layer. Muted and playsinline so iOS autoplays it inline
-       instead of going fullscreen, loop for the 6.5s cycle, and the poster is the
-       existing still so the first paint matches the static hero exactly. -->
-  <video class="hero-video" autoplay muted loop playsinline preload="metadata"
-         poster="images/hero-bill.jpg" aria-hidden="true" tabindex="-1">
-    <source src="images/hero-bill.webm" type="video/webm">
-    <source src="images/hero-bill.mp4" type="video/mp4">
-  </video>
   <div class="hero-inner">
     <h1 class="hero-name">Bob Davis</h1>
     <p class="hero-kicker">Debut Single</p>
