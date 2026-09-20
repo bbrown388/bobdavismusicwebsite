@@ -72,13 +72,15 @@
 
 .nav-links {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: clamp(14px, 2.4vw, 30px);
 }
 
 .nav-links a {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: 13.5px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: #F2EADC;
@@ -91,10 +93,10 @@
 /* Phone: the wordmark would crowd five links, so it drops and the links
    center. Five short caps fit one row at 390px. */
 @media (max-width: 560px) {
-  .sitenav { justify-content: center; padding: 12px 14px; }
+  .sitenav { justify-content: center; padding: 12px 10px; }
   .sitenav .nav-mark { display: none; }
-  .nav-links { gap: clamp(12px, 4.4vw, 22px); }
-  .nav-links a { font-size: 11.5px; letter-spacing: 0.12em; }
+  .nav-links { gap: 6px 13px; }
+  .nav-links a { font-size: 14px; letter-spacing: 0.05em; }
 }
 
 
@@ -837,8 +839,8 @@ footer {
   <div class="nav-links">
     <a href="#single">Single</a>
     <a href="#connect">Connect</a>
-    <a href="#live">Live</a>
-    <a href="#merch">Merch</a>
+    <a href="live/">Live</a>
+    <a href="merch.html">Merch</a>
     <a href="#about">About</a>
   </div>
 </nav>
