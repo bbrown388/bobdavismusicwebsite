@@ -274,22 +274,19 @@ body {
   .hero {
     min-height: 0;
     align-items: flex-start;
-    /* Two layers: a gradient that fades the photo's lower edge into the dark
-       base so the band dissolves instead of ending on a hard line, over the
-       photo itself. The image is 84.5vw tall, so the fade runs 60->84vw. */
-    /* Fade starts BELOW the face and bill (they live in the top ~38vw and stay
-       bright) and darkens the lower guitar/torso, so the type can sit OVER that
-       lower area and read, without ever touching the face or the bill. */
+    /* Zoomed to 140vw and right-aligned so the head moves off-centre to the
+       upper LEFT and the dead greenery is cropped, while the bill stays in view
+       on the right. The gradient (a cover layer on top) is transparent over the
+       face and bill up top and darkens the lower guitar so the type can overlap
+       there and read. */
     background-image:
-      linear-gradient(to bottom, rgba(13,6,8,0) 38vw, rgba(13,6,8,0.78) 60vw, rgba(13,6,8,1) 80vw),
+      linear-gradient(to bottom, rgba(13,6,8,0) 46%, rgba(13,6,8,0.85) 72%, rgba(13,6,8,1) 90%),
       url('images/hero-bill.jpg');
-    background-size: 100vw 84.6vw, 100vw auto;
-    background-position: top center, top center;
+    background-size: cover, 128vw auto;
+    background-position: center, 100% 2%;
     background-repeat: no-repeat, no-repeat;
     background-origin: border-box;
-    /* Type overlaps the lower third of the photo instead of sitting in a
-       separate block below it. */
-    padding: 50vw 20px 52px;
+    padding: 78vw 20px 52px;
   }
 }
 
