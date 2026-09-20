@@ -99,16 +99,24 @@ body {
   max-width: 1000px;
 }
 
+/* The ARTIST is the headline. This was a 14px label sitting above a 96px song
+   title, so the song outranked the name about seven to one and the page read as
+   a landing page for the single instead of for Bob Davis. The two now swap
+   roles: the name takes the cover's Rye face and its gold, and the single drops
+   to a secondary line underneath. */
 .hero .hero-name {
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.42em;
+  font-family: var(--title);
+  font-weight: 400;
+  font-size: clamp(36px, 10.5vw, 96px);
+  line-height: 1.0;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: #E8DCC8;
-  text-shadow: 0 1px 14px rgba(0,0,0,0.8);
-  margin: 0 0 22px;
-  line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 3px 0 rgba(0,0,0,0.55), 0 2px 34px rgba(0,0,0,0.85);
+  /* Promoting the name made the stack about 18px taller, which ate into the gap
+     that keeps type off the chin on short windows. These two margins give most
+     of it back without shrinking the name itself. */
+  margin: 0 0 10px;
 }
 
 .hero-kicker {
@@ -123,20 +131,20 @@ body {
 }
 
 .hero-title {
-  /* Rye is wide and ornate, so it runs smaller than a condensed face would. The
-     colour is sampled from the cover's own title so the two read as the same
-     object. The 36px floor (it was 42) keeps the title on ONE line down to a
-     320px screen: at 42px it needed about 315px and a 360px Android offers 309,
-     so it broke after "2 DOLLA". Only widths under 400px change at all. */
+  /* Secondary now: the single, announced under the artist name. It keeps Rye so
+     the tie to the cover art survives, runs at roughly 0.42 of the name so the
+     hierarchy reads at a glance, and goes cream rather than gold so the gold
+     belongs to the name alone. Being much shorter than the name it has no
+     wrapping problem at any width. */
   font-family: var(--title);
   font-weight: 400;
-  font-size: clamp(36px, 10.5vw, 96px);
-  line-height: 1.0;
-  letter-spacing: 0.02em;
+  font-size: clamp(20px, 4.4vw, 40px);
+  line-height: 1.05;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--gold);
-  text-shadow: 0 3px 0 rgba(0,0,0,0.55), 0 2px 34px rgba(0,0,0,0.85);
-  margin-bottom: 16px;
+  color: #E8DCC8;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.5), 0 2px 26px rgba(0,0,0,0.85);
+  margin-bottom: 12px;
 }
 
 .hero .release-when {
@@ -220,7 +228,7 @@ body {
 
 @media (max-width: 480px) {
   .hero { padding-left: 18px; padding-right: 18px; padding-bottom: 48px; }
-  .hero .hero-name { font-size: 12px; margin-bottom: 16px; }
+  .hero .hero-name { margin-bottom: 10px; }
   .hero-title { margin-bottom: 12px; }
   .hero .release-when { font-size: 13px; margin-bottom: 20px; }
   .hero .link-btn.presave { min-width: 0; width: 100%; padding: 15px 20px; }
@@ -238,9 +246,10 @@ body {
    Taller windows keep the larger type exactly as it is. */
 @media (min-aspect-ratio: 6/5) and (max-height: 860px) {
   .hero { padding-bottom: 32px; }
-  .hero .hero-name { margin-bottom: 12px; }
-  .hero-title { font-size: clamp(36px, 6.4vw, 68px); }
-  .hero .release-when { margin-bottom: 16px; }
+  .hero .hero-name { margin-bottom: 10px; font-size: clamp(36px, 6.4vw, 68px); }
+  .hero-kicker { margin-bottom: 5px; }
+  .hero-title { font-size: clamp(18px, 2.9vw, 30px); margin-bottom: 10px; }
+  .hero .release-when { margin-bottom: 12px; }
 }
 
 /* Shorter still: a part-screen window on a laptop, around 1024x600 or 1280x620.
@@ -248,26 +257,26 @@ body {
    another 56. Same idea, one notch harder. */
 @media (min-aspect-ratio: 6/5) and (max-height: 700px) {
   .hero { padding-top: 76px; padding-bottom: 24px; }
-  .hero .hero-name { margin-bottom: 8px; }
+  .hero .hero-name { margin-bottom: 8px; font-size: clamp(36px, 5vw, 48px); }
   .hero-kicker { margin-bottom: 4px; }
-  .hero-title { font-size: clamp(36px, 5vw, 48px); }
+  .hero-title { font-size: clamp(16px, 2.3vw, 24px); }
   .hero .release-when { margin-bottom: 10px; }
   .hero .link-btn.presave { padding-top: 12px; padding-bottom: 12px; }
   .hero-social { margin-top: 18px; }
 }
 
-/* A phone held sideways, or any window under about 520px tall. Here the head
-   fills the top half and there is no room to stack six rows of type beneath the
-   chin at any size, so the hero keeps only the three rows that carry the
-   release (title, date, pre-save) and drops the wordmark, the kicker and the
-   social row. All three still appear further down the page, and the nav keeps
-   the wordmark at this width, so nothing is actually lost. */
+/* A phone held sideways, or any window under about 520px tall. The head fills
+   the top half and there is no room to stack six rows of type beneath the chin,
+   so the hero keeps the rows that matter (the NAME, the single, the date and the
+   pre-save) and drops the kicker and the social row. Both still appear further
+   down the page, so nothing is actually lost. The name stays no matter how short
+   the window gets, since it is the point of the page. */
 @media (min-aspect-ratio: 6/5) and (max-height: 520px) {
   .hero { padding-top: 56px; padding-bottom: 16px; }
-  .hero .hero-name,
   .hero-kicker,
   .hero-social { display: none; }
-  .hero-title { font-size: clamp(32px, 4.6vw, 44px); }
+  .hero .hero-name { font-size: clamp(30px, 4.6vw, 44px); margin-bottom: 4px; }
+  .hero-title { font-size: clamp(15px, 2vw, 20px); margin-bottom: 6px; }
   .hero .release-when { margin-bottom: 10px; }
 }
 
@@ -659,7 +668,12 @@ footer {
 
   /* The hero is a photograph and keeps its own dark palette in every scheme;
      these stop the light-mode text and icon colours bleeding onto it. */
-  .hero .hero-name, .hero .release-when { color: #E8DCC8; text-shadow: 0 1px 14px rgba(0,0,0,0.8); }
+  /* The name carries the gold now that it is the headline, so it must NOT be
+     folded into the cream override the way it was when it was a small label.
+     The single takes the cream instead, keeping the contrast between them. */
+  .hero .hero-name { color: var(--gold); }
+  .hero-title { color: #E8DCC8; }
+  .hero .release-when { color: #E8DCC8; text-shadow: 0 1px 14px rgba(0,0,0,0.8); }
   .hero .release-when b { color: #FFD700; }
   .hero .hero-social a { color: #E8DCC8; }
   .hero .hero-social a:hover, .hero .hero-social a:focus-visible { color: #FFD700; }
