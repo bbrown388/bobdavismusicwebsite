@@ -303,8 +303,20 @@ p {
 .home-link:hover  { filter: brightness(1.12); }
 .home-link:active { transform: scale(0.97); }
 </style>
+<link rel="stylesheet" href="../site-nav.css">
 </head>
-<body>
+<body class="nav-offset">
+<nav class="sitenav scrolled" aria-label="Primary">
+  <a href="../" class="nav-mark">Bob Davis</a>
+  <div class="nav-links">
+    <a href="../index.html#single">Single</a>
+    <a href="../index.html#connect">Connect</a>
+    <a href="./">Live</a>
+    <a href="../merch.html">Merch</a>
+    <a href="../index.html#about">About</a>
+  </div>
+</nav>
+
   <div class="hero">
     <img src="/images/bob-live-intrinsic.jpg" alt="Bob Davis performing live on stage at Intrinsic Brewery">
     <div class="hero-overlay">

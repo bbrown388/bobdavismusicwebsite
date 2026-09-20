@@ -1,0 +1,97 @@
+/* Shared top navigation, linked by index.html, live/index.html and merch.html so
+   the bar's styling lives in exactly one place. The small <nav> markup stays in
+   each page because the links differ: the homepage uses in-page anchors, the
+   sub-pages point back to the homepage. On the homepage the bar starts
+   transparent over the hero and a script adds .scrolled on scroll; the sub-pages
+   render it solid from the start with class="sitenav scrolled".
+
+   Self-contained on purpose: it brings its own font and colours (not the page's
+   CSS variables) so it looks identical on every page. */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600&display=swap');
+
+.sitenav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px clamp(18px, 4vw, 40px);
+  background: transparent;
+  transition: background .25s ease, border-color .25s ease, padding .25s ease;
+  border-bottom: 1px solid transparent;
+}
+.sitenav.scrolled {
+  background: rgba(13,6,8,0.86);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  border-bottom-color: rgba(255,215,0,0.16);
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+.sitenav .nav-mark {
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #F2EADC;
+  text-decoration: none;
+  text-shadow: 0 1px 12px rgba(0,0,0,0.85);
+  white-space: nowrap;
+}
+
+.sitenav .nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(14px, 2.4vw, 30px);
+}
+
+.sitenav .nav-links a {
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #F2EADC;
+  text-decoration: none;
+  text-shadow: 0 1px 12px rgba(0,0,0,0.85);
+  transition: color .15s ease;
+}
+.sitenav .nav-links a:hover,
+.sitenav .nav-links a:focus-visible { color: #E5B777; }
+
+/* Phone: drop the wordmark and centre the five links on one row. */
+@media (max-width: 560px) {
+  .sitenav { justify-content: center; padding: 12px 10px; }
+  .sitenav .nav-mark { display: none; }
+  .sitenav .nav-links { gap: 6px 13px; }
+  .sitenav .nav-links a { font-size: 14px; letter-spacing: 0.05em; }
+}
+
+/* Narrow phones (360px Android, 320px SE). The five links need about 336px but a
+   360px screen only offers 325, so ABOUT dropped to a second row. That also grew
+   the bar to 66px while body.nav-offset stays 52px, which let the bar sit over
+   the top of the sub-pages' content. Reclaiming the side padding, the gap and the
+   tracking buys back roughly 28px, enough to hold one row. */
+@media (max-width: 374px) {
+  .sitenav { padding-left: 6px; padding-right: 6px; }
+  .sitenav .nav-links { gap: 6px 8px; }
+  .sitenav .nav-links a { letter-spacing: 0.02em; }
+}
+
+/* Below 340px the tracking and gap are already spent, so the type gives up the
+   last point and a half. Still the largest the row can be and stay on one line. */
+@media (max-width: 340px) {
+  .sitenav .nav-links a { font-size: 12.5px; }
+}
+
+html { scroll-behavior: smooth; scroll-padding-top: 66px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+/* Sub-pages render the bar solid from the top, so their content clears the fixed
+   bar. The homepage omits this (its hero sits under the transparent bar). */
+body.nav-offset { padding-top: 52px; }
