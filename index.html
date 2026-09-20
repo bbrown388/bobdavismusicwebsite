@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Rye&display=swap" rel="stylesheet">
 <title>Bob Davis Music</title>
 <meta name="description" content="Bob Davis. Texas country singer-songwriter. Honest, road-worn songs.">
 <meta property="og:title" content="Bob Davis Music">
@@ -17,7 +17,12 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --display: 'Oswald', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+  /* Both faces come from the single's cover art: Rye is the title, Cinzel is the
+     letter-spaced Roman caps under it. Using them here makes the hero and the
+     artwork one announcement instead of two competing ones. */
+  --title:   'Rye', 'Playfair Display', Georgia, serif;
+  --display: 'Cinzel', 'Trajan Pro', Georgia, serif;
+  --gold:    #E5B777;
   /* The colour the hero photo fades INTO at its bottom edge. Always dark, in
      both colour schemes: in dark mode it is the page colour so the seam is
      invisible, and in light mode a dark hero ending on a crisp edge above a
@@ -87,12 +92,14 @@ body {
 .hero-inner {
   position: relative;
   width: 100%;
-  max-width: 720px;
+  /* Wide enough that the Rye title holds ONE line at its desktop size; it was
+     wrapping at 720px and the extra line climbed into the face. */
+  max-width: 1000px;
 }
 
 .hero .hero-name {
   font-family: var(--display);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.42em;
   text-transform: uppercase;
@@ -104,7 +111,7 @@ body {
 
 .hero-kicker {
   font-family: var(--display);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 13px;
   letter-spacing: 0.36em;
   text-transform: uppercase;
@@ -114,15 +121,18 @@ body {
 }
 
 .hero-title {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: clamp(56px, 15vw, 128px);
-  line-height: 0.92;
-  letter-spacing: 0.01em;
+  /* Rye is wide and ornate, so it runs smaller than a condensed face would and
+     is allowed to wrap on a phone. The colour is sampled from the cover's own
+     title so the two read as the same object. */
+  font-family: var(--title);
+  font-weight: 400;
+  font-size: clamp(42px, 10.5vw, 96px);
+  line-height: 1.0;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: #FFD700;
-  text-shadow: 0 2px 34px rgba(0,0,0,0.85), 0 0 40px rgba(255,215,0,0.18);
-  margin-bottom: 14px;
+  color: var(--gold);
+  text-shadow: 0 3px 0 rgba(0,0,0,0.55), 0 2px 34px rgba(0,0,0,0.85);
+  margin-bottom: 16px;
 }
 
 .hero .release-when {
@@ -149,9 +159,9 @@ body {
   border: 1px solid rgba(255,215,0,0.7);
   color: #FFD700;
   font-family: var(--display);
-  font-weight: 500;
-  font-size: 15px;
-  letter-spacing: 0.2em;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   backdrop-filter: blur(2px);
   transition: background .18s ease, color .18s ease, transform .1s;
@@ -313,10 +323,10 @@ section {
    flows for the streaming services), so this is a native card that hands off on tap.
    The link covers Spotify pre-save AND Apple Music pre-add, so the button stays
    platform-neutral rather than naming one service and losing the other's users. */
+.single { width: 100%; max-width: 420px; text-align: center; margin-bottom: 44px; }
 .release {
   width: 100%;
   max-width: 420px;
-  margin-bottom: 48px;
   text-align: center;
 }
 /* The release text and pre-save button moved up into the hero, so down here
@@ -367,14 +377,16 @@ section {
   color: #FFD700;
 }
 
-/* Labels and buttons take the display face so the page reads as one design
-   after the hero; body copy stays Georgia. Declared after .link-btn so it wins. */
-.link-btn, .section-label, .release-kicker, .fan-submit {
+/* Section labels take the cover's Cinzel so the page reads as one design after
+   the hero. Buttons deliberately do NOT: Cinzel sets lowercase as small caps, so
+   "Instagram @bobdavismusic" wrapped to two lines on a phone. Buttons keep Georgia,
+   which they were built in and which fits. Display face for display, text face
+   for controls. */
+.section-label, .release-kicker {
   font-family: var(--display);
-  font-weight: 500;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: 0.3em;
 }
-.section-label { letter-spacing: 0.3em; }
 
 /* "Pre-save my debut single" is the longest label on the page and wrapped to two lines
    on a 320px phone. Reclaiming the button's own padding, gap and tracking buys about
@@ -777,12 +789,6 @@ footer {
 
 <main class="page">
 
-<!-- Release art. The words are in the hero; this is the record itself. -->
-<div class="release">
-  <img class="release-art" src="/images/2-dolla-bill-cover.jpg"
-       alt="2 Dolla Bill single cover" width="900" height="900">
-</div>
-
 <!-- Fan list -->
 <section class="fanlist">
   <p class="section-label">Get the Single First</p>
@@ -797,6 +803,18 @@ footer {
     <button type="submit" class="link-btn fan-submit" id="fan-submit">Join the list</button>
   </form>
   <p class="fan-note" id="fan-note">Release day, show dates, nothing else.</p>
+</section>
+
+<!-- The single. Its own block, a scroll below the announcement, so the hero and
+     the artwork are one message in sequence rather than the same title twice on
+     one screen. Same typefaces as the hero on purpose. -->
+<section class="single">
+  <p class="section-label">The Single</p>
+<!-- Release art. The words are in the hero; this is the record itself. -->
+  <div class="release">
+  <img class="release-art" src="/images/2-dolla-bill-cover.jpg"
+       alt="2 Dolla Bill single cover" width="900" height="900">
+</div>
 </section>
 
 <!-- Connect -->
