@@ -66,27 +66,57 @@
 
 /* Phone: drop the wordmark and centre the five links on one row. */
 @media (max-width: 560px) {
-  .sitenav { justify-content: center; padding: 12px 10px; }
-  .sitenav .nav-mark { display: none; }
-  .sitenav .nav-links { gap: 6px 13px; }
-  .sitenav .nav-links a { font-size: 14px; letter-spacing: 0.05em; }
+  /* "BOB DAVIS" as text needs ~90px and a phone has about 19px spare, so on a
+     phone the wordmark becomes the BD mark instead of disappearing. Every page
+     keeps a way back to the homepage at every width, which is the point. The
+     text stays in the DOM for screen readers and is pushed out of view, so the
+     link still announces itself as "Bob Davis" rather than as an unlabelled
+     image. The url() is relative to THIS stylesheet, not to the page, so the
+     same path works from /live/ and merch.html without a second copy. */
+  .sitenav { justify-content: space-between; padding: 12px 8px; }
+  .sitenav .nav-mark {
+    display: block;
+    flex: 0 0 auto;
+    width: 34px;
+    height: 24px;
+    background: url('images/bd-mark-nav.png') left center / contain no-repeat;
+    text-indent: -200px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .sitenav .nav-links {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    gap: 6px 9px;
+  }
+  .sitenav .nav-links a { font-size: 14px; letter-spacing: 0.04em; }
 }
 
-/* Narrow phones (360px Android, 320px SE). The five links need about 336px but a
-   360px screen only offers 325, so ABOUT dropped to a second row. That also grew
-   the bar to 66px while body.nav-offset stays 52px, which let the bar sit over
-   the top of the sub-pages' content. Reclaiming the side padding, the gap and the
-   tracking buys back roughly 28px, enough to hold one row. */
-@media (max-width: 374px) {
+/* Phones, continued. The BD mark above costs 34px plus its gap, which pushed the
+   five links to a second row at 320, 360 and 390. A two-row bar is 66px against a
+   52px body.nav-offset, so it would sit over the sub-pages' content: the mark has
+   to be paid for out of link spacing, not out of the offset. Type size is held at
+   13px as long as possible because Bob asked for BIGGER phone nav text, so the
+   gap and tracking are spent first. */
+@media (max-width: 430px) {
   .sitenav { padding-left: 6px; padding-right: 6px; }
-  .sitenav .nav-links { gap: 6px 8px; }
-  .sitenav .nav-links a { letter-spacing: 0.02em; }
+  .sitenav .nav-links { gap: 6px 7px; }
+  .sitenav .nav-links a { font-size: 13px; letter-spacing: 0.01em; }
 }
 
-/* Below 340px the tracking and gap are already spent, so the type gives up the
-   last point and a half. Still the largest the row can be and stay on one line. */
+/* Below 375px the gap and tracking are spent, so the type gives up the last
+   half point. Still the largest the row can be and stay on one line. */
+@media (max-width: 374px) {
+  .sitenav .nav-mark { width: 30px; height: 22px; }
+  .sitenav .nav-links { gap: 6px 6px; }
+  .sitenav .nav-links a { font-size: 12.5px; letter-spacing: 0; }
+}
+
+/* 320px, the smallest screen still in real use. */
 @media (max-width: 340px) {
-  .sitenav .nav-links a { font-size: 12.5px; }
+  .sitenav { padding-left: 4px; padding-right: 4px; }
+  .sitenav .nav-mark { width: 26px; height: 19px; }
+  .sitenav .nav-links a { font-size: 11.5px; }
 }
 
 html { scroll-behavior: smooth; scroll-padding-top: 66px; }
