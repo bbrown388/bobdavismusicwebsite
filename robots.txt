@@ -2,9 +2,4 @@ User-agent: *
 Disallow: /tcma2026/
 Disallow: /TCMA2026/
 
-# Games are intentionally not indexed. 66 game pages against 7 music pages made
-# this domain read as a games site to search engines, which works against the
-# "Bob Davis, Texas country singer-songwriter" entity the site exists to build.
-Disallow: /games/
-
 Sitemap: https://bobdavismusic.com/sitemap.xml

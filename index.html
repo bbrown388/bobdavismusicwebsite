@@ -22,8 +22,14 @@
      accounts into ONE entity in Google's knowledge graph rather than leaving them
      as unrelated pages about a common name. The MusicRecording block gives the
      search AI citable facts (ISRC, UPC, date, producer) instead of marketing prose.
-     Keep sameAs in sync whenever a profile is added, and add the Spotify album and
-     Amazon artist URLs once they go live on 2 Oct. -->
+
+     The Spotify album and track URLs are PERMANENT IDs and are included even though
+     they do not resolve until the 2 Oct release. That is deliberate: they are right
+     here the moment the record goes live, so Google connects them on the next crawl
+     instead of waiting on a later edit. Do not strip them for 404ing before then.
+
+     Keep sameAs in sync whenever a profile is added. Still to add once they exist:
+     the Amazon Music artist page, and Wikidata and MusicBrainz entries. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -63,6 +69,7 @@
         "name": "Hunter Avant"
       },
       "url": "https://bobdavismusic.com/listen/2dollabill/",
+      "sameAs": "https://open.spotify.com/track/3t33b0LW8Q2Tp9jae5Oi5j",
       "inAlbum": {
         "@type": "MusicAlbum",
         "name": "2 Dolla Bill",
@@ -70,7 +77,10 @@
         "gtin13": "881864460175",
         "datePublished": "2026-10-02",
         "byArtist": { "@id": "https://bobdavismusic.com/#artist" },
-        "sameAs": "https://music.apple.com/us/album/2-dolla-bill-single/6799347250"
+        "sameAs": [
+          "https://open.spotify.com/album/1ARHocAP2TbrRkcuJiIwmg",
+          "https://music.apple.com/us/album/2-dolla-bill-single/6799347250"
+        ]
       },
       "recordingOf": {
         "@type": "MusicComposition",
