@@ -7,13 +7,100 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="site-nav.css">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Rye&display=swap" rel="stylesheet">
-<title>Bob Davis Music</title>
-<meta name="description" content="Bob Davis. Texas country singer-songwriter. Honest, road-worn songs.">
-<meta property="og:title" content="Bob Davis Music">
-<meta property="og:description" content="Texas country singer-songwriter. Honest, road-worn songs.">
+<title>Bob Davis | Texas Country Singer-Songwriter | Little Elm, TX</title>
+<meta name="description" content="Bob Davis is a Texas country and Red Dirt singer-songwriter based in Little Elm, Texas. Debut single 2 Dolla Bill, released October 2, 2026.">
+<link rel="canonical" href="https://bobdavismusic.com/">
+<meta property="og:title" content="Bob Davis | Texas Country Singer-Songwriter">
+<meta property="og:description" content="Texas country singer-songwriter from Little Elm, TX. Debut single 2 Dolla Bill, out October 2, 2026.">
 <meta property="og:image" content="https://bobdavismusic.com/images/og-default.jpg">
 <meta property="og:url" content="https://bobdavismusic.com/">
+<meta property="og:type" content="profile">
 <meta name="twitter:card" content="summary_large_image">
+
+<!-- Structured data. "Bob Davis" is a common name, so the job here is entity
+     disambiguation: sameAs fuses this site, the streaming profiles and the social
+     accounts into ONE entity in Google's knowledge graph rather than leaving them
+     as unrelated pages about a common name. The MusicRecording block gives the
+     search AI citable facts (ISRC, UPC, date, producer) instead of marketing prose.
+
+     The Spotify album and track URLs are PERMANENT IDs and are included even though
+     they do not resolve until the 2 Oct release. That is deliberate: they are right
+     here the moment the record goes live, so Google connects them on the next crawl
+     instead of waiting on a later edit. Do not strip them for 404ing before then.
+
+     Keep sameAs in sync whenever a profile is added. Still to add once they exist:
+     the Amazon Music artist page, and Wikidata and MusicBrainz entries. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "MusicGroup",
+      "@id": "https://bobdavismusic.com/#artist",
+      "name": "Bob Davis",
+      "url": "https://bobdavismusic.com/",
+      "image": "https://bobdavismusic.com/images/og-default.jpg",
+      "description": "Texas country and Red Dirt singer-songwriter based in Little Elm, Texas, originally from Cedar Rapids, Iowa. Placed third with the 2026 Texas State Songwriters Association and competes for the statewide title in January 2027.",
+      "genre": ["Texas Country", "Red Dirt", "Americana", "Country"],
+      "foundingLocation": {
+        "@type": "Place",
+        "name": "Little Elm, Texas, United States"
+      },
+      "sameAs": [
+        "https://open.spotify.com/artist/7B6c1FAZCSWTILouxeQHwy",
+        "https://music.apple.com/us/artist/bob-davis/6799266863",
+        "https://www.facebook.com/BobDavisMusic/",
+        "https://www.instagram.com/bobdavismusic",
+        "https://www.tiktok.com/@bobdavismusic",
+        "https://www.youtube.com/@bobdavismusic"
+      ]
+    },
+    {
+      "@type": "MusicRecording",
+      "@id": "https://bobdavismusic.com/#2dollabill",
+      "name": "2 Dolla Bill",
+      "byArtist": { "@id": "https://bobdavismusic.com/#artist" },
+      "isrcCode": "QT6G52671053",
+      "duration": "PT3M47S",
+      "datePublished": "2026-10-02",
+      "genre": "Texas Country",
+      "producer": {
+        "@type": "Person",
+        "name": "Hunter Avant"
+      },
+      "url": "https://bobdavismusic.com/listen/2dollabill/",
+      "sameAs": "https://open.spotify.com/track/3t33b0LW8Q2Tp9jae5Oi5j",
+      "inAlbum": {
+        "@type": "MusicAlbum",
+        "name": "2 Dolla Bill",
+        "albumReleaseType": "https://schema.org/SingleRelease",
+        "gtin13": "881864460175",
+        "datePublished": "2026-10-02",
+        "byArtist": { "@id": "https://bobdavismusic.com/#artist" },
+        "sameAs": [
+          "https://open.spotify.com/album/1ARHocAP2TbrRkcuJiIwmg",
+          "https://music.apple.com/us/album/2-dolla-bill-single/6799347250"
+        ]
+      },
+      "recordingOf": {
+        "@type": "MusicComposition",
+        "name": "2 Dolla Bill",
+        "composer": { "@id": "https://bobdavismusic.com/#artist" },
+        "lyricist": { "@id": "https://bobdavismusic.com/#artist" },
+        "iswcCode": "T3426824359"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://bobdavismusic.com/#website",
+      "url": "https://bobdavismusic.com/",
+      "name": "Bob Davis Music",
+      "publisher": { "@id": "https://bobdavismusic.com/#artist" },
+      "inLanguage": "en-US"
+    }
+  ]
+}
+</script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 

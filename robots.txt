@@ -2,3 +2,4 @@ User-agent: *
 Disallow: /tcma2026/
 Disallow: /TCMA2026/
 
+Sitemap: https://bobdavismusic.com/sitemap.xml
