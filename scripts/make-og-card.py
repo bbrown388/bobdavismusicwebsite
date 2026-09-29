@@ -64,9 +64,15 @@ SUBJECT_Y = 0.42          # matches index.html's hero background-position of 50%
 #   which is exactly where the type has to live, so it only fits inside PANEL when the crop window
 #   moves right, which pushes him left. 0.85 is the measured limit: at 0.80 the bill is clipped by
 #   7px. Set SUBJECT_X = 0.00 to put him just left of centre again and lose the egg.
-BILL = (972, 485, 1058, 565)   # original hero pixels, measured off a 3x crop
-BILL_LIT = 0.82                # how much veil to lift over it; 1.0 would flatten it into a hole
-BILL_GLOW = 58                 # feather radius, so it emerges rather than being cut out
+#   IT IS MASKED TO THE BILL'S OWN OUTLINE, not to a glow. A blurred ellipse read as a lighting
+#   effect rather than as a banknote, which was the first attempt and Bob's note on it: "I would
+#   want the crisp lines and corners of the bill, not like a spotlight look." The bill is a tilted
+#   parallelogram, so these are its four corners traced off a 6x crop, in original hero pixels,
+#   clockwise from the top left. BILL_FEATHER stays tiny: it is anti-aliasing for the diagonal
+#   edges, nothing more. The crisp edge is the bill's own edge, which is the point.
+BILL = ((968, 509), (1000, 486), (1055, 546), (1013, 567))
+BILL_LIT = 1.00                # full lift inside the outline, so the paper reads as paper
+BILL_FEATHER = 1.6             # anti-alias only; raise this and it becomes a spotlight again
 
 TAGLINE = ('SMOKE IN THE AIR,', 'TRUTH IN THE LYRICS')
 
@@ -93,18 +99,23 @@ def main():
 
     # Lift the veil over the bill so it survives the fade. Same scale and crop as the photo, so it
     # tracks automatically if ZOOM or SUBJECT_X move.
-    bx0, by0, bx1, by1 = [round(v * scale) for v in BILL]
-    bx0, bx1 = bx0 - left, bx1 - left
-    by0, by1 = by0 - top, by1 - top
-    if bx1 <= PANEL:
-        hole = Image.new('L', (W, H), 0)
-        ImageDraw.Draw(hole).ellipse((bx0 - 26, by0 - 22, bx1 + 26, by1 + 22),
-                                     fill=round(255 * BILL_LIT))
-        hole = hole.filter(ImageFilter.GaussianBlur(BILL_GLOW))
+    poly = [(px * scale - left, py * scale - top) for px, py in BILL]
+    right_edge = max(x for x, _ in poly)
+    if right_edge <= PANEL:
+        # Supersample the polygon, so the diagonal edges are clean without a blur that would
+        # soften the corners back into a glow.
+        S = 4
+        big = Image.new('L', (W * S, H * S), 0)
+        ImageDraw.Draw(big).polygon([(x * S, y * S) for x, y in poly],
+                                    fill=round(255 * BILL_LIT))
+        hole = big.resize((W, H), Image.LANCZOS).filter(
+            ImageFilter.GaussianBlur(BILL_FEATHER))
         veil_mask = ImageChops.subtract(veil_mask, hole)
-        print(f'  easter egg: bill lit at x {bx0}-{bx1}, y {by0}-{by1}')
+        xs = [x for x, _ in poly]; ys = [y for _, y in poly]
+        print(f'  easter egg: bill outlined at x {min(xs):.0f}-{max(xs):.0f}, '
+              f'y {min(ys):.0f}-{max(ys):.0f}')
     else:
-        print(f'  easter egg SKIPPED: bill would be clipped by {bx1 - PANEL}px at this framing')
+        print(f'  easter egg SKIPPED: bill clipped by {right_edge - PANEL:.0f}px at this framing')
 
     card = Image.composite(Image.new('RGB', (W, H), BG), card, veil_mask)
 
