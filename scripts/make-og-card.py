@@ -27,7 +27,7 @@ LAYOUT, and why it is this shape rather than full-bleed
 """
 import os
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITE = os.path.dirname(HERE)
@@ -46,8 +46,27 @@ TAPER = 540               # length of the gradient, reaching solid at PANEL
 # the left edge however the crop is set. Scaling past the panel width creates the slack that lets
 # him be positioned, at the cost of cropping tighter top and bottom.
 ZOOM = 1.40               # 1.0 = fit height exactly; higher crops tighter and frees him to move
-SUBJECT_X = 0.00          # 0 takes the leftmost window, which pushes HIM rightwards in frame
+SUBJECT_X = 0.85          # see THE EASTER EGG below; 0.00 frames him better but loses the bill
 SUBJECT_Y = 0.42          # matches index.html's hero background-position of 50% 42%
+
+# THE EASTER EGG
+#   There is a $2 bill folded in quarters and tucked under the strings at the nut, really there in
+#   the photograph at x 972-1058, y 485-565 of the 1104x933 original. Bob put it there and spotted
+#   it here: "everything else fades out but that pops up but almost looks like part of or in the
+#   middle of part of the logo."
+#
+#   So the veil is not flat. A feathered ellipse is subtracted from it over the bill, and as the
+#   photograph tapers into the ground the bill is the last thing still lit. NOTHING IS COMPOSITED.
+#   The bill stays exactly where the camera found it; only the darkness around it is painted. A
+#   pasted-in bill would not be an Easter egg, it would be a graphic.
+#
+#   IT COSTS FRAMING, and that is the whole trade. The bill sits at the photograph's right edge,
+#   which is exactly where the type has to live, so it only fits inside PANEL when the crop window
+#   moves right, which pushes him left. 0.85 is the measured limit: at 0.80 the bill is clipped by
+#   7px. Set SUBJECT_X = 0.00 to put him just left of centre again and lose the egg.
+BILL = (972, 485, 1058, 565)   # original hero pixels, measured off a 3x crop
+BILL_LIT = 0.82                # how much veil to lift over it; 1.0 would flatten it into a hole
+BILL_GLOW = 58                 # feather radius, so it emerges rather than being cut out
 
 TAGLINE = ('SMOKE IN THE AIR,', 'TRUTH IN THE LYRICS')
 
@@ -67,11 +86,27 @@ def main():
     top = max(0, round((im.height - H) * SUBJECT_Y))
     card.paste(im.crop((left, top, min(im.width, left + PANEL), top + H)), (0, 0))
 
-    veil = Image.new('RGB', (W, H), BG)
     ramp = Image.new('L', (W, 1))
     for x in range(W):
         ramp.putpixel((x, 0), round(255 * smoothstep((x - (PANEL - TAPER)) / TAPER)))
-    card = Image.composite(veil, card, ramp.resize((W, H), Image.BILINEAR))
+    veil_mask = ramp.resize((W, H), Image.BILINEAR)
+
+    # Lift the veil over the bill so it survives the fade. Same scale and crop as the photo, so it
+    # tracks automatically if ZOOM or SUBJECT_X move.
+    bx0, by0, bx1, by1 = [round(v * scale) for v in BILL]
+    bx0, bx1 = bx0 - left, bx1 - left
+    by0, by1 = by0 - top, by1 - top
+    if bx1 <= PANEL:
+        hole = Image.new('L', (W, H), 0)
+        ImageDraw.Draw(hole).ellipse((bx0 - 26, by0 - 22, bx1 + 26, by1 + 22),
+                                     fill=round(255 * BILL_LIT))
+        hole = hole.filter(ImageFilter.GaussianBlur(BILL_GLOW))
+        veil_mask = ImageChops.subtract(veil_mask, hole)
+        print(f'  easter egg: bill lit at x {bx0}-{bx1}, y {by0}-{by1}')
+    else:
+        print(f'  easter egg SKIPPED: bill would be clipped by {bx1 - PANEL}px at this framing')
+
+    card = Image.composite(Image.new('RGB', (W, H), BG), card, veil_mask)
 
     d = ImageDraw.Draw(card)
     cz = os.path.join(HERE, 'Cinzel.ttf')
