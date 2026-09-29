@@ -38,8 +38,16 @@ W, H = 1200, 630          # the size every platform crops from; do not change ca
 BG = (0x0d, 0x06, 0x08)   # --hero-fade
 GOLD = (0xE5, 0xB7, 0x77)  # --gold
 
-PANEL = 620               # where the photo's own pixels end
-TAPER = 380               # length of the gradient, reaching solid at PANEL
+PANEL = 790               # where the photo's own pixels end
+TAPER = 540               # length of the gradient, reaching solid at PANEL
+
+# ZOOM is what makes SUBJECT_X mean anything. At 1.0 the photo is scaled to the canvas height and
+# is 745px wide, NARROWER than the 790px panel, so there is no horizontal slack and he is pinned to
+# the left edge however the crop is set. Scaling past the panel width creates the slack that lets
+# him be positioned, at the cost of cropping tighter top and bottom.
+ZOOM = 1.40               # 1.0 = fit height exactly; higher crops tighter and frees him to move
+SUBJECT_X = 0.00          # 0 takes the leftmost window, which pushes HIM rightwards in frame
+SUBJECT_Y = 0.42          # matches index.html's hero background-position of 50% 42%
 
 TAGLINE = ('SMOKE IN THE AIR,', 'TRUTH IN THE LYRICS')
 
@@ -51,13 +59,13 @@ def smoothstep(t):
 
 def main():
     im = Image.open(HERO).convert('RGB')
-    scale = H / im.height                      # fit the HEIGHT; that is where the slack comes from
+    scale = (H / im.height) * ZOOM
     im = im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
 
     card = Image.new('RGB', (W, H), BG)
-    # Centre him inside the PANEL, not inside the canvas.
-    left = max(0, round((im.width - PANEL) * 0.46))
-    card.paste(im.crop((left, 0, min(im.width, left + PANEL), H)), (0, 0))
+    left = max(0, round((im.width - PANEL) * SUBJECT_X))
+    top = max(0, round((im.height - H) * SUBJECT_Y))
+    card.paste(im.crop((left, top, min(im.width, left + PANEL), top + H)), (0, 0))
 
     veil = Image.new('RGB', (W, H), BG)
     ramp = Image.new('L', (W, 1))
@@ -67,12 +75,16 @@ def main():
 
     d = ImageDraw.Draw(card)
     cz = os.path.join(HERE, 'Cinzel.ttf')
-    f_name = ImageFont.truetype(cz, 76)
+    f_name = ImageFont.truetype(cz, 70)
     f_tag = ImageFont.truetype(cz, 24)
-    cx = round(PANEL + (W - PANEL) * 0.50)
+    # 0.44, measured not guessed. At 70px "BOB DAVIS" is 376px wide, so 0.52 left a 9px right
+    # margin. 0.44 gives 42px and, more usefully, starts the wordmark at x=782 against a PANEL
+    # edge of 790: the type begins exactly where the photo's pixels end, which is the closest the
+    # two can sit without the taper being incomplete underneath the letters.
+    cx = round(PANEL + (W - PANEL) * 0.44)
 
     mark = Image.open(os.path.join(SITE, 'images', 'bd-mark.png')).convert('RGBA')
-    mh = 142
+    mh = 132
     mark = mark.resize((round(mark.width * mh / mark.height), mh), Image.LANCZOS)
     card.paste(mark, (cx - mark.width // 2, 100), mark)
 
