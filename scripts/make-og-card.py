@@ -65,14 +65,21 @@ SUBJECT_Y = 0.42          # matches index.html's hero background-position of 50%
 #   moves right, which pushes him left. 0.85 is the measured limit: at 0.80 the bill is clipped by
 #   7px. Set SUBJECT_X = 0.00 to put him just left of centre again and lose the egg.
 #   IT IS MASKED TO THE BILL'S OWN OUTLINE, not to a glow. A blurred ellipse read as a lighting
-#   effect rather than as a banknote, which was the first attempt and Bob's note on it: "I would
-#   want the crisp lines and corners of the bill, not like a spotlight look." The bill is a tilted
-#   parallelogram, so these are its four corners traced off a 6x crop, in original hero pixels,
-#   clockwise from the top left. BILL_FEATHER stays tiny: it is anti-aliasing for the diagonal
-#   edges, nothing more. The crisp edge is the bill's own edge, which is the point.
-BILL = ((968, 509), (1000, 486), (1055, 546), (1013, 567))
-BILL_LIT = 1.00                # full lift inside the outline, so the paper reads as paper
-BILL_FEATHER = 1.6             # anti-alias only; raise this and it becomes a spotlight again
+#   effect rather than as a banknote. Bob: "I would want the crisp lines and corners of the bill,
+#   not like a spotlight look."
+#
+#   The outline is DETECTED, not traced by hand: scripts/trace-bill.py thresholds the paper against
+#   its surroundings and saves scripts/bill-mask.png at hero resolution. A hand-drawn quadrilateral
+#   was close but wrong at the edges, which does not matter for a soft glow and matters a great deal
+#   for a crisp one. The real shape has a stepped right edge where the strings cross it and a soft
+#   bottom corner, and no four-sided approximation has either.
+#
+#   Two traps the detection had to clear, both recorded in that script: Otsu picked a threshold
+#   BELOW the tan mortar, so the bill's blob merged with the wall, and even at a higher threshold a
+#   mortar joint touched the paper through a bridge a few pixels tall, which an opening severs.
+BILL_MASK = 'bill-mask.png'    # hero-resolution, beside this script
+BILL_LIT = 1.00                # lift inside the outline. Lower it to reduce the light difference
+BILL_FEATHER = 2.0             # edge softness in px. 0-2 crisp, 4-6 blended, 10+ back to a glow
 
 TAGLINE = ('SMOKE IN THE AIR,', 'TRUTH IN THE LYRICS')
 
@@ -99,23 +106,23 @@ def main():
 
     # Lift the veil over the bill so it survives the fade. Same scale and crop as the photo, so it
     # tracks automatically if ZOOM or SUBJECT_X move.
-    poly = [(px * scale - left, py * scale - top) for px, py in BILL]
-    right_edge = max(x for x, _ in poly)
-    if right_edge <= PANEL:
-        # Supersample the polygon, so the diagonal edges are clean without a blur that would
-        # soften the corners back into a glow.
-        S = 4
-        big = Image.new('L', (W * S, H * S), 0)
-        ImageDraw.Draw(big).polygon([(x * S, y * S) for x, y in poly],
-                                    fill=round(255 * BILL_LIT))
-        hole = big.resize((W, H), Image.LANCZOS).filter(
-            ImageFilter.GaussianBlur(BILL_FEATHER))
+    # The mask is scaled and cropped by exactly the same numbers as the photo, so the lit region
+    # stays on the bill automatically if ZOOM or SUBJECT_X ever move.
+    bm = Image.open(os.path.join(HERE, BILL_MASK)).convert('L')
+    bm = bm.resize((round(bm.width * scale), round(bm.height * scale)), Image.LANCZOS)
+    hole = Image.new('L', (W, H), 0)
+    hole.paste(bm.crop((left, top, min(bm.width, left + PANEL), top + H)), (0, 0))
+    bbox = hole.getbbox()
+    if bbox and bbox[2] <= PANEL:
+        if BILL_LIT < 1.0:
+            hole = Image.eval(hole, lambda v: round(v * BILL_LIT))
+        if BILL_FEATHER:
+            hole = hole.filter(ImageFilter.GaussianBlur(BILL_FEATHER))
         veil_mask = ImageChops.subtract(veil_mask, hole)
-        xs = [x for x, _ in poly]; ys = [y for _, y in poly]
-        print(f'  easter egg: bill outlined at x {min(xs):.0f}-{max(xs):.0f}, '
-              f'y {min(ys):.0f}-{max(ys):.0f}')
+        print(f'  easter egg: bill lit at x {bbox[0]}-{bbox[2]}, y {bbox[1]}-{bbox[3]}, '
+              f'feather {BILL_FEATHER}px, lift {BILL_LIT:.0%}')
     else:
-        print(f'  easter egg SKIPPED: bill clipped by {right_edge - PANEL:.0f}px at this framing')
+        print('  easter egg SKIPPED: the bill falls outside PANEL at this framing')
 
     card = Image.composite(Image.new('RGB', (W, H), BG), card, veil_mask)
 
