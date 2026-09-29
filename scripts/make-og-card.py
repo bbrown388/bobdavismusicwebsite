@@ -45,8 +45,13 @@ TAPER = 540               # length of the gradient, reaching solid at PANEL
 # is 745px wide, NARROWER than the 790px panel, so there is no horizontal slack and he is pinned to
 # the left edge however the crop is set. Scaling past the panel width creates the slack that lets
 # him be positioned, at the cost of cropping tighter top and bottom.
-ZOOM = 1.40               # 1.0 = fit height exactly; higher crops tighter and frees him to move
-SUBJECT_X = 0.85          # see THE EASTER EGG below; 0.00 frames him better but loses the bill
+ZOOM = 1.40               # Bob's pick. Wide enough to keep the guitar in frame; tighter
+                          # crops reduce the card to a man against a wall.
+SUBJECT_X = 0.42          # SOLVED, not chosen: puts his face at x 300, clear of the taper.
+                          # A fixed fraction cannot survive a zoom change. At 1.90 the same 0.00
+                          # that works here took the leftmost 790px of a 1416px photo, which is
+                          # foliage and his back, and put his face exactly where the taper goes
+                          # darkest. It cut his head in half and I shipped it without looking.
 SUBJECT_Y = 0.42          # matches index.html's hero background-position of 50% 42%
 
 # THE EASTER EGG
