@@ -29,10 +29,9 @@ APPLE = "https://music.apple.com/us/album/2-dolla-bill-single/6799347250"
 # platform key -> (label, DEST, note about when to change it)
 PLATFORMS = {
     "spotify": (
-        "Spotify", HYPERFOLLOW,
-        "PENDING. Spotify assigns no public album url before release. HyperFollow serves the "
-        "pre-save now and flips to real links at release, so this is correct in both periods. "
-        "REPOINT to the open.spotify.com album url once it exists, after 2 Oct 2026."),
+        "Spotify", "https://open.spotify.com/track/3t33b0LW8Q2Tp9jae5Oi5j",
+        "LIVE. Direct track url, live 1 Oct 2026 (Bob): before release it opens the in-app "
+        "save, after release it plays. Replaces the HyperFollow pre-save hop."),
     "apple": (
         "Apple Music", APPLE,
         "LIVE. Direct url, verified 26 Aug. Album id 6799347250. Deliberately NOT the "
