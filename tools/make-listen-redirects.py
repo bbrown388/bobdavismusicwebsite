@@ -45,6 +45,9 @@ PLATFORMS = {
         "LIVE. Bob's share link, 2 Oct 2026, with the si= share-tracking param stripped. Video "
         "ii_guB7vgus is the official audio on the auto-generated 'Bob Davis - Topic' channel "
         "(confirmed via oEmbed)."),
+    "iheart": (
+        "iHeartRadio", "https://www.iheart.com/artist/bob-davis-270973/songs/2-dolla-bill-423106301",
+        "LIVE. Bob's link, 2 Oct 2026, verified 200 with title 'Bob Davis - 2 Dolla Bill | iHeart'."),
     "amazon": (
         "Amazon Music", "https://music.amazon.com/albums/B0HDH3GH22?trackAsin=B0HDGRHWP7&do=play",
         "LIVE. Bob's own Amazon Music share link, 2 Oct 2026, with the ref/ts share-tracking "
