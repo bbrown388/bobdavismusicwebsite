@@ -16,7 +16,11 @@
 <meta property="og:url" content="https://bobdavismusic.com/listen/2dollabill/">
 <meta name="twitter:card" content="summary_large_image">
 
-<!-- PERMANENT PER-SONG REDIRECT. Lives under /listen/ so every redirect shares one namespace
+<!-- 2 Oct 2026: NOW A CHOOSER, not an auto-redirect. HyperFollow was still showing the pre-save
+     page on release day, so this page links straight to each service through the per-platform
+     redirects (each logs its own listen_click). Swap a button to HyperFollow only once it flips.
+
+     PERMANENT PER-SONG LINK. Lives under /listen/ so every redirect shares one namespace
      and the clean /2dollabill slug stays free for a real page about the song. /listen alone
      tracks the CURRENT single and moves on at the next release; this one never moves, so it is
      the link for print and anything with a long life.
@@ -32,8 +36,6 @@
      a meta refresh for no-JS, and a visible link if everything fails. A redirect that beats
      its own tracking call defeats the point of the page. -->
 
-<!-- No-JS fallback. Long enough that JS normally wins the race. -->
-<noscript><meta http-equiv="refresh" content="0; url=https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/"></noscript>
 
 <!-- Deliberately NOT async, unlike the rest of the site. Async means gtag.js may still be
      loading when the event below runs, leaving it queued in dataLayer while the redirect
@@ -78,6 +80,11 @@
     h1 { color: #8a5a10; }
     .artist, .status { color: #7a5030; }
   }
+  .svc { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 300px; margin-top: 26px; }
+  .svc a { display: block; padding: 14px 18px; border: 1px solid #C9A227; border-radius: 10px; color: #FFD700; text-decoration: none; letter-spacing: 2px; text-transform: uppercase; font-size: 14px; }
+  .svc a:hover, .svc a:focus-visible { background: #FFD700; color: #0d0608; }
+  .svc a.more { border-color: rgba(201,162,39,0.4); color: #C9A227; font-size: 12px; }
+  @media (prefers-color-scheme: light) { .svc a { color: #8a5a10; border-color: #8a5a10; } .svc a:hover { background: #8a5a10; color: #f3e9d6; } }
 </style>
 </head>
 <body>
@@ -85,41 +92,18 @@
   <img src="../../images/2-dolla-bill-cover.jpg" alt="2 Dolla Bill single cover" width="900" height="900">
   <h1>2 Dolla Bill</h1>
   <p class="artist">Bob Davis</p>
-  <p class="status" id="status">Taking you to your music service...</p>
-  <a class="manual" id="manual" href="https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/">Continue</a>
+  <p class="status">Out now. Pick your music service.</p>
+  <div class="svc">
+    <a href="spotify/">Spotify</a>
+    <a href="apple/">Apple Music</a>
+    <!-- Amazon and "More services" (HyperFollow) come back once each is confirmed to reach the
+         released song; on 2 Oct both still led to the pre-save page. -->
+  </div>
 
 <script>
-(function () {
-  var DEST = 'https://distrokid.com/hyperfollow/bobdavis1/2-dolla-bill/';
-  var gone = false;
-
-  function go() {
-    if (gone) return;
-    gone = true;
-    // replace() so Back returns to wherever they came from rather than bouncing
-    // through this page again.
-    location.replace(DEST);
-  }
-
-  // Named to match the homepage card, which already distinguishes presave from listen so the
-  // two entry points aggregate in the same report.
-  // Viewer-local midnight, matching the homepage. The release rolls by listener
-  // time zone, so a single -05:00 instant mislabels the event for anyone outside
-  // Central. DEST is unaffected either way; HyperFollow handles presave vs listen.
-  var released = new Date() >= new Date(2026, 9, 2, 0, 0, 0);
-
-  gtag('event', released ? 'listen_click' : 'presave_click', {
-    single: '2 Dolla Bill',
-    source: 'domain_redirect',
-    event_callback: go,
-    event_timeout: 900
-  });
-
-  // Belt and braces: if the callback never fires, leave anyway.
-  setTimeout(go, 1500);
-
-  document.getElementById('manual').addEventListener('click', function () { gone = true; });
-})();
+  // The landing itself is counted; each service button lands on its own per-platform redirect,
+  // which records listen_click with the platform name before handing off.
+  gtag('event', 'listen_page_view', { single: '2 Dolla Bill', source: 'chooser' });
 </script>
 
 </body>
