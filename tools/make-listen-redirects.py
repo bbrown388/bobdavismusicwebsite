@@ -40,6 +40,11 @@ PLATFORMS = {
         "iTunes", APPLE + "?app=itunes",
         "LIVE. Apple folded the iTunes Store into Apple Music; ?app=itunes is how DistroKid "
         "itself distinguishes them."),
+    "youtube": (
+        "YouTube Music", "https://music.youtube.com/watch?v=ii_guB7vgus",
+        "LIVE. Bob's share link, 2 Oct 2026, with the si= share-tracking param stripped. Video "
+        "ii_guB7vgus is the official audio on the auto-generated 'Bob Davis - Topic' channel "
+        "(confirmed via oEmbed)."),
     "amazon": (
         "Amazon Music", "https://music.amazon.com/albums/B0HDH3GH22?trackAsin=B0HDGRHWP7&do=play",
         "LIVE. Bob's own Amazon Music share link, 2 Oct 2026, with the ref/ts share-tracking "
