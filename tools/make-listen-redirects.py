@@ -41,15 +41,9 @@ PLATFORMS = {
         "LIVE. Apple folded the iTunes Store into Apple Music; ?app=itunes is how DistroKid "
         "itself distinguishes them."),
     "amazon": (
-        "Amazon Music", HYPERFOLLOW,
-        "PRE-RELEASE. ASIN B0HDH3GH22 exists and HyperFollow now shows Amazon, but NEITHER "
-        "direct url reaches the song: amazon.com/gp/product/B0HDH3GH22 is a RETAIL link that "
-        "Amazon's shopping app intercepts into a webview that cannot render music, and "
-        "music.amazon.com/albums/B0HDH3GH22 does not resolve to the album either, almost "
-        "certainly because the browsable album page is not published until release. Both were "
-        "tested by Bob on 1 Sep and both failed. HyperFollow handles the pre-save correctly, so "
-        "it stays the destination. REPOINT to music.amazon.com AFTER 2 Oct, and only once the "
-        "link has actually been opened and confirmed."),
+        "Amazon Music", "https://music.amazon.com/albums/B0HDH3GH22?trackAsin=B0HDGRHWP7&do=play",
+        "LIVE. Bob's own Amazon Music share link, 2 Oct 2026, with the ref/ts share-tracking "
+        "params stripped. Album ASIN B0HDH3GH22, track ASIN B0HDGRHWP7. Replaces HyperFollow."),
 }
 
 TEMPLATE = """<!DOCTYPE html>
