@@ -65,7 +65,7 @@ TEMPLATE = """<!DOCTYPE html>
 <link rel="canonical" href="https://bobdavismusic.com/">
 
 <meta property="og:title" content="__SONG__ | Bob Davis">
-<meta property="og:description" content="The debut single from Bob Davis. Out October 2.">
+<meta property="og:description" content="The debut single from Bob Davis. Out now.">
 <meta property="og:image" content="https://bobdavismusic.com/images/2-dolla-bill-cover.jpg">
 <meta property="og:url" content="https://bobdavismusic.com/listen/__SLUG__/__KEY__/">
 <meta name="twitter:card" content="summary_large_image">
