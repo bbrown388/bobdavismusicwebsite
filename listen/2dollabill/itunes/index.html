@@ -99,7 +99,10 @@
     source: 'platform_redirect',
     platform: 'itunes',
     event_callback: go,
-    event_timeout: 900
+    event_timeout: 900,
+    // Sent as a beacon so the hit survives the page being replaced by the redirect. A 3 Oct click-through
+    // test lost the listen_click on 2 of 3 hand-offs without it; the page_view always landed.
+    transport_type: 'beacon'
   });
 
   setTimeout(go, 1500);
