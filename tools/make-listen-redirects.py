@@ -51,6 +51,9 @@ PLATFORMS = {
     "tidal": (
         "TIDAL", "https://tidal.com/album/550267556",
         "LIVE. Bob's link, 4 Oct 2026, verified: page title '2 Dolla Bill by Bob Davis on TIDAL'."),
+    "deezer": (
+        "Deezer", "https://www.deezer.com/track/4210937102",
+        "LIVE. Found 4 Oct 2026 by ISRC on Deezer's public API (QT6G52671053 -> track 4210937102, Bob Davis)."),
     "amazon": (
         "Amazon Music", "https://music.amazon.com/albums/B0HDH3GH22?trackAsin=B0HDGRHWP7&do=play",
         "LIVE. Bob's own Amazon Music share link, 2 Oct 2026, with the ref/ts share-tracking "
