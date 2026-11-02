@@ -303,6 +303,65 @@ p {
 }
 .home-link:hover  { filter: brightness(1.12); }
 .home-link:active { transform: scale(0.97); }
+.past {
+  width: 100%;
+  max-width: 720px;
+  margin: 8px 0 44px;
+}
+.past h2 {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #9a6838;
+  font-weight: normal;
+  margin-bottom: 20px;
+}
+.past-list {
+  list-style: none;
+  text-align: left;
+  border-top: 1px solid rgba(220,80,40,0.18);
+}
+.past-row {
+  display: grid;
+  grid-template-columns: 112px 1fr auto;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 14px 4px;
+  border-bottom: 1px solid rgba(220,80,40,0.18);
+}
+.past-row[hidden] { display: none; }
+.past-date {
+  font-size: 13px;
+  color: #9a6838;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.past-name {
+  font-size: 16px;
+  color: #E8DCC8;
+  line-height: 1.35;
+}
+.past-detail {
+  display: block;
+  font-size: 13px;
+  color: #C8B89A;
+  margin-top: 2px;
+}
+.past-links {
+  display: flex;
+  gap: 14px;
+  white-space: nowrap;
+}
+.past-links a {
+  font-size: 13px;
+  color: #e87a5a;
+  text-decoration: none;
+}
+.past-links a:hover { text-decoration: underline; }
+@media (max-width: 560px) {
+  .past-row { grid-template-columns: 1fr; padding: 14px 2px; }
+  .past-links { margin-top: 6px; }
+}
 </style>
 <link rel="stylesheet" href="../site-nav.css">
 </head>
@@ -325,11 +384,11 @@ p {
       <h1>Live Shows</h1>
     </div>
   </div>
-  <p>Catch Bob Davis live. Here are the upcoming dates, with more on the way.</p>
+  <p>Catch Bob Davis live. Upcoming dates first, then every public show he has played.</p>
 
   <section class="upcoming">
     <h2>Upcoming Shows</h2>
-    <div class="show">
+    <div class="show" data-until="2026-11-06T22:00:00-06:00">
       <div class="show-name">Gulf Burgers</div>
       <div class="show-tag">Solo Acoustic</div>
       <div class="show-desc">A Friday night in Ranger. Country covers and originals, including the debut single 2 Dolla Bill.</div>
@@ -359,12 +418,48 @@ p {
     </div>
   </section>
 
+  <section class="past" id="past-shows">
+    <h2>Past Shows</h2>
+    <ul class="past-list">
+      <li class="past-row" data-from="2026-11-06T22:00:00-06:00" hidden>
+        <span class="past-date">Fri, Nov 6, 2026</span>
+        <span class="past-name">Gulf Burgers<span class="past-detail">Ranger, TX | Solo acoustic</span></span>
+        <span class="past-links"><a href="/live/gulf-burgers-ranger-nov6/" onclick="trackLink('past_gulf_burgers_page')">Show page</a></span>
+      </li>
+      <li class="past-row">
+        <span class="past-date">Sun, Oct 25, 2026</span>
+        <span class="past-name">The Stockman&#8217;s Club<span class="past-detail">Gordon, TX</span></span>
+        <span class="past-links"></span>
+      </li>
+      <li class="past-row">
+        <span class="past-date">Sat, Oct 10, 2026</span>
+        <span class="past-name">Jokes &amp; Strokes<span class="past-detail">Tie and Timber Lodge, Timpson, TX | Live music and comedy</span></span>
+        <span class="past-links"></span>
+      </li>
+      <li class="past-row">
+        <span class="past-date">Sun, Aug 16, 2026</span>
+        <span class="past-name">Texas State Songwriters Competition<span class="past-detail">Gulf Burgers, Ranger, TX | Guest performer, Season 12 Fun Show Qualifier</span></span>
+        <span class="past-links"></span>
+      </li>
+      <li class="past-row">
+        <span class="past-date">Sat, Jun 13, 2026</span>
+        <span class="past-name">Jokes &amp; Strokes<span class="past-detail">Intrinsic Smokehouse &amp; Brewery, Garland, TX | First stage date</span></span>
+        <span class="past-links"><a href="/live/jokes-strokes-intrinsic-jun13/" onclick="trackLink('past_jokes_strokes_jun13_page')">Show page</a><a href="https://youtu.be/32VukGwMA3g?t=4380" target="_blank" rel="noopener" onclick="trackLink('past_jokes_strokes_jun13_watch')">Watch</a></span>
+      </li>
+      <li class="past-row">
+        <span class="past-date">Sun, May 17, 2026</span>
+        <span class="past-name">Texas State Songwriters Competition<span class="past-detail">Boondocks PK, Graford, TX | 3rd Place, Male Songwriter of the Year</span></span>
+        <span class="past-links"><a href="https://youtu.be/_pQbTKYkq7k?t=2745" target="_blank" rel="noopener" onclick="trackLink('past_tssa_may17_watch')">Watch</a></span>
+      </li>
+    </ul>
+  </section>
+
   <section class="watch">
     <h2>Watch</h2>
 
     <div class="video">
       <div class="video-title">Texas State Songwriters Competition</div>
-      <div class="video-meta">2nd Runner-Up | Male Songwriter of the Year<br>May 17, 2026</div>
+      <div class="video-meta">3rd Place | Male Songwriter of the Year<br>May 17, 2026</div>
       <div class="video-frame">
         <iframe src="https://www.youtube.com/embed/_pQbTKYkq7k?start=2745&amp;enablejsapi=1"
           title="Bob Davis | Texas State Songwriters Competition"
@@ -394,6 +489,19 @@ p {
       try { if (typeof gtag === 'function') gtag('event', 'live_link_click', { link_id: id }); }
       catch (e) {}
     }
+
+    // Shows move from Upcoming to Past on their own once they end, so the page
+    // never lists a show that already happened. The HTML is written for the day it
+    // is published; this only flips what has since passed.
+    (function () {
+      var now = Date.now();
+      document.querySelectorAll('[data-until]').forEach(function (el) {
+        if (now >= Date.parse(el.getAttribute('data-until'))) el.remove();
+      });
+      document.querySelectorAll('[data-from]').forEach(function (el) {
+        if (now >= Date.parse(el.getAttribute('data-from'))) el.hidden = false;
+      });
+    })();
   </script>
 </body>
 </html>
