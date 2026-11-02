@@ -88,6 +88,12 @@ jobs:
           if [ "${{ steps.review.outputs.ahead }}" != "0" ] && [ -d staging-src ]; then
             mkdir -p site/preview
             rsync -a --delete --exclude '.git' --exclude 'CNAME' staging-src/ site/preview/
+            # Keep a reviewer inside the preview. The site links root-relative
+            # (href="/live/..."), which from /preview/ lands on the LIVE site, so a
+            # new page only reachable from a new link 404s mid-review. Prefix every
+            # root-relative href/src in the preview copy with /preview. Protocol-
+            # relative (//host) and absolute (https://) URLs are left alone.
+            find site/preview -name '*.html' -print0 | xargs -0 sed -i -E 's#(href|src)="/([^/"]|")#\1="/preview/\2#g'
             echo "preview assembled from staging"
           else
             echo "nothing in review; deploying main only, no /preview/"
