@@ -93,7 +93,7 @@ jobs:
             # new page only reachable from a new link 404s mid-review. Prefix every
             # root-relative href/src in the preview copy with /preview. Protocol-
             # relative (//host) and absolute (https://) URLs are left alone.
-            find site/preview -name '*.html' -print0 | xargs -0 sed -i -E 's#(href|src)="/([^/"]|")#="/preview/#g'
+            find site/preview -name '*.html' -print0 | xargs -0 sed -i -E 's#(href|src)="/([^/"]|")#\1="/preview/\2#g'
             echo "preview assembled from staging"
           else
             echo "nothing in review; deploying main only, no /preview/"
