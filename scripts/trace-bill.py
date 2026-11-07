@@ -33,8 +33,8 @@ HERO = os.path.join(SITE, 'images', 'hero-bill.jpg')
 OUT = os.path.join(HERE, 'bill-mask.png')
 TMP = os.environ.get('TEMP', HERE)
 
-WIN = (950, 474, 1068, 582)   # search window in hero pixels; re-aim this for a new photo
-PCT = 70                      # threshold percentile inside the window
+WIN = (1364, 390, 1480, 502)   # search window in hero pixels; re-aim this for a new photo
+PCT = 80                      # threshold percentile inside the window
 
 
 def main():
