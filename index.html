@@ -18,7 +18,7 @@
      The FILENAME is versioned on purpose: Facebook, LinkedIn and iMessage cache og:image by URL,
      so replacing a file in place leaves old previews serving the old picture indefinitely. A new
      name is the only reliable cache bust. -->
-<meta property="og:image" content="https://bobdavismusic.com/images/og-card-2026.jpg">
+<meta property="og:image" content="https://bobdavismusic.com/images/og-card-2026-11.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Bob Davis playing an acoustic guitar in a black snapback and sunglasses, beside the BD monogram and the words Smoke in the air, truth in the lyrics.">
@@ -27,7 +27,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Bob Davis | Texas Country Singer-Songwriter">
 <meta name="twitter:description" content="Texas country singer-songwriter from Little Elm, TX. Debut single 2 Dolla Bill, out now.">
-<meta name="twitter:image" content="https://bobdavismusic.com/images/og-card-2026.jpg">
+<meta name="twitter:image" content="https://bobdavismusic.com/images/og-card-2026-11.jpg">
 
 <!-- Structured data. "Bob Davis" is a common name, so the job here is entity
      disambiguation: sameAs fuses this site, the streaming profiles and the social
@@ -51,7 +51,7 @@
       "@id": "https://bobdavismusic.com/#artist",
       "name": "Bob Davis",
       "url": "https://bobdavismusic.com/",
-      "image": "https://bobdavismusic.com/images/og-card-2026.jpg",
+      "image": "https://bobdavismusic.com/images/og-card-2026-11.jpg",
       "description": "Texas country and Red Dirt singer-songwriter based in Little Elm, Texas, originally from Cedar Rapids, Iowa. Placed third with the 2026 Texas State Songwriters Association and competes for the statewide title in January 2027.",
       "genre": ["Texas Country", "Red Dirt", "Americana", "Country"],
       "foundingLocation": {
@@ -157,9 +157,10 @@ body {
    resolve correctly under both / and /preview/.
    Full-bleed photo hero in the Texas-country convention: one picture edge to
    edge, a dark scrim, the release as the headline, socials at the foot. The
-   photo is a caption-free frame from the 20 Aug video shoot and is only about
-   1MP, so it is deliberately positioned to keep the face in the upper half
-   and let the type sit over the shirt and street below it. Swap the file when
+   photo is a 1984x1104 frame from the final 2 Dolla Bill video (Nov 2026),
+   about 1x on a 1080p screen, where the old 1104px frame was stretched about
+   2x and looked grainy. It keeps the face in the upper half and lets the type
+   sit over the guitar body below it. Swap the file when
    a real press photo exists; nothing here depends on this particular image. */
 .hero {
   position: relative;
@@ -169,7 +170,7 @@ body {
   justify-content: center;
   text-align: center;
   padding: 120px 20px 44px;
-  background: #0d0608 url('images/hero-bill.jpg') 50% 42% / cover no-repeat;
+  background: #0d0608 url('images/hero-bill.jpg') 50% 34% / cover no-repeat;
   overflow: hidden;
 }
 
@@ -304,7 +305,7 @@ body {
    photo (aspect > ~1.18) cover crops vertically and the full width incl. the bill
    shows, but when it is portrait or square cover crops horizontally and the
    right-side headstock is lost. So: portrait gets the band, landscape gets the
-   immersive cover. A full-width image is 100vw * 933/1104 = 84.5vw tall. */
+   immersive cover. At 140vw wide the 1984x1104 photo is 78vw tall. */
 @media (max-aspect-ratio: 6/5) {
   .hero {
     min-height: 0;
@@ -315,13 +316,15 @@ body {
        face and bill up top and darkens the lower guitar so the type can overlap
        there and read. */
     background-image:
-      linear-gradient(to bottom, rgba(13,6,8,0) 46%, rgba(13,6,8,0.85) 72%, rgba(13,6,8,1) 90%),
+      linear-gradient(to bottom, rgba(13,6,8,0) 45%, rgba(13,6,8,0.8) 75%, rgba(13,6,8,1) 99%),
       url('images/hero-bill.jpg');
-    background-size: cover, 128vw auto;
-    background-position: center, 100% 2%;
+    /* The gradient is sized to the photo (140vw x 78vw), not the whole hero, so it always
+       fades the photo's own bottom edge instead of leaving a hard line through the type. */
+    background-size: 100% 78.1vw, 140vw auto;
+    background-position: 0 0, 100% 0;
     background-repeat: no-repeat, no-repeat;
     background-origin: border-box;
-    padding: 78vw 20px 52px;
+    padding: 58vw 20px 52px;
   }
 }
 

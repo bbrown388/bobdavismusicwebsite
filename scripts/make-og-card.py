@@ -32,7 +32,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITE = os.path.dirname(HERE)
 HERO = os.path.join(SITE, 'images', 'hero-bill.jpg')
-OUT = os.path.join(SITE, 'images', 'og-card-2026.jpg')
+OUT = os.path.join(SITE, 'images', 'og-card-2026-11.jpg')
 
 W, H = 1200, 630          # the size every platform crops from; do not change casually
 BG = (0x0d, 0x06, 0x08)   # --hero-fade
@@ -45,9 +45,9 @@ TAPER = 540               # length of the gradient, reaching solid at PANEL
 # is 745px wide, NARROWER than the 790px panel, so there is no horizontal slack and he is pinned to
 # the left edge however the crop is set. Scaling past the panel width creates the slack that lets
 # him be positioned, at the cost of cropping tighter top and bottom.
-ZOOM = 1.40               # Bob's pick. Wide enough to keep the guitar in frame; tighter
-                          # crops reduce the card to a man against a wall.
-SUBJECT_X = 0.42          # SOLVED, not chosen: puts his face at x 300, clear of the taper.
+ZOOM = 1.00               # The 1984x1104 hero (Nov 2026) at canvas height is already 1132px wide,
+                          # past the 790px panel, so it needs no zoom to be positioned.
+SUBJECT_X = 0.60          # SOLVED for the Nov 2026 hero: face (x 890 of 1984) lands near x 300.
                           # A fixed fraction cannot survive a zoom change. At 1.90 the same 0.00
                           # that works here took the leftmost 790px of a 1416px photo, which is
                           # foliage and his back, and put his face exactly where the taper goes
